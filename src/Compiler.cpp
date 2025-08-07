@@ -5,8 +5,11 @@
 #include "Compiler.h"
 #include "Lexer.h"
 #include "Parser.h"
-#include "CodeGen.h"
+#include "TackyGen.h"
 #include "Emit.h"
+#include "backend/CodeGen.h"
+#include "backend/ReplacePseudos.h"
+#include "backend/InstructionFixup.h"
 #include "utils/PrettyPrint.h"
 
 std::string Compiler::preprocess(const std::string &src)
@@ -39,7 +42,7 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
         {
         case Stage::Lexing:
         {
-            Lexer lexer = Lexer();
+            auto lexer = Lexer();
             lexer.setInput(input);
             lexer.defineTokenDefs();
 
@@ -58,7 +61,7 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
 
         case Stage::Parsing:
         {
-            Parser parser = Parser();
+            auto parser = Parser();
             auto program = parser.parse(input);
 
             if (debugging)
@@ -67,43 +70,90 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             return 0;
         }
 
-        case Stage::CodeGen:
+        case Stage::Tacky:
         {
-            Parser parser = Parser();
+            auto parser = Parser();
             auto ast = parser.parse(input);
 
-            CodeGen codeGen = CodeGen();
-            auto asmProg = codeGen.gen(ast);
+            auto tackyGen = TackyGen();
+            auto tacky = tackyGen.gen(ast);
 
             if (debugging)
+                prettyPrint.print(*tacky);
+
+            return 0;
+        }
+
+        case Stage::CodeGen:
+        {
+            auto parser = Parser();
+            auto ast = parser.parse(input);
+
+            auto tackyGen = TackyGen();
+            auto tacky = tackyGen.gen(ast);
+
+            auto codeGen = CodeGen();
+            auto asmProg = codeGen.gen(tacky);
+
+            auto replacePseudos = ReplacePseudos();
+            auto [replacedAsm, lastStackSlot] = replacePseudos.replacePseudos(asmProg);
+
+            auto instructionFixup = InstructionFixup();
+            auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm, lastStackSlot);
+
+            if (debugging)
+            {
+                std::cout << "======= RAW ASSEMBLY =======" << '\n';
                 prettyPrint.print(*asmProg);
+                std::cout << '\n';
+
+                std::cout << "======= OPERANDS REPLACED ASSEMBLY =======" << '\n';
+                prettyPrint.print(*replacedAsm);
+                std::cout << '\n';
+
+                std::cout << "======= INSTRUCTIONS FIXEDUP ASSEMBLY =======" << '\n';
+                prettyPrint.print(*fixedupAsm);
+                std::cout << '\n';
+            }
 
             return 0;
         }
 
         case Stage::Emit:
         {
-            Parser parser = Parser();
+            auto parser = Parser();
             auto ast = parser.parse(input);
 
-            CodeGen codeGen = CodeGen();
-            auto asmProg = codeGen.gen(ast);
+            auto tackyGen = TackyGen();
+            auto tacky = tackyGen.gen(ast);
+
+            auto codeGen = CodeGen();
+            auto asmProg = codeGen.gen(tacky);
+
+            auto replacePseudos = ReplacePseudos();
+            auto [replacedAsm, lastStackSlot] = replacePseudos.replacePseudos(asmProg);
+
+            auto instructionFixup = InstructionFixup();
+            auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm, lastStackSlot);
 
             Emit emitter = Emit();
 
             std::string asmFile = settings.replaceExtension(src, ".s");
-            emitter.emit(asmProg, asmFile);
+            emitter.emit(fixedupAsm, asmFile);
 
             return 0;
         }
 
         default:
         {
-            Parser parser = Parser();
+            auto parser = Parser();
             auto ast = parser.parse(input);
 
+            auto tackyGen = TackyGen();
+            auto tacky = tackyGen.gen(ast);
+
             CodeGen codeGen = CodeGen();
-            auto asmProg = codeGen.gen(ast);
+            auto asmProg = codeGen.gen(tacky);
 
             Emit emitter = Emit();
 

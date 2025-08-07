@@ -8,6 +8,7 @@ enum class Stage
 {
     Lexing,
     Parsing,
+    Tacky,
     CodeGen,
     Emit,
     Executable,

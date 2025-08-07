@@ -25,6 +25,8 @@ public:
     void setInput(std::string input);
     void skipWhitespaceAndComments();
     std::optional<Token> token();
+    std::optional<Token> peek();
+    std::vector<Token> npeek(int n);
     std::vector<Token> tokens();
     const std::string_view getInput() const;
 

@@ -8,14 +8,15 @@
 program = Program(function_definition)
 function_definition = Function(identifier name, statement body)
 statement = Return(exp)
-exp = Constant(int)
+exp = Constant(int) | Unary(unary_operator, exp)
+unary_operator = Complement | Negate
 */
 
 namespace AST
 {
-
     class Node;
     class Constant;
+    class Unary;
     class Return;
     class Expression;
     class Statement;
@@ -28,6 +29,13 @@ namespace AST
         FunctionDefinition,
         Return,
         Constant,
+        Unary,
+    };
+
+    enum class UnaryOp
+    {
+        Complement,
+        Negate,
     };
 
     class Node
@@ -64,6 +72,20 @@ namespace AST
 
     private:
         int _value;
+    };
+
+    class Unary : public Expression
+    {
+    public:
+        Unary(UnaryOp op, std::shared_ptr<Expression> exp)
+            : Expression(NodeType::Unary), _op{op}, _exp{exp} {}
+
+        UnaryOp getOp() const { return _op; }
+        std::shared_ptr<Expression> getExp() const { return _exp; }
+
+    private:
+        UnaryOp _op;
+        std::shared_ptr<Expression> _exp;
     };
 
     class Return : public Statement

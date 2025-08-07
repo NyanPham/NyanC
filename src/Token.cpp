@@ -37,6 +37,12 @@ std::string tokenTypeToString(TokenType type)
         return "CLOSE_BRACE";
     case TokenType::SEMICOLON:
         return "SEMICOLON";
+    case TokenType::HYPHEN:
+        return "HYPHEN";
+    case TokenType::DOUBLE_HYPHEN:
+        return "DOUBLE_HYPHEN";
+    case TokenType::TILDE:
+        return "TILDE";
     default:
         return "UNKNOWN";
     }

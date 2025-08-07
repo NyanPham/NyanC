@@ -14,7 +14,8 @@ EBNF for a subset of C:
 <program> ::= <function>
 <function> ::= "int" <identifier> "(" "void" ")" "{" <statement> "}"
 <statement> ::= "return" <exp> ";"
-<exp> ::= <int>
+<exp> ::= <int> | <unop> <exp> | "(" <exp> ")"
+<unop> ::= "-" | "~"
 <int> ::= ? An integer token ?
 <identifier> ::= ? An identifier token ?
 
@@ -41,6 +42,16 @@ std::optional<Token> Parser::takeToken()
     return _currToken;
 }
 
+std::optional<Token> Parser::peekToken()
+{
+    return _lexer.peek();
+}
+
+std::vector<Token> Parser::peekTokens(int n)
+{
+    return _lexer.npeek(n);
+}
+
 void Parser::expect(TokenType type)
 {
     std::optional<Token> tokPtr{takeToken()};
@@ -55,6 +66,27 @@ void Parser::expect(TokenType type)
     {
         raiseError(tokenTypeToString(type), tokenTypeToString(tok.getType()));
     }
+}
+
+AST::UnaryOp Parser::parseUnop()
+{
+    std::optional<Token> nextToken{takeToken()};
+    if (!nextToken.has_value())
+    {
+        raiseError("a unary operator", "empty token");
+    }
+
+    switch (nextToken->getType())
+    {
+    case TokenType::HYPHEN:
+        return AST::UnaryOp::Negate;
+    case TokenType::TILDE:
+        return AST::UnaryOp::Complement;
+    default:
+        raiseError("a unary operator", tokenTypeToString(nextToken->getType()));
+    }
+
+    return AST::UnaryOp::Negate;
 }
 
 std::shared_ptr<AST::Constant> Parser::parseConst()
@@ -108,7 +140,38 @@ std::string Parser::parseIdentifier()
 
 std::shared_ptr<AST::Expression> Parser::parseExp()
 {
-    return parseConst();
+    std::optional<Token> nextToken{peekToken()};
+
+    if (!nextToken.has_value())
+    {
+        raiseError("an expression", "empty token");
+    }
+
+    switch (nextToken->getType())
+    {
+    case TokenType::CONSTANT:
+        return parseConst();
+    case TokenType::HYPHEN:
+    case TokenType::TILDE:
+    {
+        AST::UnaryOp op{parseUnop()};
+        std::shared_ptr<AST::Expression> innerExp{parseExp()};
+
+        return std::make_shared<AST::Unary>(op, innerExp);
+    }
+    case TokenType::OPEN_PAREN:
+    {
+        takeToken();
+        std::shared_ptr<AST::Expression> innerExp{parseExp()};
+        expect(TokenType::CLOSE_PAREN);
+
+        return innerExp;
+    }
+    default:
+        raiseError("an expression", tokenTypeToString(nextToken->getType()));
+    }
+
+    return nullptr;
 }
 
 std::shared_ptr<AST::Statement> Parser::parseStatement()

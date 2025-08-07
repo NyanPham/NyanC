@@ -28,6 +28,9 @@ Token convertIdentifer(const std::string &str, long pos)
     return Token(TokenType::IDENTIFIER, str, pos);
 }
 
+/**
+ * For PART I, we only support integer constants and focus on the grammar of C
+ */
 Token convertConstant(const std::string &str, long pos)
 {
     return Token(TokenType::CONSTANT, std::stoi(str), pos);
@@ -75,8 +78,20 @@ void Lexer::defineTokenDefs()
         {std::regex(";"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::SEMICOLON, str, pos);
+         }},
+        {std::regex("-"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::HYPHEN, str, pos);
+         }},
+        {std::regex("--"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_HYPHEN, str, pos);
+         }},
+        {std::regex("~"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::TILDE, str, pos);
          }}};
-}
+};
 
 void Lexer::skipWhitespaceAndComments()
 {
@@ -155,6 +170,33 @@ std::optional<Token> Lexer::token()
     _pos += matchedStr.length();
 
     return token;
+}
+
+std::optional<Token> Lexer::peek()
+{
+    long savedPos = _pos;
+    std::optional<Token> nextToken = token();
+    _pos = savedPos;
+
+    return nextToken;
+}
+
+std::vector<Token> Lexer::npeek(int n)
+{
+    std::vector<Token> tokens;
+    long savedPos = _pos;
+
+    for (int i = 0; i < n; ++i)
+    {
+        std::optional<Token> nextToken = token();
+        if (nextToken == std::nullopt)
+            break;
+
+        tokens.push_back(*nextToken);
+    }
+
+    _pos = savedPos;
+    return tokens;
 }
 
 std::vector<Token> Lexer::tokens()

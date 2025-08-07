@@ -6,13 +6,17 @@
 
 Stage parseStage(const std::string &stageStr)
 {
-    if (stageStr == "--lexing")
+    if (stageStr == "--lex")
     {
         return Stage::Lexing;
     }
-    else if (stageStr == "--parsing")
+    else if (stageStr == "--parse")
     {
         return Stage::Parsing;
+    }
+    else if (stageStr == "--tacky")
+    {
+        return Stage::Tacky;
     }
     else if (stageStr == "--codegen")
     {

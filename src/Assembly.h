@@ -8,8 +8,13 @@
 /*
 program = Program(function_definition)
 function_definition = Function(identifier name, instruction* instructions)
-instruction = Mov(operand src, operand dst) | Ret
-operand = Imm(int) | Register
+instruction = Mov(operand src, operand dst)
+    | Unary(unary_operator, operand dst)
+    | AllocateStack(int)
+    | Ret
+unary_operator = Neg | Not
+operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int)
+reg = AX | R10
 */
 
 namespace Assembly
@@ -18,8 +23,12 @@ namespace Assembly
     class Operand;
     class Instruction;
     class Imm;
-    class Register;
+    class Reg;
+    class Pseudo;
+    class Stack;
     class Mov;
+    class Unary;
+    class AllocateStack;
     class Ret;
     class Function;
     class Program;
@@ -30,8 +39,24 @@ namespace Assembly
         Function,
         Ret,
         Mov,
+        Unary,
+        AllocateStack,
         Imm,
-        Register,
+        Reg,
+        Pseudo,
+        Stack,
+    };
+
+    enum class RegName
+    {
+        AX,
+        R10,
+    };
+
+    enum class UnaryOp
+    {
+        Not,
+        Neg,
     };
 
     class Node
@@ -73,10 +98,34 @@ namespace Assembly
         int _value;
     };
 
-    class Register : public Operand
+    class Reg : public Operand
     {
     public:
-        Register() : Operand(NodeType::Register) {}
+        Reg(RegName name) : Operand(NodeType::Reg), _name{name} {}
+        RegName getName() const { return _name; }
+
+    private:
+        RegName _name;
+    };
+
+    class Pseudo : public Operand
+    {
+    public:
+        Pseudo(const std::string &name) : Operand(NodeType::Pseudo), _name{name} {}
+        const std::string &getName() const { return _name; }
+
+    private:
+        std::string _name;
+    };
+
+    class Stack : public Operand
+    {
+    public:
+        Stack(int offset) : Operand(NodeType::Stack), _offset{offset} {}
+        int getOffset() const { return _offset; }
+
+    private:
+        int _offset;
     };
 
     class Mov : public Instruction
@@ -95,6 +144,28 @@ namespace Assembly
         std::shared_ptr<Operand> _dst;
     };
 
+    class Unary : public Instruction
+    {
+    public:
+        Unary(UnaryOp op, std::shared_ptr<Operand> operand) : Instruction(NodeType::Unary), _op{op}, _operand{std::move(operand)} {}
+        UnaryOp getOp() const { return _op; }
+        std::shared_ptr<Operand> getOperand() const { return _operand; }
+
+    private:
+        UnaryOp _op;
+        std::shared_ptr<Operand> _operand;
+    };
+
+    class AllocateStack : public Instruction
+    {
+    public:
+        AllocateStack(int offset) : Instruction(NodeType::AllocateStack), _offset{offset} {}
+        int getOffset() const { return _offset; }
+
+    private:
+        int _offset;
+    };
+
     class Ret : public Instruction
     {
     public:
@@ -104,8 +175,8 @@ namespace Assembly
     class Function : public Node
     {
     public:
-        Function(std::string &&name, std::vector<std::shared_ptr<Instruction>> &&instructions)
-            : Node(NodeType::Function), _name{std::move(name)}, _instructions{std::move(instructions)}
+        Function(const std::string &name, const std::vector<std::shared_ptr<Instruction>> &instructions)
+            : Node(NodeType::Function), _name{name}, _instructions{instructions}
         {
         }
 

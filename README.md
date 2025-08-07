@@ -114,8 +114,9 @@ To compile a C program, use the following command:
 
 The compiler supports several options to control the compilation process:
 
-*   `--lexing`: Performs lexical analysis and prints the resulting tokens.
-*   `--parsing`: Performs parsing and prints the Abstract Syntax Tree (AST).
+*   `--lex`: Performs lexical analysis and prints the resulting tokens.
+*   `--parse`: Performs parsing and prints the Abstract Syntax Tree (AST).
+*   `--tacky`: Generates Tacky IR.
 *   `--codegen`: Generates assembly code.
 *   `--emit`: Generates an object file.
 *   `--executable` (default): Generates an executable file.
@@ -123,11 +124,27 @@ The compiler supports several options to control the compilation process:
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## Compiler Stages
+
+The NyanC compiler processes C code in several stages:
+
+1.  **Lexical Analysis (`--lex`):** The source code is broken down into a series of tokens.
+2.  **Parsing (`--parse`):** The tokens are used to build an Abstract Syntax Tree (AST), which represents the structure of the program.
+3.  **Tacky IR Generation (`--tacky`):** The AST is converted into a Tacky Intermediate Representation (IR). This is a three-address code representation that is easier to optimize and translate to assembly.
+4.  **Code Generation (`--codegen`):** The Tacky IR is translated into assembly code. This involves several steps:
+    *   **CodeGen:** Translates Tacky IR into assembly with pseudo-registers.
+    *   **ReplacePseudos:** Replaces pseudo-registers with stack-based memory access.
+    *   **InstructionFixup:** Performs final adjustments to the assembly code.
+5.  **Emitting Object File (`--emit`):** The assembly code is assembled into an object file.
+6.  **Linking (`--executable`):** The object file is linked with the necessary libraries to create a final executable.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 <!-- ROADMAP -->
 ## Roadmap
 
+- [x] Generation of a Three-Address Code (TAC) Intermediate Representation (IR).
 - [ ] Implementation of a semantic analysis phase.
-- [ ] Generation of a Three-Address Code (TAC) Intermediate Representation (IR).
 - [ ] Support C types (e.g., double, pointers, arrays, strings, structs, unions).
 - [ ] Optimization passes on the TAC IR and code generation.
 
@@ -170,7 +187,7 @@ Project Link: [https://github.com/NyanPham/NyanC](https://github.com/NyanPham/Ny
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* [Writing a C Compiler by Nora Sandler](https://norasandler.com/writing-a-c-compiler/)
+* [Writing a C Compiler by Nora Sandler](https://norasandler.com/book/)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

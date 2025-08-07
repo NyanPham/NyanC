@@ -18,6 +18,7 @@ public:
         _lexer.defineTokenDefs();
     }
 
+    AST::UnaryOp parseUnop();
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
     std::shared_ptr<AST::Expression> parseExp();
@@ -28,6 +29,8 @@ public:
 
     void raiseError(const std::string &expected, const std::string &actual);
     std::optional<Token> takeToken();
+    std::optional<Token> peekToken();
+    std::vector<Token> peekTokens(int n);
     void expect(TokenType expected);
 
 private:
