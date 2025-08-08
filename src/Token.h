@@ -25,6 +25,10 @@ enum class TokenType
     HYPHEN,
     DOUBLE_HYPHEN,
     TILDE,
+    PLUS,
+    STAR,
+    SLASH,
+    PERCENT,
 };
 
 using TokenValue = std::variant<std::string, int, long>;

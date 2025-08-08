@@ -8,14 +8,18 @@
 program = Program(function_definition)
 function_definition = Function(identifier name, statement body)
 statement = Return(exp)
-exp = Constant(int) | Unary(unary_operator, exp)
+exp = Constant(int)
+    | Unary(unary_operator, exp)
+    | Binary(binary_operator, exp, exp)
 unary_operator = Complement | Negate
+binary_operator = Add | Subtract | Multiply | Divide | Remainder
 */
 
 namespace AST
 {
     class Node;
     class Constant;
+    class Binary;
     class Unary;
     class Return;
     class Expression;
@@ -30,12 +34,22 @@ namespace AST
         Return,
         Constant,
         Unary,
+        Binary,
     };
 
     enum class UnaryOp
     {
         Complement,
         Negate,
+    };
+
+    enum class BinaryOp
+    {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Remainder,
     };
 
     class Node
@@ -72,6 +86,22 @@ namespace AST
 
     private:
         int _value;
+    };
+
+    class Binary : public Expression
+    {
+    public:
+        Binary(BinaryOp op, std::shared_ptr<Expression> exp1, std::shared_ptr<Expression> exp2)
+            : Expression(NodeType::Binary), _op{op}, _exp1{std::move(exp1)}, _exp2{std::move(exp2)} {}
+
+        BinaryOp getOp() const { return _op; }
+        std::shared_ptr<Expression> getExp1() const { return _exp1; }
+        std::shared_ptr<Expression> getExp2() const { return _exp2; }
+
+    private:
+        BinaryOp _op;
+        std::shared_ptr<Expression> _exp1;
+        std::shared_ptr<Expression> _exp2;
     };
 
     class Unary : public Expression

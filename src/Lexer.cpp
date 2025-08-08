@@ -90,6 +90,22 @@ void Lexer::defineTokenDefs()
         {std::regex("~"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::TILDE, str, pos);
+         }},
+        {std::regex("\\+"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::PLUS, str, pos);
+         }},
+        {std::regex("\\*"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::STAR, str, pos);
+         }},
+        {std::regex("/"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::SLASH, str, pos);
+         }},
+        {std::regex("%"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::PERCENT, str, pos);
          }}};
 };
 

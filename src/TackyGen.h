@@ -12,7 +12,8 @@ class TackyGen
 public:
     TackyGen() = default;
 
-    TACKY::UnaryOp convertOp(AST::UnaryOp op);
+    TACKY::UnaryOp convertUnop(AST::UnaryOp op);
+    TACKY::BinaryOp convertBinop(AST::BinaryOp op);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitTackyForExp(const std::shared_ptr<AST::Expression> &exp);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt);
     std::shared_ptr<TACKY::Function> emitTackyForFunction(const std::shared_ptr<AST::FunctionDefinition> &funDef);

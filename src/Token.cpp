@@ -43,6 +43,14 @@ std::string tokenTypeToString(TokenType type)
         return "DOUBLE_HYPHEN";
     case TokenType::TILDE:
         return "TILDE";
+    case TokenType::PLUS:
+        return "PLUS";
+    case TokenType::STAR:
+        return "STAR";
+    case TokenType::SLASH:
+        return "SLASH";
+    case TokenType::PERCENT:
+        return "PERCENT";
     default:
         return "UNKNOWN";
     }

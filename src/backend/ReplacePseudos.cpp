@@ -74,6 +74,7 @@ ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_pt
         auto unary = std::dynamic_pointer_cast<Assembly::Unary>(inst);
 
         auto [newDst, state1] = replaceOperand(unary->getOperand(), state);
+
         auto newUnary = std::make_shared<Assembly::Unary>(unary->getOp(), newDst);
 
         return {
@@ -81,7 +82,33 @@ ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_pt
             state1,
         };
     }
+    case Assembly::NodeType::Binary:
+    {
+        auto binary = std::dynamic_pointer_cast<Assembly::Binary>(inst);
+
+        auto [newSrc, state1] = replaceOperand(binary->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(binary->getDst(), state1);
+
+        auto newBinary = std::make_shared<Assembly::Binary>(binary->getOp(), newSrc, newDst);
+
+        return {
+            newBinary,
+            state2,
+        };
+    }
+    case Assembly::NodeType::Idiv:
+    {
+        auto idiv = std::dynamic_pointer_cast<Assembly::Idiv>(inst);
+
+        auto [newOperand, state1] = replaceOperand(idiv->getOperand(), state);
+        auto newIdiv = std::make_shared<Assembly::Idiv>(newOperand);
+
+        return {
+            newIdiv,
+            state1};
+    }
     case Assembly::NodeType::Ret:
+    case Assembly::NodeType::Cdq:
     {
         return {
             inst,

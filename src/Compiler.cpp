@@ -10,7 +10,9 @@
 #include "backend/CodeGen.h"
 #include "backend/ReplacePseudos.h"
 #include "backend/InstructionFixup.h"
-#include "utils/PrettyPrint.h"
+#include "utils/ASTPrettyPrint.h"
+#include "utils/TackyPrettyPrint.h"
+#include "utils/CodeGenPrettyPrint.h"
 
 std::string Compiler::preprocess(const std::string &src)
 {
@@ -36,7 +38,9 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
         buffer << file.rdbuf();
 
         auto input = buffer.str();
-        auto prettyPrint = PrettyPrint();
+        ASTPrettyPrint astPrettyPrint;
+        TackyPrettyPrint tackyPrettyPrint;
+        CodeGenPrettyPrint codeGenPrettyPrint;
 
         switch (stage)
         {
@@ -65,7 +69,7 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto program = parser.parse(input);
 
             if (debugging)
-                prettyPrint.print(*program);
+                astPrettyPrint.print(*program);
 
             return 0;
         }
@@ -79,7 +83,7 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto tacky = tackyGen.gen(ast);
 
             if (debugging)
-                prettyPrint.print(*tacky);
+                tackyPrettyPrint.print(*tacky);
 
             return 0;
         }
@@ -104,15 +108,15 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             if (debugging)
             {
                 std::cout << "======= RAW ASSEMBLY =======" << '\n';
-                prettyPrint.print(*asmProg);
+                codeGenPrettyPrint.print(*asmProg);
                 std::cout << '\n';
 
                 std::cout << "======= OPERANDS REPLACED ASSEMBLY =======" << '\n';
-                prettyPrint.print(*replacedAsm);
+                codeGenPrettyPrint.print(*replacedAsm);
                 std::cout << '\n';
 
                 std::cout << "======= INSTRUCTIONS FIXEDUP ASSEMBLY =======" << '\n';
-                prettyPrint.print(*fixedupAsm);
+                codeGenPrettyPrint.print(*fixedupAsm);
                 std::cout << '\n';
             }
 

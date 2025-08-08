@@ -14,12 +14,36 @@ EBNF for a subset of C:
 <program> ::= <function>
 <function> ::= "int" <identifier> "(" "void" ")" "{" <statement> "}"
 <statement> ::= "return" <exp> ";"
-<exp> ::= <int> | <unop> <exp> | "(" <exp> ")"
+<exp> ::= <factor> | <exp> <binop> <exp>
+<factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
 <unop> ::= "-" | "~"
+<binop> ::= "+" | "-" | "*" | "/" | "%"
 <int> ::= ? An integer token ?
 <identifier> ::= ? An identifier token ?
-
 */
+
+int Parser::getPrecedence(TokenType tokenType)
+{
+    switch (tokenType)
+    {
+    case TokenType::STAR:
+    case TokenType::SLASH:
+    case TokenType::PERCENT:
+        return 50;
+    case TokenType::PLUS:
+    case TokenType::HYPHEN:
+        return 45;
+    default:
+        throw std::runtime_error("Internal Error: Token is not an operator to get precedence!");
+    }
+}
+
+bool Parser::isBinop(TokenType tokenType)
+{
+    return tokenType == TokenType::PLUS || tokenType == TokenType::HYPHEN ||
+           tokenType == TokenType::STAR || tokenType == TokenType::SLASH ||
+           tokenType == TokenType::PERCENT;
+}
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
 {
@@ -89,6 +113,32 @@ AST::UnaryOp Parser::parseUnop()
     return AST::UnaryOp::Negate;
 }
 
+AST::BinaryOp Parser::parseBinop()
+{
+    std::optional<Token> nextToken{takeToken()};
+
+    if (!nextToken.has_value())
+    {
+        raiseError("a binary operaor", "empty token");
+    }
+
+    switch (nextToken->getType())
+    {
+    case TokenType::PLUS:
+        return AST::BinaryOp::Add;
+    case TokenType::HYPHEN:
+        return AST::BinaryOp::Subtract;
+    case TokenType::STAR:
+        return AST::BinaryOp::Multiply;
+    case TokenType::SLASH:
+        return AST::BinaryOp::Divide;
+    case TokenType::PERCENT:
+        return AST::BinaryOp::Remainder;
+    default:
+        throw std::runtime_error("Internal Error: Unknown binary operator!");
+    }
+}
+
 std::shared_ptr<AST::Constant> Parser::parseConst()
 {
     std::optional<Token> tokPtr{takeToken()};
@@ -138,7 +188,7 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
-std::shared_ptr<AST::Expression> Parser::parseExp()
+std::shared_ptr<AST::Expression> Parser::parseFactor()
 {
     std::optional<Token> nextToken{peekToken()};
 
@@ -151,18 +201,19 @@ std::shared_ptr<AST::Expression> Parser::parseExp()
     {
     case TokenType::CONSTANT:
         return parseConst();
+
     case TokenType::HYPHEN:
     case TokenType::TILDE:
     {
         AST::UnaryOp op{parseUnop()};
-        std::shared_ptr<AST::Expression> innerExp{parseExp()};
+        std::shared_ptr<AST::Expression> innerExp{parseFactor()};
 
         return std::make_shared<AST::Unary>(op, innerExp);
     }
     case TokenType::OPEN_PAREN:
     {
         takeToken();
-        std::shared_ptr<AST::Expression> innerExp{parseExp()};
+        std::shared_ptr<AST::Expression> innerExp{parseExp(0)};
         expect(TokenType::CLOSE_PAREN);
 
         return innerExp;
@@ -174,10 +225,26 @@ std::shared_ptr<AST::Expression> Parser::parseExp()
     return nullptr;
 }
 
+std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
+{
+    auto left{parseFactor()};
+    auto nextToken{peekToken()};
+
+    while (nextToken.has_value() && isBinop(nextToken->getType()) && getPrecedence(nextToken->getType()) >= minPrec)
+    {
+        auto binOp{parseBinop()};
+        auto right{parseExp(getPrecedence(nextToken->getType()) + 1)};
+        left = std::make_shared<AST::Binary>(binOp, left, right);
+        nextToken = peekToken();
+    }
+
+    return left;
+}
+
 std::shared_ptr<AST::Statement> Parser::parseStatement()
 {
     expect(TokenType::KEYWORD_RETURN);
-    std::shared_ptr<AST::Expression> retVal{parseExp()};
+    std::shared_ptr<AST::Expression> retVal{parseExp(0)};
     expect(TokenType::SEMICOLON);
 
     return std::make_shared<AST::Return>(retVal);

@@ -4,7 +4,7 @@
 #include "AST.h"
 #include "UniqueIds.h"
 
-TACKY::UnaryOp TackyGen::convertOp(AST::UnaryOp op)
+TACKY::UnaryOp TackyGen::convertUnop(AST::UnaryOp op)
 {
     switch (op)
     {
@@ -14,6 +14,25 @@ TACKY::UnaryOp TackyGen::convertOp(AST::UnaryOp op)
         return TACKY::UnaryOp::Negate;
     default:
         throw std::invalid_argument("Internal error: Invalid operator");
+    }
+}
+
+TACKY::BinaryOp TackyGen::convertBinop(AST::BinaryOp op)
+{
+    switch (op)
+    {
+    case AST::BinaryOp::Add:
+        return TACKY::BinaryOp::Add;
+    case AST::BinaryOp::Subtract:
+        return TACKY::BinaryOp::Subtract;
+    case AST::BinaryOp::Multiply:
+        return TACKY::BinaryOp::Multiply;
+    case AST::BinaryOp::Divide:
+        return TACKY::BinaryOp::Divide;
+    case AST::BinaryOp::Remainder:
+        return TACKY::BinaryOp::Remainder;
+    default:
+        throw std::runtime_error("Internal Error: Invalid Binary operator!");
     }
 }
 
@@ -35,7 +54,7 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
         auto [innerEval, src] = emitTackyForExp(unary->getExp());
 
-        auto op = convertOp(unary->getOp());
+        auto op = convertUnop(unary->getOp());
         auto dstName = UniqueIds::makeTemporary();
         auto dst = std::make_shared<TACKY::Var>(dstName);
 
@@ -44,6 +63,28 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
         return {
             innerEval,
             dst};
+    }
+    case AST::NodeType::Binary:
+    {
+        auto binary = std::dynamic_pointer_cast<AST::Binary>(exp);
+        std::vector<std::shared_ptr<TACKY::Instruction>> innerEval{};
+
+        auto [innerEval1, src1] = emitTackyForExp(binary->getExp1());
+        auto [innerEval2, src2] = emitTackyForExp(binary->getExp2());
+
+        innerEval.insert(innerEval.end(), innerEval1.begin(), innerEval1.end());
+        innerEval.insert(innerEval.end(), innerEval2.begin(), innerEval2.end());
+
+        auto dstName = UniqueIds::makeTemporary();
+        auto dst = std::make_shared<TACKY::Var>(dstName);
+        auto op = convertBinop(binary->getOp());
+
+        innerEval.push_back(std::make_shared<TACKY::Binary>(op, src1, src2, dst));
+
+        return {
+            innerEval,
+            dst,
+        };
     }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");

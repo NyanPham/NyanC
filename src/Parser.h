@@ -18,10 +18,14 @@ public:
         _lexer.defineTokenDefs();
     }
 
+    int getPrecedence(TokenType tokenType);
+    bool isBinop(TokenType tokenType);
     AST::UnaryOp parseUnop();
+    AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
-    std::shared_ptr<AST::Expression> parseExp();
+    std::shared_ptr<AST::Expression> parseFactor();
+    std::shared_ptr<AST::Expression> parseExp(int minPrec = 0);
     std::shared_ptr<AST::Statement> parseStatement();
     std::shared_ptr<AST::FunctionDefinition> parseFunctionDefinition();
     std::shared_ptr<AST::Program> parseProgram();

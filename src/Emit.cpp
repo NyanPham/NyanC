@@ -13,8 +13,12 @@ std::string Emit::emitReg(std::shared_ptr<Assembly::Reg> reg)
     {
     case Assembly::RegName::AX:
         return "%eax";
+    case Assembly::RegName::DX:
+        return "%edx";
     case Assembly::RegName::R10:
         return "%r10d";
+    case Assembly::RegName::R11:
+        return "%r11d";
     default:
         throw std::runtime_error("Internal Error: Unknown register!");
     }
@@ -80,6 +84,21 @@ std::string Emit::showUnaryOp(Assembly::UnaryOp op)
     }
 }
 
+std::string Emit::showBinaryOp(Assembly::BinaryOp op)
+{
+    switch (op)
+    {
+    case Assembly::BinaryOp::Add:
+        return "addl";
+    case Assembly::BinaryOp::Sub:
+        return "subl";
+    case Assembly::BinaryOp::Mult:
+        return "imull";
+    default:
+        throw std::runtime_error("Internal Error: Invalid binary operator!");
+    }
+}
+
 std::string Emit::emitMov(std::shared_ptr<Assembly::Mov> mov)
 {
     return std::format("\tmovl\t{}, {}\n", showOperand(mov->getSrc()), showOperand(mov->getDst()));
@@ -93,6 +112,21 @@ std::string Emit::emitRet(std::shared_ptr<Assembly::Ret> ret)
 std::string Emit::emitUnary(std::shared_ptr<Assembly::Unary> unary)
 {
     return std::format("\t{}\t{}\n", showUnaryOp(unary->getOp()), showOperand(unary->getOperand()));
+}
+
+std::string Emit::emitBinary(std::shared_ptr<Assembly::Binary> binary)
+{
+    return std::format("\t{}\t{}, {}\n", showBinaryOp(binary->getOp()), showOperand(binary->getSrc()), showOperand(binary->getDst()));
+}
+
+std::string Emit::emitIdiv(std::shared_ptr<Assembly::Idiv> idiv)
+{
+    return std::format("\tidivl\t{}\n", showOperand(idiv->getOperand()));
+}
+
+std::string Emit::emitCdq(std::shared_ptr<Assembly::Cdq> cdq)
+{
+    return "\tcdq\n";
 }
 
 std::string Emit::emitAllocateStack(std::shared_ptr<Assembly::AllocateStack> allocateStack)
@@ -111,6 +145,18 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     case Assembly::NodeType::Unary:
     {
         return emitUnary(std::dynamic_pointer_cast<Assembly::Unary>(inst));
+    }
+    case Assembly::NodeType::Binary:
+    {
+        return emitBinary(std::dynamic_pointer_cast<Assembly::Binary>(inst));
+    }
+    case Assembly::NodeType::Idiv:
+    {
+        return emitIdiv(std::dynamic_pointer_cast<Assembly::Idiv>(inst));
+    }
+    case Assembly::NodeType::Cdq:
+    {
+        return emitCdq(std::dynamic_pointer_cast<Assembly::Cdq>(inst));
     }
     case Assembly::NodeType::AllocateStack:
     {

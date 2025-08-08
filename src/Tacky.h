@@ -8,22 +8,16 @@
 /*
 program = Program(function_definition)
 function_definition = Function(identifier name, Instruction* instructions)
-instruction = Return(val) | Unary(unary_operator, val src, val dst)
+instruction = Return(val)
+    | Unary(unary_operator, val src, val dst)
+    | Binary(binary_operator, val src1, val src2, val dst)
 val = Constant(int) | Var(identifier)
 unary_operator = Complement | Negate
+binary_operator = Add | Subtract | Multiply | Divide | Remainder
 */
 
 namespace TACKY
 {
-    enum class NodeType
-    {
-        Program,
-        Function,
-        Return,
-        Unary,
-        Constant,
-        Var,
-    };
 
     class Node;
     class Program;
@@ -31,14 +25,35 @@ namespace TACKY
     class Instruction;
     class Return;
     class Unary;
+    class Binary;
     class Val;
     class Constant;
     class Var;
+
+    enum class NodeType
+    {
+        Program,
+        Function,
+        Return,
+        Unary,
+        Binary,
+        Constant,
+        Var,
+    };
 
     enum class UnaryOp
     {
         Complement,
         Negate,
+    };
+
+    enum class BinaryOp
+    {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Remainder,
     };
 
     class Node
@@ -102,6 +117,26 @@ namespace TACKY
     private:
         UnaryOp _op;
         std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class Binary : public Instruction
+    {
+    public:
+        Binary(BinaryOp op, std::shared_ptr<Val> src1, std::shared_ptr<Val> src2, std::shared_ptr<Val> dst)
+            : Instruction(NodeType::Binary), _op{op}, _src1{std::move(src1)}, _src2{std::move(src2)}, _dst{std::move(dst)}
+        {
+        }
+
+        BinaryOp getOp() const { return _op; }
+        std::shared_ptr<Val> getSrc1() const { return _src1; }
+        std::shared_ptr<Val> getSrc2() const { return _src2; }
+        std::shared_ptr<Val> getDst() const { return _dst; }
+
+    private:
+        BinaryOp _op;
+        std::shared_ptr<Val> _src1;
+        std::shared_ptr<Val> _src2;
         std::shared_ptr<Val> _dst;
     };
 

@@ -10,12 +10,17 @@ program = Program(function_definition)
 function_definition = Function(identifier name, instruction* instructions)
 instruction = Mov(operand src, operand dst)
     | Unary(unary_operator, operand dst)
+    | Binary(binary_operator, operand src, operand dst)
+    | Idiv(operand)
+    | Cdq
     | AllocateStack(int)
     | Ret
 unary_operator = Neg | Not
+binary_operator = Add | Sub | Mult
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int)
-reg = AX | R10
+reg = AX | DX | R10 | R11
 */
+
 
 namespace Assembly
 {
@@ -28,6 +33,9 @@ namespace Assembly
     class Stack;
     class Mov;
     class Unary;
+    class Binary;
+    class Idiv;
+    class Cdq;
     class AllocateStack;
     class Ret;
     class Function;
@@ -40,6 +48,9 @@ namespace Assembly
         Ret,
         Mov,
         Unary,
+        Binary,
+        Idiv,
+        Cdq,
         AllocateStack,
         Imm,
         Reg,
@@ -50,13 +61,22 @@ namespace Assembly
     enum class RegName
     {
         AX,
+        DX,
         R10,
+        R11,
     };
 
     enum class UnaryOp
     {
         Not,
         Neg,
+    };
+
+    enum class BinaryOp
+    {
+        Add,
+        Sub,
+        Mult
     };
 
     class Node
@@ -154,6 +174,38 @@ namespace Assembly
     private:
         UnaryOp _op;
         std::shared_ptr<Operand> _operand;
+    };
+
+    class Binary : public Instruction
+    {
+    public:
+        Binary(BinaryOp op, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Binary), _op{op}, _src{src}, _dst{dst} {}
+
+        BinaryOp getOp() const { return _op; }
+        std::shared_ptr<Operand> getSrc() const { return _src; }
+        std::shared_ptr<Operand> getDst() const { return _dst; }
+
+    private:
+        BinaryOp _op;
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
+    class Idiv : public Instruction
+    {
+    public:
+        Idiv(std::shared_ptr<Operand> operand) : Instruction(NodeType::Idiv), _operand{operand} {}
+        std::shared_ptr<Operand> getOperand() const { return _operand; }
+
+    private:
+        std::shared_ptr<Operand> _operand;
+    };
+
+    class Cdq : public Instruction
+    {
+    public:
+        Cdq() : Instruction(NodeType::Cdq) {}
     };
 
     class AllocateStack : public Instruction

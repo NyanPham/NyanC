@@ -26,7 +26,7 @@ std::shared_ptr<Assembly::Operand> CodeGen::convertVal(const std::shared_ptr<TAC
     }
 }
 
-Assembly::UnaryOp CodeGen::convertOp(const TACKY::UnaryOp op)
+Assembly::UnaryOp CodeGen::convertUnop(const TACKY::UnaryOp op)
 {
     switch (op)
     {
@@ -42,6 +42,24 @@ Assembly::UnaryOp CodeGen::convertOp(const TACKY::UnaryOp op)
     {
         throw std::runtime_error("Invalid unary operator");
     }
+    }
+}
+
+Assembly::BinaryOp CodeGen::convertBinop(const TACKY::BinaryOp op)
+{
+    switch (op)
+    {
+    case TACKY::BinaryOp::Add:
+        return Assembly::BinaryOp::Add;
+    case TACKY::BinaryOp::Subtract:
+        return Assembly::BinaryOp::Sub;
+    case TACKY::BinaryOp::Multiply:
+        return Assembly::BinaryOp::Mult;
+    case TACKY::BinaryOp::Divide:
+    case TACKY::BinaryOp::Remainder:
+        throw std::runtime_error("Internal Error: Shouldn't handle division like other binary operators!");
+    default:
+        throw std::runtime_error("Internal Error: Unknown Binary Operators!");
     }
 }
 
@@ -62,7 +80,7 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
     {
         auto unaryInst = std::dynamic_pointer_cast<TACKY::Unary>(inst);
 
-        auto asmOp = convertOp(unaryInst->getOp());
+        auto asmOp = convertUnop(unaryInst->getOp());
         auto asmSrc = convertVal(unaryInst->getSrc());
         auto asmDst = convertVal(unaryInst->getDst());
 
@@ -70,6 +88,46 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
             std::make_shared<Assembly::Mov>(asmSrc, asmDst),
             std::make_shared<Assembly::Unary>(asmOp, asmDst),
         };
+    }
+    case TACKY::NodeType::Binary:
+    {
+        auto binaryInst = std::dynamic_pointer_cast<TACKY::Binary>(inst);
+
+        auto asmSrc1 = convertVal(binaryInst->getSrc1());
+        auto asmSrc2 = convertVal(binaryInst->getSrc2());
+        auto asmDst = convertVal(binaryInst->getDst());
+
+        switch (binaryInst->getOp())
+        {
+
+        // For Division/Modulo
+        case TACKY::BinaryOp::Divide:
+        case TACKY::BinaryOp::Remainder:
+        {
+            Assembly::RegName resultRegName =
+                binaryInst->getOp() == TACKY::BinaryOp::Divide
+                    ? Assembly::RegName::AX
+                    : Assembly::RegName::DX;
+
+            return {
+                std::make_shared<Assembly::Mov>(asmSrc1, std::make_shared<Assembly::Reg>(Assembly::RegName::AX)),
+                std::make_shared<Assembly::Cdq>(),
+                std::make_shared<Assembly::Idiv>(asmSrc2),
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Reg>(resultRegName), asmDst),
+            };
+        }
+
+        // Addition/Subtraction/Multiplication
+        default:
+        {
+            auto asmOp = convertBinop(binaryInst->getOp());
+
+            return {
+                std::make_shared<Assembly::Mov>(asmSrc1, asmDst),
+                std::make_shared<Assembly::Binary>(asmOp, asmSrc2, asmDst),
+            };
+        }
+        }
     }
     default:
         throw std::runtime_error("Internal Error: Invalid TACKY instruction");

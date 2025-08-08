@@ -16,9 +16,13 @@ public:
     std::string emitPseudo(std::shared_ptr<Assembly::Pseudo> pseudo);
     std::string showOperand(std::shared_ptr<Assembly::Operand> operand);
     std::string showUnaryOp(Assembly::UnaryOp op);
+    std::string showBinaryOp(Assembly::BinaryOp op);
     std::string showLabel(const std::string &name);
     std::string emitMov(std::shared_ptr<Assembly::Mov> mov);
     std::string emitUnary(std::shared_ptr<Assembly::Unary> unary);
+    std::string emitBinary(std::shared_ptr<Assembly::Binary> binary);
+    std::string emitIdiv(std::shared_ptr<Assembly::Idiv> idiv);
+    std::string emitCdq(std::shared_ptr<Assembly::Cdq> cdq);
     std::string emitAllocateStack(std::shared_ptr<Assembly::AllocateStack> allocateStack);
     std::string emitRet(std::shared_ptr<Assembly::Ret> ret);
     std::string emitInst(std::shared_ptr<Assembly::Instruction> inst);
