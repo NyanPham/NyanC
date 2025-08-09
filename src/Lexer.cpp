@@ -170,6 +170,50 @@ void Lexer::defineTokenDefs()
          {
              return Token(TokenType::EQUAL_SIGN, str, pos);
          }},
+        {std::regex("\\+\\+"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_PLUS, str, pos);
+         }},
+        {std::regex("\\+="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::PLUS_EQUAL, str, pos);
+         }},
+        {std::regex("-="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::HYPHEN_EQUAL, str, pos);
+         }},
+        {std::regex("\\*="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::STAR_EQUAL, str, pos);
+         }},
+        {std::regex("/="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::SLASH_EQUAL, str, pos);
+         }},
+        {std::regex("%="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::PERCENT_EQUAL, str, pos);
+         }},
+        {std::regex("&="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::AMPERSAND_EQUAL, str, pos);
+         }},
+        {std::regex("\\|="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::PIPE_EQUAL, str, pos);
+         }},
+        {std::regex("\\^="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::CARET_EQUAL, str, pos);
+         }},
+        {std::regex("<<="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_LEFT_BRACKET_EQUAL, str, pos);
+         }},
+        {std::regex(">>="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_RIGHT_BRACKET_EQUAL, str, pos);
+         }},
     };
 };
 

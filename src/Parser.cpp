@@ -17,17 +17,24 @@ EBNF for a subset of C:
 <declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
 <statement> ::= "return" <exp> ";" | <exp> ";" | ";"
 <exp> ::= <factor> | <exp> <binop> <exp>
-<factor> ::= <int> | <identifier> | <unop> <factor> | "(" <exp> ")"
-<unop> ::= "-" | "~" | "!"
+<factor> ::=  <unop> <factor> | <postfix-exp>
+<postfix-exp> ::= <primary-exp> { "++" | "--" }
+<primary-exp> ::= <int> | <identifier> | "(" <exp> ")"
+<unop> ::= "-" | "~" | "!" | "++" | "--"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
         | "&&" | "||"
         | "==" | "!=" | "<" | "<="
         | ">" | ">="
         | "&" | "^" | "|" | "<<" | ">>"
-        | "="
+        | "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
 <int> ::= ? An integer token ?
 <identifier> ::= ? An identifier token ?
 */
+
+void Parser::raiseError(const std::string &expected, const std::string &actual)
+{
+    throw ParseError("expected " + expected + " but got " + actual);
+}
 
 int Parser::getPrecedence(TokenType tokenType)
 {
@@ -62,6 +69,16 @@ int Parser::getPrecedence(TokenType tokenType)
     case TokenType::LOGICAL_OR:
         return 5;
     case TokenType::EQUAL_SIGN:
+    case TokenType::PLUS_EQUAL:
+    case TokenType::HYPHEN_EQUAL:
+    case TokenType::STAR_EQUAL:
+    case TokenType::SLASH_EQUAL:
+    case TokenType::PERCENT_EQUAL:
+    case TokenType::AMPERSAND_EQUAL:
+    case TokenType::PIPE_EQUAL:
+    case TokenType::CARET_EQUAL:
+    case TokenType::DOUBLE_LEFT_BRACKET_EQUAL:
+    case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
         return 1;
     default:
         throw std::runtime_error("Internal Error: Token is not an operator to get precedence!");
@@ -91,15 +108,117 @@ bool Parser::isBinop(TokenType tokenType)
     case TokenType::LOGICAL_AND:
     case TokenType::LOGICAL_OR:
     case TokenType::EQUAL_SIGN:
+    case TokenType::PLUS_EQUAL:
+    case TokenType::HYPHEN_EQUAL:
+    case TokenType::STAR_EQUAL:
+    case TokenType::SLASH_EQUAL:
+    case TokenType::PERCENT_EQUAL:
+    case TokenType::AMPERSAND_EQUAL:
+    case TokenType::PIPE_EQUAL:
+    case TokenType::CARET_EQUAL:
+    case TokenType::DOUBLE_LEFT_BRACKET_EQUAL:
+    case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
         return true;
     default:
         return false;
     }
 }
 
-void Parser::raiseError(const std::string &expected, const std::string &actual)
+std::optional<AST::BinaryOp> Parser::getCompoundOperator(std::optional<Token> token)
 {
-    throw ParseError("expected " + expected + " but got " + actual);
+    if (!token.has_value())
+    {
+        throw std::runtime_error("Internal error: Empty token to get compound operator!");
+    }
+
+    switch (token->getType())
+    {
+    case TokenType::EQUAL_SIGN:
+    {
+        return std::nullopt;
+    }
+
+    case TokenType::PLUS_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::Add);
+    }
+
+    case TokenType::HYPHEN_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::Subtract);
+    }
+
+    case TokenType::STAR_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::Multiply);
+    }
+
+    case TokenType::SLASH_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::Divide);
+    }
+
+    case TokenType::PERCENT_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::Remainder);
+    }
+
+    case TokenType::AMPERSAND_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::BitwiseAnd);
+    }
+
+    case TokenType::PIPE_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::BitwiseOr);
+    }
+
+    case TokenType::CARET_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::BitwiseXor);
+    }
+
+    case TokenType::DOUBLE_LEFT_BRACKET_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::BitShiftLeft);
+    }
+
+    case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
+    {
+        return std::make_optional(AST::BinaryOp::BitShiftRight);
+    }
+
+    default:
+    {
+        throw std::runtime_error("Internal Error: Unknown token type for compound operator!");
+    }
+    }
+}
+
+bool Parser::isAssignment(std::optional<Token> token)
+{
+    if (!token.has_value())
+    {
+        throw std::runtime_error("Internal error: Empty token to get compound operator!");
+    }
+
+    switch (token->getType())
+    {
+    case TokenType::EQUAL_SIGN:
+    case TokenType::PLUS_EQUAL:
+    case TokenType::HYPHEN_EQUAL:
+    case TokenType::STAR_EQUAL:
+    case TokenType::SLASH_EQUAL:
+    case TokenType::PERCENT_EQUAL:
+    case TokenType::AMPERSAND_EQUAL:
+    case TokenType::PIPE_EQUAL:
+    case TokenType::CARET_EQUAL:
+    case TokenType::DOUBLE_LEFT_BRACKET_EQUAL:
+    case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
+        return true;
+    default:
+        return false;
+    }
 }
 
 std::optional<Token> Parser::takeToken()
@@ -159,6 +278,10 @@ AST::UnaryOp Parser::parseUnop()
         return AST::UnaryOp::Complement;
     case TokenType::BANG:
         return AST::UnaryOp::Not;
+    case TokenType::DOUBLE_PLUS:
+        return AST::UnaryOp::Incr;
+    case TokenType::DOUBLE_HYPHEN:
+        return AST::UnaryOp::Decr;
     default:
         raiseError("a unary operator", tokenTypeToString(nextToken->getType()));
     }
@@ -265,9 +388,38 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
-std::shared_ptr<AST::Expression> Parser::parseFactor()
+std::shared_ptr<AST::Expression> Parser::parsePostfixHelper(std::shared_ptr<AST::Expression> primaryExp)
 {
-    std::optional<Token> nextToken{peekToken()};
+    auto nextToken{peekToken()};
+
+    switch (nextToken->getType())
+    {
+    case TokenType::DOUBLE_HYPHEN:
+    {
+        takeToken();
+        auto decrExp{std::make_shared<AST::PostfixDecr>(primaryExp)};
+        return parsePostfixHelper(decrExp);
+    }
+    case TokenType::DOUBLE_PLUS:
+    {
+        takeToken();
+        auto incrExp{std::make_shared<AST::PostfixIncr>(primaryExp)};
+        return parsePostfixHelper(incrExp);
+    }
+    default:
+        return primaryExp;
+    }
+}
+
+std::shared_ptr<AST::Expression> Parser::parsePostfixExp()
+{
+    auto primaryExp{parsePrimaryExp()};
+    return parsePostfixHelper(primaryExp);
+}
+
+std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
+{
+    auto nextToken{peekToken()};
 
     if (!nextToken.has_value())
     {
@@ -290,15 +442,6 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
         raiseError("an identifier", "non-string value");
     }
 
-    case TokenType::HYPHEN:
-    case TokenType::TILDE:
-    case TokenType::BANG:
-    {
-        AST::UnaryOp op{parseUnop()};
-        std::shared_ptr<AST::Expression> innerExp{parseFactor()};
-
-        return std::make_shared<AST::Unary>(op, innerExp);
-    }
     case TokenType::OPEN_PAREN:
     {
         takeToken();
@@ -314,6 +457,32 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
     return nullptr;
 }
 
+std::shared_ptr<AST::Expression> Parser::parseFactor()
+{
+    auto nextToken{peekToken()};
+
+    if (!nextToken.has_value())
+    {
+        raiseError("an expression", "empty token");
+    }
+    switch (nextToken->getType())
+    {
+    case TokenType::HYPHEN:
+    case TokenType::TILDE:
+    case TokenType::BANG:
+    case TokenType::DOUBLE_PLUS:
+    case TokenType::DOUBLE_HYPHEN:
+    {
+        AST::UnaryOp op{parseUnop()};
+        std::shared_ptr<AST::Expression> innerExp{parseFactor()};
+
+        return std::make_shared<AST::Unary>(op, innerExp);
+    }
+    default:
+        return parsePostfixExp();
+    }
+}
+
 std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
 {
     auto left{parseFactor()};
@@ -321,11 +490,19 @@ std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
 
     while (nextToken.has_value() && isBinop(nextToken->getType()) && getPrecedence(nextToken->getType()) >= minPrec)
     {
-        if (nextToken->getType() == TokenType::EQUAL_SIGN)
+        if (isAssignment(nextToken))
         {
             takeToken();
             auto right{parseExp(getPrecedence(nextToken->getType()))};
-            left = std::make_shared<AST::Assignment>(left, right);
+            auto op{getCompoundOperator(nextToken)};
+            if (!op.has_value())
+            {
+                left = std::make_shared<AST::Assignment>(left, right);
+            }
+            else
+            {
+                left = std::make_shared<AST::CompoundAssignment>(op.value(), left, right);
+            }
         }
         else
         {

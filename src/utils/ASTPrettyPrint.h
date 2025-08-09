@@ -51,6 +51,15 @@ private:
         case AST::NodeType::Assignment:
             visitAssignment(static_cast<const AST::Assignment &>(node), indent);
             break;
+        case AST::NodeType::CompoundAssignment:
+            visitCompoundAssignment(static_cast<const AST::CompoundAssignment &>(node), indent);
+            break;
+        case AST::NodeType::PostfixIncr:
+            visitPostfixIncr(static_cast<const AST::PostfixIncr &>(node), indent);
+            break;
+        case AST::NodeType::PostfixDecr:
+            visitPostfixDecr(static_cast<const AST::PostfixDecr &>(node), indent);
+            break;
         case AST::NodeType::ExpressionStmt:
             visitExpressionStmt(static_cast<const AST::ExpressionStmt &>(node), indent);
             break;
@@ -127,6 +136,12 @@ private:
             break;
         case AST::UnaryOp::Not:
             std::cout << "Not";
+            break;
+        case AST::UnaryOp::Incr:
+            std::cout << "Incr";
+            break;
+        case AST::UnaryOp::Decr:
+            std::cout << "Decr";
             break;
         default:
             break;
@@ -227,6 +242,96 @@ private:
         visit(*assignment.getLeftExp(), false);
         std::cout << getIndent() << "right=";
         visit(*assignment.getRightExp(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitCompoundAssignment(const AST::CompoundAssignment &compoundAssignment, bool indent = true)
+    {
+        if (indent)
+        {
+            std::cout << getIndent();
+        }
+        std::cout << "CompoundAssignment(\n";
+        increaseIndent();
+        std::cout << getIndent() << "op=" << getOpString(compoundAssignment.getOp()) << ",\n";
+        std::cout << getIndent() << "left=";
+        visit(*compoundAssignment.getLeftExp(), false);
+        std::cout << getIndent() << "right=";
+        visit(*compoundAssignment.getRightExp(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    std::string getOpString(AST::BinaryOp op)
+    {
+        switch (op)
+        {
+        case AST::BinaryOp::Add:
+            return "Add";
+        case AST::BinaryOp::Subtract:
+            return "Subtract";
+        case AST::BinaryOp::Multiply:
+            return "Multiply";
+        case AST::BinaryOp::Divide:
+            return "Divide";
+        case AST::BinaryOp::Remainder:
+            return "Remainder";
+        case AST::BinaryOp::And:
+            return "And";
+        case AST::BinaryOp::Or:
+            return "Or";
+        case AST::BinaryOp::Equal:
+            return "Equal";
+        case AST::BinaryOp::NotEqual:
+            return "NotEqual";
+        case AST::BinaryOp::LessThan:
+            return "LessThan";
+        case AST::BinaryOp::LessOrEqual:
+            return "LessOrEqual";
+        case AST::BinaryOp::GreaterThan:
+            return "GreaterThan";
+        case AST::BinaryOp::GreaterOrEqual:
+            return "GreaterOrEqual";
+        case AST::BinaryOp::BitwiseAnd:
+            return "BitwiseAnd";
+        case AST::BinaryOp::BitwiseOr:
+            return "BitwiseOr";
+        case AST::BinaryOp::BitwiseXor:
+            return "BitwiseXor";
+        case AST::BinaryOp::BitShiftLeft:
+            return "BitShiftLeft";
+        case AST::BinaryOp::BitShiftRight:
+            return "BitShiftRight";
+        default:
+            return "Unknown";
+        }
+    }
+
+    void visitPostfixIncr(const AST::PostfixIncr &postfixIncr, bool indent = true)
+    {
+        if (indent)
+        {
+            std::cout << getIndent();
+        }
+        std::cout << "PostfixIncr(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        visit(*postfixIncr.getExp(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitPostfixDecr(const AST::PostfixDecr &postfixDecr, bool indent = true)
+    {
+        if (indent)
+        {
+            std::cout << getIndent();
+        }
+        std::cout << "PostfixDecr(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        visit(*postfixDecr.getExp(), false);
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }

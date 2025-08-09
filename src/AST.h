@@ -17,7 +17,10 @@ exp = Constant(int)
     | Unary(unary_operator, exp)
     | Binary(binary_operator, exp, exp)
     | Assignment(exp, exp)
-unary_operator = Complement | Negate | Not
+    | CompoundAssignment(binary_operator, exp, exp)
+    | PostfixIncr(exp)
+    | PostfixDecr(exp)
+unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
     | GreaterThan | GreaterOrEqual
@@ -30,6 +33,9 @@ namespace AST
     class Constant;
     class Var;
     class Assignment;
+    class CompoundAssignment;
+    class PostfixIncr;
+    class PostfixDecr;
     class Binary;
     class Unary;
     class Return;
@@ -55,6 +61,9 @@ namespace AST
         Binary,
         Var,
         Assignment,
+        CompoundAssignment,
+        PostfixIncr,
+        PostfixDecr,
     };
 
     enum class UnaryOp
@@ -62,6 +71,8 @@ namespace AST
         Complement,
         Negate,
         Not,
+        Incr,
+        Decr,
     };
 
     enum class BinaryOp
@@ -199,6 +210,52 @@ namespace AST
     private:
         std::shared_ptr<Expression> _left;
         std::shared_ptr<Expression> _right;
+    };
+
+    class CompoundAssignment : public Expression
+    {
+    public:
+        CompoundAssignment(BinaryOp op, std::shared_ptr<Expression> left, std::shared_ptr<Expression> right)
+            : Expression(NodeType::CompoundAssignment), _op{op}, _left{std::move(left)}, _right{std::move(right)}
+        {
+        }
+
+        auto getOp() const { return _op; }
+        auto getLeftExp() const { return _left; }
+        auto getRightExp() const { return _right; }
+
+    private:
+        BinaryOp _op;
+        std::shared_ptr<Expression> _left;
+        std::shared_ptr<Expression> _right;
+    };
+
+    class PostfixIncr : public Expression
+    {
+    public:
+        PostfixIncr(std::shared_ptr<Expression> exp)
+            : Expression(NodeType::PostfixIncr), _exp{std::move(exp)}
+        {
+        }
+
+        auto getExp() const { return _exp; }
+
+    private:
+        std::shared_ptr<Expression> _exp;
+    };
+
+    class PostfixDecr : public Expression
+    {
+    public:
+        PostfixDecr(std::shared_ptr<Expression> exp)
+            : Expression(NodeType::PostfixDecr), _exp{std::move(exp)}
+        {
+        }
+
+        auto getExp() const { return _exp; }
+
+    private:
+        std::shared_ptr<Expression> _exp;
     };
 
     class Return : public Statement

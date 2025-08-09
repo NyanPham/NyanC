@@ -44,6 +44,17 @@ enum class TokenType
     DOUBLE_LEFT_BRACKET,
     DOUBLE_RIGHT_BRACKET,
     EQUAL_SIGN,
+    DOUBLE_PLUS,
+    PLUS_EQUAL,
+    HYPHEN_EQUAL,
+    STAR_EQUAL,
+    SLASH_EQUAL,
+    PERCENT_EQUAL,
+    AMPERSAND_EQUAL,
+    PIPE_EQUAL,
+    CARET_EQUAL,
+    DOUBLE_LEFT_BRACKET_EQUAL,
+    DOUBLE_RIGHT_BRACKET_EQUAL,
 };
 
 using TokenValue = std::variant<std::string, int, long>;

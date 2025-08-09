@@ -14,6 +14,9 @@ TACKY::UnaryOp TackyGen::convertUnop(AST::UnaryOp op)
         return TACKY::UnaryOp::Negate;
     case AST::UnaryOp::Not:
         return TACKY::UnaryOp::Not;
+    case AST::UnaryOp::Incr:
+    case AST::UnaryOp::Decr:
+        throw std::runtime_error("Internal error: Should handle ++/-- operator separately!");
     default:
         throw std::invalid_argument("Internal error: Invalid operator");
     }
@@ -62,6 +65,43 @@ TACKY::BinaryOp TackyGen::convertBinop(AST::BinaryOp op)
     default:
         throw std::runtime_error("Internal Error: Invalid Binary operator!");
     }
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
+TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var)
+{
+    auto dstName = UniqueIds::makeTemporary();
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+
+    auto tackyVar = std::make_shared<TACKY::Var>(var->getName());
+
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts{
+        std::make_shared<TACKY::Copy>(tackyVar, dst),
+        std::make_shared<TACKY::Binary>(convertBinop(op), tackyVar, std::make_shared<TACKY::Constant>(1), tackyVar),
+    };
+
+    return {
+        insts,
+        dst,
+    };
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
+TackyGen::emitCompoundAssignment(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var, const std::shared_ptr<AST::Expression> rhs)
+{
+    auto [evalRhs, rhsResult] = emitTackyForExp(rhs);
+    auto dst = std::make_shared<TACKY::Var>(var->getName());
+    auto tackyOp = convertBinop(op);
+
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts{};
+
+    insts.insert(insts.end(), evalRhs.begin(), evalRhs.end());
+    insts.push_back(std::make_shared<TACKY::Binary>(tackyOp, dst, rhsResult, dst));
+
+    return {
+        insts,
+        dst,
+    };
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
@@ -125,6 +165,23 @@ TackyGen::emitOrExp(const std::shared_ptr<AST::Binary> &binary)
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
+TackyGen::emitUnaryExp(const std::shared_ptr<AST::Unary> &unary)
+{
+    auto [innerEval, src] = emitTackyForExp(unary->getExp());
+
+    auto op = convertUnop(unary->getOp());
+    auto dstName = UniqueIds::makeTemporary();
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+
+    innerEval.push_back(std::make_shared<TACKY::Unary>(op, src, dst));
+
+    return {
+        innerEval,
+        dst,
+    };
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
 TackyGen::emitBinaryExp(const std::shared_ptr<AST::Binary> &binary)
 {
     std::vector<std::shared_ptr<TACKY::Instruction>> innerEval{};
@@ -170,18 +227,31 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
     case AST::NodeType::Unary:
     {
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
-        auto [innerEval, src] = emitTackyForExp(unary->getExp());
 
-        auto op = convertUnop(unary->getOp());
-        auto dstName = UniqueIds::makeTemporary();
-        auto dst = std::make_shared<TACKY::Var>(dstName);
+        switch (unary->getOp())
+        {
+        case AST::UnaryOp::Incr:
+        {
+            if (unary->getExp()->getType() != AST::NodeType::Var)
+            {
+                throw std::runtime_error("Bad lvalue!");
+            }
 
-        innerEval.push_back(std::make_shared<TACKY::Unary>(op, src, dst));
+            return emitCompoundAssignment(AST::BinaryOp::Add, std::dynamic_pointer_cast<AST::Var>(unary->getExp()), std::make_shared<AST::Constant>(1));
+        }
 
-        return {
-            innerEval,
-            dst,
-        };
+        case AST::UnaryOp::Decr:
+        {
+            if (unary->getExp()->getType() != AST::NodeType::Var)
+            {
+                throw std::runtime_error("Bad lvalue!");
+            }
+
+            return emitCompoundAssignment(AST::BinaryOp::Subtract, std::dynamic_pointer_cast<AST::Var>(unary->getExp()), std::make_shared<AST::Constant>(1));
+        }
+        default:
+            return emitUnaryExp(unary);
+        }
     }
     case AST::NodeType::Binary:
     {
@@ -202,7 +272,7 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
 
         if (assignment->getLeftExp()->getType() != AST::NodeType::Var)
         {
-            throw std::runtime_error("Internal error: Bad lvalue!");
+            throw std::runtime_error("Bad lvalue!");
         }
 
         auto [rhsInsts, rhsResult] = emitTackyForExp(assignment->getRightExp());
@@ -214,6 +284,40 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
             rhsInsts,
             rhsResult,
         };
+    }
+
+    case AST::NodeType::CompoundAssignment:
+    {
+        auto compoundAssignment = std::dynamic_pointer_cast<AST::CompoundAssignment>(exp);
+
+        if (compoundAssignment->getLeftExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Bad lvalue!");
+        }
+
+        return emitCompoundAssignment(compoundAssignment->getOp(), std::dynamic_pointer_cast<AST::Var>(compoundAssignment->getLeftExp()), compoundAssignment->getRightExp());
+    }
+    case AST::NodeType::PostfixIncr:
+    {
+        auto postfixIncr = std::dynamic_pointer_cast<AST::PostfixIncr>(exp);
+
+        if (postfixIncr->getExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Bad lvalue!");
+        }
+
+        return emitPostfix(AST::BinaryOp::Add, std::dynamic_pointer_cast<AST::Var>(postfixIncr->getExp()));
+    }
+    case AST::NodeType::PostfixDecr:
+    {
+        auto postfixDecr = std::dynamic_pointer_cast<AST::PostfixDecr>(exp);
+
+        if (postfixDecr->getExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Bad lvalue!");
+        }
+
+        return emitPostfix(AST::BinaryOp::Subtract, std::dynamic_pointer_cast<AST::Var>(postfixDecr->getExp()));
     }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");

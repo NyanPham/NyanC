@@ -81,6 +81,28 @@ std::string tokenTypeToString(TokenType type)
         return "GREATER_OR_EQUAL";
     case TokenType::EQUAL_SIGN:
         return "EQUAL_SIGN";
+    case TokenType::DOUBLE_PLUS:
+        return "DOUBLE_PLUS";
+    case TokenType::PLUS_EQUAL:
+        return "PLUS_EQUAL";
+    case TokenType::HYPHEN_EQUAL:
+        return "HYPHEN_EQUAL";
+    case TokenType::STAR_EQUAL:
+        return "STAR_EQUAL";
+    case TokenType::SLASH_EQUAL:
+        return "SLASH_EQUAL";
+    case TokenType::PERCENT_EQUAL:
+        return "PERCENT_EQUAL";
+    case TokenType::AMPERSAND_EQUAL:
+        return "AMPERSAND_EQUAL";
+    case TokenType::PIPE_EQUAL:
+        return "PIPE_EQUAL";
+    case TokenType::CARET_EQUAL:
+        return "CARET_EQUAL";
+    case TokenType::DOUBLE_LEFT_BRACKET_EQUAL:
+        return "DOUBLE_LEFT_BRACKET_EQUAL";
+    case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
+        return "DOUBLE_RIGHT_BRACKET_EQUAL";
     default:
         return "UNKNOWN";
     }

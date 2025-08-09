@@ -22,6 +22,39 @@ std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr
 
         return std::make_shared<AST::Assignment>(resolveExp(assignment->getLeftExp(), varMap), resolveExp(assignment->getRightExp(), varMap));
     }
+    case AST::NodeType::CompoundAssignment:
+    {
+        auto compoundAssignment = std::dynamic_pointer_cast<AST::CompoundAssignment>(exp);
+
+        if (compoundAssignment->getLeftExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Invalid lvalue!");
+        }
+
+        return std::make_shared<AST::CompoundAssignment>(compoundAssignment->getOp(), resolveExp(compoundAssignment->getLeftExp(), varMap), resolveExp(compoundAssignment->getRightExp(), varMap));
+    }
+    case AST::NodeType::PostfixIncr:
+    {
+        auto postfixIncr = std::dynamic_pointer_cast<AST::PostfixIncr>(exp);
+
+        if (postfixIncr->getExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Invalid lvalue!");
+        }
+
+        return std::make_shared<AST::PostfixIncr>(resolveExp(postfixIncr->getExp(), varMap));
+    }
+    case AST::NodeType::PostfixDecr:
+    {
+        auto postfixDecr = std::dynamic_pointer_cast<AST::PostfixDecr>(exp);
+
+        if (postfixDecr->getExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Invalid lvalue!");
+        }
+
+        return std::make_shared<AST::PostfixDecr>(resolveExp(postfixDecr->getExp(), varMap));
+    }
     case AST::NodeType::Var:
     {
         auto var = std::dynamic_pointer_cast<AST::Var>(exp);
@@ -39,6 +72,12 @@ std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr
     case AST::NodeType::Unary:
     {
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
+
+        if ((unary->getOp() == AST::UnaryOp::Incr || unary->getOp() == AST::UnaryOp::Decr) && unary->getExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Operand of ++/-- must be an lvalue!");
+        }
+
         return std::make_shared<AST::Unary>(unary->getOp(), resolveExp(unary->getExp(), varMap));
     }
     case AST::NodeType::Binary:

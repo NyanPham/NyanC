@@ -89,7 +89,7 @@ namespace Assembly
         L,
         LE,
         G,
-        GE,
+        GE
     };
 
     enum class UnaryOp

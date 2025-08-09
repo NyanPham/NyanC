@@ -20,10 +20,15 @@ public:
 
     int getPrecedence(TokenType tokenType);
     bool isBinop(TokenType tokenType);
+    std::optional<AST::BinaryOp> getCompoundOperator(std::optional<Token> token);
+    bool isAssignment(std::optional<Token> token);
     AST::UnaryOp parseUnop();
     AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
+    std::shared_ptr<AST::Expression> parsePostfixHelper(std::shared_ptr<AST::Expression> primary);
+    std::shared_ptr<AST::Expression> parsePostfixExp();
+    std::shared_ptr<AST::Expression> parsePrimaryExp();
     std::shared_ptr<AST::Expression> parseFactor();
     std::shared_ptr<AST::Expression> parseExp(int minPrec = 0);
     std::shared_ptr<AST::Statement> parseStatement();
