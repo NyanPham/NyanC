@@ -29,6 +29,9 @@ EBNF for a subset of C:
             | ";"
             | <identifier> ":" <statement>
             | "goto" <identifier> ";"
+            | "switch" "(" <exp> ")" <statement>
+            | "case" <exp> ":" <statement>
+            | "default" ":" <statement>
 <exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
 <factor> ::=  <unop> <factor> | <postfix-exp>
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
@@ -422,6 +425,36 @@ std::optional<std::shared_ptr<AST::Expression>> Parser::parseOptionalExp(TokenTy
     }
 }
 
+std::shared_ptr<AST::Switch> Parser::parseSwitchStatement()
+{
+    expect(TokenType::KEYWORD_SWITCH);
+    expect(TokenType::OPEN_PAREN);
+    auto control{parseExp(0)};
+    expect(TokenType::CLOSE_PAREN);
+    auto body{parseStatement()};
+
+    return std::make_shared<AST::Switch>(control, body, std::optional<AST::CaseMap>(), "");
+}
+
+std::shared_ptr<AST::Case> Parser::parseCaseStatement()
+{
+    expect(TokenType::KEYWORD_CASE);
+    auto caseVal{parseExp(0)};
+    expect(TokenType::COLON);
+    auto body{parseStatement()};
+
+    return std::make_shared<AST::Case>(caseVal, body, "");
+}
+
+std::shared_ptr<AST::Default> Parser::parseDefaultStatement()
+{
+    expect(TokenType::KEYWORD_DEFAULT);
+    expect(TokenType::COLON);
+    auto body{parseStatement()};
+
+    return std::make_shared<AST::Default>(body, "");
+}
+
 std::shared_ptr<AST::ForInit> Parser::parseForInit()
 {
     auto nextToken{peekToken()};
@@ -699,7 +732,6 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
             return std::make_shared<AST::ExpressionStmt>(innerExp);
         }
     }
-
     case TokenType::KEYWORD_BREAK:
     {
         takeToken();
@@ -724,7 +756,18 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
     {
         return parseForLoop();
     }
-
+    case TokenType::KEYWORD_SWITCH:
+    {
+        return parseSwitchStatement();
+    }
+    case TokenType::KEYWORD_CASE:
+    {
+        return parseCaseStatement();
+    }
+    case TokenType::KEYWORD_DEFAULT:
+    {
+        return parseDefaultStatement();
+    }
     default:
         // For Expression and Null statement
         auto optExp{parseOptionalExp(TokenType::SEMICOLON)};

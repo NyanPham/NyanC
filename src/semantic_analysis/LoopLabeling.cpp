@@ -8,34 +8,34 @@
 #include "UniqueIds.h"
 
 std::shared_ptr<AST::Statement>
-LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::optional<std::string> currLabel)
+LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::optional<std::string> currBreakId, std::optional<std::string> currContinueId)
 {
     switch (stmt->getType())
     {
     case AST::NodeType::Break:
     {
-        if (!currLabel.has_value())
+        if (!currBreakId.has_value())
         {
             throw std::runtime_error("Break outside of loop!");
         }
 
-        return std::make_shared<AST::Break>(currLabel.value());
+        return std::make_shared<AST::Break>(currBreakId.value());
     }
     case AST::NodeType::Continue:
     {
-        if (!currLabel.has_value())
+        if (!currContinueId.has_value())
         {
             throw std::runtime_error("Continue outside of loop!");
         }
 
-        return std::make_shared<AST::Continue>(currLabel.value());
+        return std::make_shared<AST::Continue>(currContinueId.value());
     }
     case AST::NodeType::While:
     {
         auto whileStmt = std::dynamic_pointer_cast<AST::While>(stmt);
         auto newId = UniqueIds::makeLabel("while");
 
-        return std::make_shared<AST::While>(whileStmt->getCondition(), labelStatement(whileStmt->getBody(), newId), newId);
+        return std::make_shared<AST::While>(whileStmt->getCondition(), labelStatement(whileStmt->getBody(), newId, newId), newId);
     }
     case AST::NodeType::DoWhile:
     {
@@ -43,7 +43,7 @@ LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::o
         auto newId = UniqueIds::makeLabel("do_while");
 
         return std::make_shared<AST::DoWhile>(
-            labelStatement(doWhileStmt->getBody(), newId),
+            labelStatement(doWhileStmt->getBody(), newId, newId),
             doWhileStmt->getCondition(),
             newId);
     }
@@ -56,28 +56,56 @@ LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::o
             forStmt->getInit(),
             forStmt->getCondition(),
             forStmt->getPost(),
-            labelStatement(forStmt->getBody(), newId),
+            labelStatement(forStmt->getBody(), newId, newId),
             newId);
     }
     case AST::NodeType::Compound:
     {
         auto compoundStmt = std::dynamic_pointer_cast<AST::Compound>(stmt);
-        return std::make_shared<AST::Compound>(labelBlock(compoundStmt->getBlock(), currLabel));
+        return std::make_shared<AST::Compound>(labelBlock(compoundStmt->getBlock(), currBreakId, currContinueId));
     }
     case AST::NodeType::If:
     {
         auto ifStmt = std::dynamic_pointer_cast<AST::If>(stmt);
         return std::make_shared<AST::If>(
             ifStmt->getCondition(),
-            labelStatement(ifStmt->getThenClause(), currLabel),
-            ifStmt->getElseClause().has_value() ? std::make_optional(labelStatement(ifStmt->getElseClause().value(), currLabel)) : std::nullopt);
+            labelStatement(ifStmt->getThenClause(), currBreakId, currContinueId),
+            ifStmt->getElseClause().has_value() ? std::make_optional(labelStatement(ifStmt->getElseClause().value(), currBreakId, currContinueId)) : std::nullopt);
     }
     case AST::NodeType::LabeledStatement:
     {
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
         return std::make_shared<AST::LabeledStatement>(
             labeledStmt->getLabel(),
-            labelStatement(labeledStmt->getStatement(), currLabel));
+            labelStatement(labeledStmt->getStatement(), currBreakId, currContinueId));
+    }
+    case AST::NodeType::Switch:
+    {
+        auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
+        auto newBreakId = UniqueIds::makeLabel("switch");
+
+        return std::make_shared<AST::Switch>(
+            switchStmt->getControl(),
+            labelStatement(switchStmt->getBody(), newBreakId, currContinueId),
+            switchStmt->getCases(),
+            newBreakId);
+    }
+    case AST::NodeType::Case:
+    {
+        auto caseStmt = std::dynamic_pointer_cast<AST::Case>(stmt);
+
+        return std::make_shared<AST::Case>(
+            caseStmt->getValue(),
+            labelStatement(caseStmt->getBody(), currBreakId, currContinueId),
+            caseStmt->getId());
+    }
+    case AST::NodeType::Default:
+    {
+        auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
+
+        return std::make_shared<AST::Default>(
+            labelStatement(defaultStmt->getBody(), currBreakId, currContinueId),
+            defaultStmt->getId());
     }
     case AST::NodeType::Null:
     case AST::NodeType::Return:
@@ -90,25 +118,25 @@ LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::o
 }
 
 std::shared_ptr<AST::BlockItem>
-LoopLabeling::labelBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, std::optional<std::string> currLabel)
+LoopLabeling::labelBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, std::optional<std::string> currBreakId, std::optional<std::string> currContinueId)
 {
     switch (blockItem->getType())
     {
     case AST::NodeType::Declaration:
         return blockItem;
     default:
-        return labelStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem), currLabel);
+        return labelStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem), currBreakId, currContinueId);
     }
 }
 
 AST::Block
-LoopLabeling::labelBlock(const AST::Block &block, std::optional<std::string> currLabel)
+LoopLabeling::labelBlock(const AST::Block &block, std::optional<std::string> currBreakId, std::optional<std::string> currContinueId)
 {
     auto labeledBlock = AST::Block{};
 
     for (const auto &blockItem : block)
     {
-        auto labeledBlockitem = labelBlockItem(blockItem, currLabel);
+        auto labeledBlockitem = labelBlockItem(blockItem, currBreakId, currContinueId);
         labeledBlock.push_back(labeledBlockitem);
     }
 
@@ -118,7 +146,7 @@ LoopLabeling::labelBlock(const AST::Block &block, std::optional<std::string> cur
 std::shared_ptr<AST::FunctionDefinition>
 LoopLabeling::labelFunctionDef(const std::shared_ptr<AST::FunctionDefinition> &funDef)
 {
-    return std::make_shared<AST::FunctionDefinition>(funDef->getName(), labelBlock(funDef->getBody(), std::nullopt));
+    return std::make_shared<AST::FunctionDefinition>(funDef->getName(), labelBlock(funDef->getBody(), std::nullopt, std::nullopt));
 }
 
 std::shared_ptr<AST::Program>

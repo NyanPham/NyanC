@@ -69,6 +69,24 @@ void ValidateLabels::collectLabelsFromStatement(
         collectLabelsFromStatement(definedLabels, usedLabels, forStmt->getBody());
         break;
     }
+    case AST::NodeType::Switch:
+    {
+        auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
+        collectLabelsFromStatement(definedLabels, usedLabels, switchStmt->getBody());
+        break;
+    }
+    case AST::NodeType::Case:
+    {
+        auto caseStmt = std::dynamic_pointer_cast<AST::Case>(stmt);
+        collectLabelsFromStatement(definedLabels, usedLabels, caseStmt->getBody());
+        break;
+    }
+    case AST::NodeType::Default:
+    {
+        auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
+        collectLabelsFromStatement(definedLabels, usedLabels, defaultStmt->getBody());
+        break;
+    }
     default:
         break;
     }

@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <map>
 
 /*
 program = Program(function_definition)
@@ -22,6 +23,9 @@ statement = Return(exp)
     | While(exp condition, statement body, identifier id)
     | DoWhile(statement body, exp condition, identifier id)
     | For(for_init init, exp? condition, exp? post, statement body, identifier id)
+    | Switch(exp control, statement body, Map<int?, identifier> cases, identifier id)
+    | Case(exp, statement body, identifier id)
+    | Default(statement body, identifier id)
     | Null
     | LabeledStatement(indentifier label, statement)
     | Goto(identifier label)
@@ -62,6 +66,9 @@ namespace AST
     class While;
     class DoWhile;
     class For;
+    class Switch;
+    class Case;
+    class Default;
     class Null;
     class LabeledStatement;
     class Goto;
@@ -89,6 +96,9 @@ namespace AST
         While,
         DoWhile,
         For,
+        Switch,
+        Case,
+        Default,
         Null,
         LabeledStatement,
         Goto,
@@ -137,6 +147,7 @@ namespace AST
     };
 
     using Block = std::vector<std::shared_ptr<BlockItem>>;
+    using CaseMap = std::map<std::optional<int>, std::string>;
 
     class Node
     {
@@ -452,6 +463,67 @@ namespace AST
         std::shared_ptr<ForInit> _init;
         std::optional<std::shared_ptr<Expression>> _condition;
         std::optional<std::shared_ptr<Expression>> _post;
+        std::shared_ptr<Statement> _body;
+        std::string _id;
+    };
+
+    class Switch : public Statement
+    {
+    public:
+        Switch(
+            std::shared_ptr<Expression> control,
+            std::shared_ptr<Statement> body,
+            std::optional<CaseMap> cases,
+            std::string id)
+            : Statement(NodeType::Switch), _control{control}, _body{body}, _cases{cases}, _id{id} {}
+
+        const auto &getControl() const { return _control; }
+        const auto &getBody() const { return _body; }
+        const std::optional<CaseMap>& getCases() const { return _cases; }
+        const auto &getId() const { return _id; }
+
+    private:
+        std::shared_ptr<Expression> _control;
+        std::shared_ptr<Statement> _body;
+        std::optional<CaseMap> _cases;
+        std::string _id;
+    };
+
+    class Case : public Statement
+    {
+    public:
+        Case(
+            std::shared_ptr<Expression> value,
+            std::shared_ptr<Statement> body,
+            std::string id)
+            : Statement(NodeType::Case), _value{value}, _body{body}, _id{id}
+        {
+        }
+
+        const auto &getValue() const { return _value; }
+        const auto &getBody() const { return _body; }
+        const auto &getId() const { return _id; }
+
+    private:
+        std::shared_ptr<Expression> _value;
+        std::shared_ptr<Statement> _body;
+        std::string _id;
+    };
+
+    class Default : public Statement
+    {
+    public:
+        Default(
+            std::shared_ptr<Statement> body,
+            std::string id)
+            : Statement(NodeType::Default), _body{body}, _id{id}
+        {
+        }
+
+        const auto &getBody() const { return _body; }
+        const auto &getId() const { return _id; }
+
+    private:
         std::shared_ptr<Statement> _body;
         std::string _id;
     };

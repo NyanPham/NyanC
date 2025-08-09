@@ -5,9 +5,11 @@
 #include "Compiler.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "UniqueIds.h"
 #include "semantic_analysis/VarResolution.h"
 #include "semantic_analysis/ValidateLabels.h"
 #include "semantic_analysis/LoopLabeling.h"
+#include "semantic_analysis/CollectSwitchCases.h"
 #include "TackyGen.h"
 #include "Emit.h"
 #include "backend/CodeGen.h"
@@ -39,6 +41,13 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
         }
         std::stringstream buffer;
         buffer << file.rdbuf();
+        file.close();
+
+        // Clean up the preprocessed file after reading it.
+        if (std::remove(preprocessedFile.c_str()) != 0)
+        {
+            std::cerr << "Warning: Unable to remove temporary file " << preprocessedFile << std::endl;
+        }
 
         auto input = buffer.str();
         ASTPrettyPrint astPrettyPrint;
@@ -91,8 +100,23 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto loopLabeling = LoopLabeling();
             auto labeledAst = loopLabeling.labelLoops(transformedAst);
 
+            auto collectSwitchCases = CollectSwitchCases();
+            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
+
             if (debugging)
-                astPrettyPrint.print(*labeledAst);
+            {
+                // std::cout << "AST:" << '\n';
+                // astPrettyPrint.print(*ast);
+
+                // std::cout << "Var Resolved:" << '\n';
+                // astPrettyPrint.print(*transformedAst);
+
+                // std::cout << "LoopLabeled:" << '\n';
+                // astPrettyPrint.print(*labeledAst);
+
+                // std::cout << "Cases Collected:" << '\n';
+                astPrettyPrint.print(*casesCollectedAst);
+            }
 
             return 0;
         }
@@ -111,8 +135,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto loopLabeling = LoopLabeling();
             auto labeledAst = loopLabeling.labelLoops(transformedAst);
 
-            auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(labeledAst);
+            auto collectSwitchCases = CollectSwitchCases();
+            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
+
+            auto tackyGen = std::make_shared<TackyGen>();
+            auto tacky = tackyGen->gen(casesCollectedAst);
 
             if (debugging)
                 tackyPrettyPrint.print(*tacky);
@@ -134,8 +161,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto loopLabeling = LoopLabeling();
             auto labeledAst = loopLabeling.labelLoops(transformedAst);
 
+            auto collectSwitchCases = CollectSwitchCases();
+            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(labeledAst);
+            auto tacky = tackyGen.gen(casesCollectedAst);
 
             auto codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -178,8 +208,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto loopLabeling = LoopLabeling();
             auto labeledAst = loopLabeling.labelLoops(transformedAst);
 
+            auto collectSwitchCases = CollectSwitchCases();
+            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(labeledAst);
+            auto tacky = tackyGen.gen(casesCollectedAst);
 
             auto codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -212,8 +245,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto loopLabeling = LoopLabeling();
             auto labeledAst = loopLabeling.labelLoops(transformedAst);
 
+            auto collectSwitchCases = CollectSwitchCases();
+            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(labeledAst);
+            auto tacky = tackyGen.gen(casesCollectedAst);
 
             CodeGen codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -232,6 +268,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
     catch (const std::exception &e)
     {
         std::cerr << "Compilation error: " << e.what() << std::endl;
+        return -1;
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown compilation error" << std::endl;
         return -1;
     }
 }

@@ -43,6 +43,12 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_DO";
     case TokenType::KEYWORD_FOR:
         return "KEYWORD_FOR";
+    case TokenType::KEYWORD_SWITCH:
+        return "KEYWORD_SWITCH";
+    case TokenType::KEYWORD_CASE:
+        return "KEYWORD_CASE";
+    case TokenType::KEYWORD_DEFAULT:
+        return "KEYWORD_DEFAULT";
     case TokenType::OPEN_PAREN:
         return "OPEN_PAREN";
     case TokenType::CLOSE_PAREN:

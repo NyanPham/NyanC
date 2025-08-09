@@ -27,7 +27,10 @@ public:
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
 
-    std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
+       std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
+    std::shared_ptr<AST::Switch> parseSwitchStatement();
+    std::shared_ptr<AST::Case> parseCaseStatement();
+    std::shared_ptr<AST::Default> parseDefaultStatement();
     std::shared_ptr<AST::ForInit> parseForInit();
     std::shared_ptr<AST::While> parseWhileLoop();
     std::shared_ptr<AST::DoWhile> parseDoLoop();

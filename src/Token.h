@@ -21,6 +21,9 @@ enum class TokenType
     KEYWORD_WHILE,
     KEYWORD_DO,
     KEYWORD_FOR,
+    KEYWORD_SWITCH,
+    KEYWORD_CASE,
+    KEYWORD_DEFAULT,
 
     // Punctuation
     OPEN_PAREN,

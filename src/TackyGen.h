@@ -12,16 +12,17 @@ class TackyGen
 public:
     TackyGen() = default;
 
-    std::string breakLabel(const std::string& id);
-    std::string continueLabel(const std::string& id);
- 
+    std::string breakLabel(const std::string &id);
+    std::string continueLabel(const std::string &id);
+
     TACKY::UnaryOp convertUnop(AST::UnaryOp op);
     TACKY::BinaryOp convertBinop(AST::BinaryOp op);
-    
+
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForDoLoop(const std::shared_ptr<AST::DoWhile> &doLoop);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForWhileLoop(const std::shared_ptr<AST::While> &whileLoop);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop);
 
+    std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForSwitch(const std::shared_ptr<AST::Switch> &switchStmt);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitConditionalExp(const std::shared_ptr<AST::Conditional> &conditional);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitCompoundAssignment(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var, const std::shared_ptr<AST::Expression> rhs);

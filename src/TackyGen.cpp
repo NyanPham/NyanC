@@ -1,4 +1,7 @@
 #include <vector>
+#include <algorithm>
+#include <iostream>
+
 #include "TackyGen.h"
 #include "Tacky.h"
 #include "AST.h"
@@ -500,6 +503,64 @@ TackyGen::emitTackyForIfStatement(const std::shared_ptr<AST::If> &ifStmt)
 }
 
 std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForSwitch(const std::shared_ptr<AST::Switch> &switchStmt)
+{
+    auto brkLabel = breakLabel(switchStmt->getId());
+    auto [evalControl, c] = emitTackyForExp(switchStmt->getControl());
+    auto cmpResult = std::make_shared<TACKY::Var>(UniqueIds::makeTemporary());
+
+    if (!switchStmt->getCases().has_value())
+    {
+        throw std::runtime_error("Switch case map is not defined!");
+    }
+
+    auto cases = switchStmt->getCases().value();
+
+    std::vector<std::shared_ptr<TACKY::Instruction>> jumpToCases{};
+
+    std::optional<std::string> defaultCaseId = std::nullopt;
+    for (const auto &[key, id] : cases)
+    {
+        if (key.has_value())
+        {
+            jumpToCases.push_back(
+                std::make_shared<TACKY::Binary>(
+                    TACKY::BinaryOp::Equal,
+                    std::make_shared<TACKY::Constant>(key.value()),
+                    c,
+                    cmpResult));
+
+            jumpToCases.push_back(
+                std::make_shared<TACKY::JumpIfNotZero>(cmpResult, id));
+        }
+        else
+        {
+            // A default case, we'll treat it later below
+            defaultCaseId = std::make_optional(id);
+        }
+    }
+
+    std::shared_ptr<TACKY::Instruction> defaultTacky;
+
+    if (defaultCaseId.has_value())
+        defaultTacky = std::make_shared<TACKY::Jump>(defaultCaseId.value());
+
+    auto bodyTacky = emitTackyForStatement(switchStmt->getBody());
+
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts{};
+
+    insts.insert(insts.end(), evalControl.begin(), evalControl.end());
+    insts.insert(insts.end(), jumpToCases.begin(), jumpToCases.end());
+    if (defaultTacky)
+        insts.push_back(defaultTacky);
+    insts.push_back(std::make_shared<TACKY::Jump>(brkLabel));
+    insts.insert(insts.end(), bodyTacky.begin(), bodyTacky.end());
+    insts.push_back(std::make_shared<TACKY::Label>(brkLabel));
+
+    return insts;
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
 TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
 {
     switch (stmt->getType())
@@ -572,6 +633,32 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
     case AST::NodeType::For:
     {
         return emitTackyForForLoop(std::dynamic_pointer_cast<AST::For>(stmt));
+    }
+    case AST::NodeType::Switch:
+    {
+        return emitTackyForSwitch(std::dynamic_pointer_cast<AST::Switch>(stmt));
+    }
+    case AST::NodeType::Case:
+    {
+        auto caseStmt = std::dynamic_pointer_cast<AST::Case>(stmt);
+        auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+        insts.push_back(std::make_shared<TACKY::Label>(caseStmt->getId()));
+        auto innerInsts = emitTackyForStatement(caseStmt->getBody());
+        insts.insert(insts.end(), innerInsts.begin(), innerInsts.end());
+
+        return insts;
+    }
+    case AST::NodeType::Default:
+    {
+        auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
+        auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+        insts.push_back(std::make_shared<TACKY::Label>(defaultStmt->getId()));
+        auto innerInsts = emitTackyForStatement(defaultStmt->getBody());
+        insts.insert(insts.end(), innerInsts.begin(), innerInsts.end());
+
+        return insts;
     }
     case AST::NodeType::Null:
     {

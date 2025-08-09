@@ -33,6 +33,9 @@ private:
         case AST::NodeType::FunctionDefinition:
             visitFunctionDefinition(static_cast<const AST::FunctionDefinition &>(node));
             break;
+        case AST::NodeType::Declaration:
+            visitDeclaration(static_cast<const AST::Declaration &>(node), indent);
+            break;
         case AST::NodeType::Return:
             visitReturn(static_cast<const AST::Return &>(node), indent);
             break;
@@ -96,8 +99,14 @@ private:
         case AST::NodeType::Goto:
             visitGoto(static_cast<const AST::Goto &>(node), indent);
             break;
-        case AST::NodeType::Declaration:
-            visitDeclaration(static_cast<const AST::Declaration &>(node), indent);
+        case AST::NodeType::Switch:
+            visitSwitch(static_cast<const AST::Switch &>(node), indent);
+            break;
+        case AST::NodeType::Case:
+            visitCase(static_cast<const AST::Case &>(node), indent);
+            break;
+        case AST::NodeType::Default:
+            visitDefault(static_cast<const AST::Default &>(node), indent);
             break;
         default:
             std::cerr << "Unknown node type" << std::endl;
@@ -561,6 +570,75 @@ private:
             std::cout << getIndent();
 
         std::cout << "Goto(" << gotoStmt.getLabel() << ")\n";
+    }
+
+    void visitSwitch(const AST::Switch &switchStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Switch(\n";
+        increaseIndent();
+        std::cout << getIndent() << "control=";
+        visit(*switchStmt.getControl(), false);
+        std::cout << getIndent() << "body=";
+        visit(*switchStmt.getBody(), false);
+
+        if (switchStmt.getCases().has_value())
+        {
+            std::cout << getIndent() << "cases=\n";
+            increaseIndent();
+            for (const auto &[key, value] : switchStmt.getCases().value())
+            {
+                if (key.has_value())
+                {
+                    std::cout << getIndent() << "Case(" << key.value() << ": " << value << ")\n";
+                }
+                else
+                {
+                    std::cout << getIndent() << "Default(" << value << ")\n";
+                }
+            }
+            decreaseIndent();
+        }
+        else
+        {
+            std::cout << getIndent() << "cases=None\n";
+        }
+
+        std::cout << getIndent() << "id=\"" << switchStmt.getId() << "\"\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitCase(const AST::Case &caseStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Case(\n";
+        increaseIndent();
+        std::cout << getIndent() << "value=";
+        visit(*caseStmt.getValue(), false);
+        std::cout << getIndent() << "body=";
+        visit(*caseStmt.getBody(), false);
+        std::cout << getIndent() << "id=\"" << caseStmt.getId() << "\"\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitDefault(const AST::Default &defaultStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Case(\n";
+        increaseIndent();
+        std::cout << getIndent() << "body=";
+        visit(*defaultStmt.getBody(), false);
+        std::cout << getIndent() << "id=\"" << defaultStmt.getId() << "\"\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
     }
 
     void visitDeclaration(const AST::Declaration &decl, bool indent = true)

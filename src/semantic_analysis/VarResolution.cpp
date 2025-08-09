@@ -205,6 +205,33 @@ VarResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, Var
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
         return std::make_shared<AST::LabeledStatement>(labeledStmt->getLabel(), resolveStatement(labeledStmt->getStatement(), varMap));
     }
+    case AST::NodeType::Switch:
+    {
+        auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
+
+        return std::make_shared<AST::Switch>(
+            resolveExp(switchStmt->getControl(), varMap),
+            resolveStatement(switchStmt->getBody(), varMap),
+            switchStmt->getCases(),
+            switchStmt->getId());
+    }
+    case AST::NodeType::Case:
+    {
+        auto caseStmt = std::dynamic_pointer_cast<AST::Case>(stmt);
+
+        return std::make_shared<AST::Case>(
+            resolveExp(caseStmt->getValue(), varMap),
+            resolveStatement(caseStmt->getBody(), varMap),
+            caseStmt->getId());
+    }
+    case AST::NodeType::Default:
+    {
+        auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
+
+        return std::make_shared<AST::Default>(
+            resolveStatement(defaultStmt->getBody(), varMap),
+            defaultStmt->getId());
+    }
     case AST::NodeType::Goto:
     case AST::NodeType::Null:
     case AST::NodeType::Break:
