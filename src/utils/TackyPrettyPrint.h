@@ -129,6 +129,21 @@ private:
         case TACKY::BinaryOp::Remainder:
             std::cout << "Remainder";
             break;
+        case TACKY::BinaryOp::BitwiseAnd:
+            std::cout << "BitwiseAnd";
+            break;
+        case TACKY::BinaryOp::BitwiseOr:
+            std::cout << "BitwiseOr";
+            break;
+        case TACKY::BinaryOp::BitwiseXor:
+            std::cout << "BitwiseXor";
+            break;
+        case TACKY::BinaryOp::BitShiftLeft:
+            std::cout << "BitShiftLeft";
+            break;
+        case TACKY::BinaryOp::BitShiftRight:
+            std::cout << "BitShiftRight";
+            break;
         }
         std::cout << ",\n";
         std::cout << getIndent() << "src1=";

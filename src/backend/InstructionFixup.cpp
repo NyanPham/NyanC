@@ -62,6 +62,9 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         {
         case Assembly::BinaryOp::Add:
         case Assembly::BinaryOp::Sub:
+        case Assembly::BinaryOp::And:
+        case Assembly::BinaryOp::Or:
+        case Assembly::BinaryOp::Xor:
         {
             /* Add/Sub can't use memory addresses for both operands */
             if (binary->getSrc()->getType() == Assembly::NodeType::Stack &&

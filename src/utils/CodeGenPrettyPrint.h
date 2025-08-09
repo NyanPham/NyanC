@@ -139,6 +139,21 @@ private:
         case Assembly::BinaryOp::Mult:
             std::cout << "Mult";
             break;
+        case Assembly::BinaryOp::And:
+            std::cout << "And";
+            break;
+        case Assembly::BinaryOp::Or:
+            std::cout << "Or";
+            break;
+        case Assembly::BinaryOp::Xor:
+            std::cout << "Xor";
+            break;
+        case Assembly::BinaryOp::Sal:
+            std::cout << "Sal";
+            break;
+        case Assembly::BinaryOp::Sar:
+            std::cout << "Sar";
+            break;
         }
         std::cout << ",\n";
         std::cout << getIndent() << "src=";

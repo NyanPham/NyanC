@@ -51,6 +51,16 @@ std::string tokenTypeToString(TokenType type)
         return "SLASH";
     case TokenType::PERCENT:
         return "PERCENT";
+    case TokenType::AMPERSAND:
+        return "AMPERSAND";
+    case TokenType::CARET:
+        return "CARET";
+    case TokenType::PIPE:
+        return "PIPE";
+    case TokenType::DOUBLE_LEFT_BRACKET:
+        return "DOUBLE_LEFT_BRACKET";
+    case TokenType::DOUBLE_RIGHT_BRACKET:
+        return "DOUBLE_RIGHT_BRACKET";
     default:
         return "UNKNOWN";
     }

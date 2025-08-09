@@ -31,6 +31,16 @@ TACKY::BinaryOp TackyGen::convertBinop(AST::BinaryOp op)
         return TACKY::BinaryOp::Divide;
     case AST::BinaryOp::Remainder:
         return TACKY::BinaryOp::Remainder;
+    case AST::BinaryOp::BitwiseAnd:
+        return TACKY::BinaryOp::BitwiseAnd;
+    case AST::BinaryOp::BitwiseOr:
+        return TACKY::BinaryOp::BitwiseOr;
+    case AST::BinaryOp::BitwiseXor:
+        return TACKY::BinaryOp::BitwiseXor;
+    case AST::BinaryOp::BitShiftLeft:
+        return TACKY::BinaryOp::BitShiftLeft;
+    case AST::BinaryOp::BitShiftRight:
+        return TACKY::BinaryOp::BitShiftRight;
     default:
         throw std::runtime_error("Internal Error: Invalid Binary operator!");
     }

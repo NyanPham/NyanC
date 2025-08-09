@@ -127,6 +127,23 @@ private:
         case AST::BinaryOp::Remainder:
             std::cout << "Remainder";
             break;
+        case AST::BinaryOp::BitwiseAnd:
+            std::cout << "BitwiseAnd";
+            break;
+        case AST::BinaryOp::BitwiseXor:
+            std::cout << "BitwiseXor";
+            break;
+        case AST::BinaryOp::BitwiseOr:
+            std::cout << "BitwiseOr";
+            break;
+        case AST::BinaryOp::BitShiftLeft:
+            std::cout << "BitShiftLeft";
+            break;
+        case AST::BinaryOp::BitShiftRight:
+            std::cout << "BitShiftRight";
+            break;
+        default:
+            break;
         }
         std::cout << ",\n";
         std::cout << getIndent() << "left=";

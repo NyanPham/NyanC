@@ -15,6 +15,8 @@ std::string Emit::emitReg(std::shared_ptr<Assembly::Reg> reg)
         return "%eax";
     case Assembly::RegName::DX:
         return "%edx";
+    case Assembly::RegName::CX:
+        return "%ecx";
     case Assembly::RegName::R10:
         return "%r10d";
     case Assembly::RegName::R11:
@@ -94,6 +96,16 @@ std::string Emit::showBinaryOp(Assembly::BinaryOp op)
         return "subl";
     case Assembly::BinaryOp::Mult:
         return "imull";
+    case Assembly::BinaryOp::And:
+        return "andl";
+    case Assembly::BinaryOp::Or:
+        return "orl ";
+    case Assembly::BinaryOp::Xor:
+        return "xorl";
+    case Assembly::BinaryOp::Sal:
+        return "sall";
+    case Assembly::BinaryOp::Sar:
+        return "sarl";
     default:
         throw std::runtime_error("Internal Error: Invalid binary operator!");
     }
@@ -116,7 +128,15 @@ std::string Emit::emitUnary(std::shared_ptr<Assembly::Unary> unary)
 
 std::string Emit::emitBinary(std::shared_ptr<Assembly::Binary> binary)
 {
-    return std::format("\t{}\t{}, {}\n", showBinaryOp(binary->getOp()), showOperand(binary->getSrc()), showOperand(binary->getDst()));
+    if ((binary->getOp() == Assembly::BinaryOp::Sal || binary->getOp() == Assembly::BinaryOp::Sar) &&
+        binary->getSrc()->getType() == Assembly::NodeType::Reg && std::dynamic_pointer_cast<Assembly::Reg>(binary->getSrc())->getName() == Assembly::RegName::CX)
+    {
+        return std::format("\t{}\t%cl, {}\n", showBinaryOp(binary->getOp()), showOperand(binary->getDst()));
+    }
+    else
+    {
+        return std::format("\t{}\t{}, {}\n", showBinaryOp(binary->getOp()), showOperand(binary->getSrc()), showOperand(binary->getDst()));
+    }
 }
 
 std::string Emit::emitIdiv(std::shared_ptr<Assembly::Idiv> idiv)

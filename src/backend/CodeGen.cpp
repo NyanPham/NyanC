@@ -55,6 +55,16 @@ Assembly::BinaryOp CodeGen::convertBinop(const TACKY::BinaryOp op)
         return Assembly::BinaryOp::Sub;
     case TACKY::BinaryOp::Multiply:
         return Assembly::BinaryOp::Mult;
+    case TACKY::BinaryOp::BitwiseAnd:
+        return Assembly::BinaryOp::And;
+    case TACKY::BinaryOp::BitwiseOr:
+        return Assembly::BinaryOp::Or;
+    case TACKY::BinaryOp::BitwiseXor:
+        return Assembly::BinaryOp::Xor;
+    case TACKY::BinaryOp::BitShiftLeft:
+        return Assembly::BinaryOp::Sal;
+    case TACKY::BinaryOp::BitShiftRight:
+        return Assembly::BinaryOp::Sar;
     case TACKY::BinaryOp::Divide:
     case TACKY::BinaryOp::Remainder:
         throw std::runtime_error("Internal Error: Shouldn't handle division like other binary operators!");
@@ -115,6 +125,31 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
                 std::make_shared<Assembly::Idiv>(asmSrc2),
                 std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Reg>(resultRegName), asmDst),
             };
+        }
+
+        // For Bit Shift instructions, source 2 can only be either in CX register or an Imm
+        case TACKY::BinaryOp::BitShiftLeft:
+        case TACKY::BinaryOp::BitShiftRight:
+        {
+            auto asmOp = convertBinop(binaryInst->getOp());
+
+            if (asmSrc2->getType() == Assembly::NodeType::Imm)
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(asmSrc1, asmDst),
+                    std::make_shared<Assembly::Binary>(asmOp, asmSrc2, asmDst),
+                };
+            }
+            else
+            {
+                auto RegCX = std::make_shared<Assembly::Reg>(Assembly::RegName::CX);
+
+                return {
+                    std::make_shared<Assembly::Mov>(asmSrc1, asmDst),
+                    std::make_shared<Assembly::Mov>(asmSrc2, RegCX),
+                    std::make_shared<Assembly::Binary>(asmOp, RegCX, asmDst),
+                };
+            }
         }
 
         // Addition/Subtraction/Multiplication

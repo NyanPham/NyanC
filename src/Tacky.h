@@ -13,7 +13,7 @@ instruction = Return(val)
     | Binary(binary_operator, val src1, val src2, val dst)
 val = Constant(int) | Var(identifier)
 unary_operator = Complement | Negate
-binary_operator = Add | Subtract | Multiply | Divide | Remainder
+binary_operator = Add | Subtract | Multiply | Divide | Remainder | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
 */
 
 namespace TACKY
@@ -54,6 +54,11 @@ namespace TACKY
         Multiply,
         Divide,
         Remainder,
+        BitwiseAnd,
+        BitwiseOr,
+        BitwiseXor,
+        BitShiftLeft,
+        BitShiftRight,
     };
 
     class Node

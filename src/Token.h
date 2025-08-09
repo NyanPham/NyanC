@@ -29,6 +29,11 @@ enum class TokenType
     STAR,
     SLASH,
     PERCENT,
+    AMPERSAND,
+    CARET,
+    PIPE,
+    DOUBLE_LEFT_BRACKET,
+    DOUBLE_RIGHT_BRACKET,
 };
 
 using TokenValue = std::variant<std::string, int, long>;

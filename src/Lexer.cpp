@@ -106,7 +106,31 @@ void Lexer::defineTokenDefs()
         {std::regex("%"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::PERCENT, str, pos);
-         }}};
+         }},
+
+        {std::regex("\\&"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::AMPERSAND, str, pos);
+         }},
+
+        {std::regex("\\^"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::CARET, str, pos);
+         }},
+
+        {std::regex("\\|"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::PIPE, str, pos);
+         }},
+        {std::regex("<<"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_LEFT_BRACKET, str, pos);
+         }},
+        {std::regex(">>"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_RIGHT_BRACKET, str, pos);
+         }},
+    };
 };
 
 void Lexer::skipWhitespaceAndComments()

@@ -17,7 +17,7 @@ EBNF for a subset of C:
 <exp> ::= <factor> | <exp> <binop> <exp>
 <factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
 <unop> ::= "-" | "~"
-<binop> ::= "+" | "-" | "*" | "/" | "%"
+<binop> ::= "+" | "-" | "*" | "/" | "%" | "&" | "^" | "|" | "<<" | ">>"
 <int> ::= ? An integer token ?
 <identifier> ::= ? An identifier token ?
 */
@@ -33,6 +33,15 @@ int Parser::getPrecedence(TokenType tokenType)
     case TokenType::PLUS:
     case TokenType::HYPHEN:
         return 45;
+    case TokenType::DOUBLE_LEFT_BRACKET:
+    case TokenType::DOUBLE_RIGHT_BRACKET:
+        return 40;
+    case TokenType::AMPERSAND:
+        return 25;
+    case TokenType::CARET:
+        return 20;
+    case TokenType::PIPE:
+        return 15;
     default:
         throw std::runtime_error("Internal Error: Token is not an operator to get precedence!");
     }
@@ -40,9 +49,22 @@ int Parser::getPrecedence(TokenType tokenType)
 
 bool Parser::isBinop(TokenType tokenType)
 {
-    return tokenType == TokenType::PLUS || tokenType == TokenType::HYPHEN ||
-           tokenType == TokenType::STAR || tokenType == TokenType::SLASH ||
-           tokenType == TokenType::PERCENT;
+    switch (tokenType)
+    {
+    case TokenType::PLUS:
+    case TokenType::HYPHEN:
+    case TokenType::STAR:
+    case TokenType::SLASH:
+    case TokenType::PERCENT:
+    case TokenType::AMPERSAND:
+    case TokenType::CARET:
+    case TokenType::PIPE:
+    case TokenType::DOUBLE_LEFT_BRACKET:
+    case TokenType::DOUBLE_RIGHT_BRACKET:
+        return true;
+    default:
+        return false;
+    }
 }
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
@@ -134,6 +156,16 @@ AST::BinaryOp Parser::parseBinop()
         return AST::BinaryOp::Divide;
     case TokenType::PERCENT:
         return AST::BinaryOp::Remainder;
+    case TokenType::AMPERSAND:
+        return AST::BinaryOp::BitwiseAnd;
+    case TokenType::CARET:
+        return AST::BinaryOp::BitwiseXor;
+    case TokenType::PIPE:
+        return AST::BinaryOp::BitwiseOr;
+    case TokenType::DOUBLE_LEFT_BRACKET:
+        return AST::BinaryOp::BitShiftLeft;
+    case TokenType::DOUBLE_RIGHT_BRACKET:
+        return AST::BinaryOp::BitShiftRight;
     default:
         throw std::runtime_error("Internal Error: Unknown binary operator!");
     }

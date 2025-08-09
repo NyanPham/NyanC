@@ -16,11 +16,10 @@ instruction = Mov(operand src, operand dst)
     | AllocateStack(int)
     | Ret
 unary_operator = Neg | Not
-binary_operator = Add | Sub | Mult
+binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int)
-reg = AX | DX | R10 | R11
+reg = AX | CX | DX | R10 | R11
 */
-
 
 namespace Assembly
 {
@@ -62,6 +61,7 @@ namespace Assembly
     {
         AX,
         DX,
+        CX,
         R10,
         R11,
     };
@@ -76,7 +76,12 @@ namespace Assembly
     {
         Add,
         Sub,
-        Mult
+        Mult,
+        And,
+        Or,
+        Xor,
+        Sal,
+        Sar,
     };
 
     class Node
