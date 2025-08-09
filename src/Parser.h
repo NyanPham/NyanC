@@ -26,6 +26,13 @@ public:
     AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
+
+    std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
+    std::shared_ptr<AST::ForInit> parseForInit();
+    std::shared_ptr<AST::While> parseWhileLoop();
+    std::shared_ptr<AST::DoWhile> parseDoLoop();
+    std::shared_ptr<AST::For> parseForLoop();
+
     std::shared_ptr<AST::Expression> parseConditionMiddle();
     std::shared_ptr<AST::Expression> parsePostfixHelper(std::shared_ptr<AST::Expression> primary);
     std::shared_ptr<AST::Expression> parsePostfixExp();

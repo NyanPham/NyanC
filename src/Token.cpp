@@ -33,6 +33,16 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_ELSE";
     case TokenType::KEYWORD_GOTO:
         return "KEYWORD_GOTO";
+    case TokenType::KEYWORD_BREAK:
+        return "KEYWORD_BREAK";
+    case TokenType::KEYWORD_CONTINUE:
+        return "KEYWORD_CONTINUE";
+    case TokenType::KEYWORD_WHILE:
+        return "KEYWORD_WHILE";
+    case TokenType::KEYWORD_DO:
+        return "KEYWORD_DO";
+    case TokenType::KEYWORD_FOR:
+        return "KEYWORD_FOR";
     case TokenType::OPEN_PAREN:
         return "OPEN_PAREN";
     case TokenType::CLOSE_PAREN:

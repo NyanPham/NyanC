@@ -23,6 +23,37 @@ VarResolution::copyVariableMap(const VarMap &varMap)
     return newVarMap;
 }
 
+std::shared_ptr<AST::ForInit> VarResolution::resolveForInit(const std::shared_ptr<AST::ForInit> &forInit, VarMap &varMap)
+{
+    switch (forInit->getType())
+    {
+    case AST::NodeType::InitDecl:
+    {
+        auto initDecl = std::dynamic_pointer_cast<AST::InitDecl>(forInit);
+        return std::make_shared<AST::InitDecl>(resolveDeclaration(initDecl->getDecl(), varMap));
+    }
+    case AST::NodeType::InitExp:
+    {
+        auto initExp = std::dynamic_pointer_cast<AST::InitExp>(forInit);
+        return std::make_shared<AST::InitExp>(resolveOptionalExp(initExp->getOptExp(), varMap));
+    }
+    default:
+        throw std::runtime_error("Internal Error: Unknown ForInit type!");
+    }
+}
+
+std::optional<std::shared_ptr<AST::Expression>> VarResolution::resolveOptionalExp(const std::optional<std::shared_ptr<AST::Expression>> &optExp, VarMap &varMap)
+{
+    if (optExp.has_value())
+    {
+        return std::make_optional(resolveExp(optExp.value(), varMap));
+    }
+    else
+    {
+        return std::nullopt;
+    }
+}
+
 std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, VarMap &varMap)
 {
     switch (exp->getType())
@@ -138,6 +169,37 @@ VarResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, Var
         auto newVarMap = copyVariableMap(varMap);
         return std::make_shared<AST::Compound>(resolveBlock(std::dynamic_pointer_cast<AST::Compound>(stmt)->getBlock(), newVarMap));
     }
+    case AST::NodeType::While:
+    {
+        auto whileStmt = std::dynamic_pointer_cast<AST::While>(stmt);
+
+        return std::make_shared<AST::While>(
+            resolveExp(whileStmt->getCondition(), varMap),
+            resolveStatement(whileStmt->getBody(), varMap),
+            whileStmt->getId());
+    }
+    case AST::NodeType::DoWhile:
+    {
+        auto doWhileStmt = std::dynamic_pointer_cast<AST::DoWhile>(stmt);
+
+        return std::make_shared<AST::DoWhile>(
+            resolveStatement(doWhileStmt->getBody(), varMap),
+            resolveExp(doWhileStmt->getCondition(), varMap),
+            doWhileStmt->getId());
+    }
+    case AST::NodeType::For:
+    {
+        auto forStmt = std::dynamic_pointer_cast<AST::For>(stmt);
+        auto newVarMap = copyVariableMap(varMap);
+        auto resolvedInit = resolveForInit(forStmt->getInit(), newVarMap);
+
+        return std::make_shared<AST::For>(
+            resolvedInit,
+            resolveOptionalExp(forStmt->getCondition(), newVarMap),
+            resolveOptionalExp(forStmt->getPost(), newVarMap),
+            resolveStatement(forStmt->getBody(), newVarMap),
+            forStmt->getId());
+    }
     case AST::NodeType::LabeledStatement:
     {
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
@@ -145,6 +207,8 @@ VarResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, Var
     }
     case AST::NodeType::Goto:
     case AST::NodeType::Null:
+    case AST::NodeType::Break:
+    case AST::NodeType::Continue:
         return stmt;
     default:
         throw std::runtime_error("Internal error: Unknown statement!");

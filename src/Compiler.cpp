@@ -7,6 +7,7 @@
 #include "Parser.h"
 #include "semantic_analysis/VarResolution.h"
 #include "semantic_analysis/ValidateLabels.h"
+#include "semantic_analysis/LoopLabeling.h"
 #include "TackyGen.h"
 #include "Emit.h"
 #include "backend/CodeGen.h"
@@ -86,9 +87,12 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
 
             auto validateLabels = ValidateLabels();
             validateLabels.validateLabels(transformedAst);
-            
+
+            auto loopLabeling = LoopLabeling();
+            auto labeledAst = loopLabeling.labelLoops(transformedAst);
+
             if (debugging)
-                astPrettyPrint.print(*transformedAst);
+                astPrettyPrint.print(*labeledAst);
 
             return 0;
         }
@@ -104,8 +108,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto validateLabels = ValidateLabels();
             validateLabels.validateLabels(transformedAst);
 
+            auto loopLabeling = LoopLabeling();
+            auto labeledAst = loopLabeling.labelLoops(transformedAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(transformedAst);
+            auto tacky = tackyGen.gen(labeledAst);
 
             if (debugging)
                 tackyPrettyPrint.print(*tacky);
@@ -124,8 +131,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto validateLabels = ValidateLabels();
             validateLabels.validateLabels(transformedAst);
 
+            auto loopLabeling = LoopLabeling();
+            auto labeledAst = loopLabeling.labelLoops(transformedAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(transformedAst);
+            auto tacky = tackyGen.gen(labeledAst);
 
             auto codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -165,8 +175,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto validateLabels = ValidateLabels();
             validateLabels.validateLabels(transformedAst);
 
+            auto loopLabeling = LoopLabeling();
+            auto labeledAst = loopLabeling.labelLoops(transformedAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(transformedAst);
+            auto tacky = tackyGen.gen(labeledAst);
 
             auto codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -196,8 +209,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto validateLabels = ValidateLabels();
             validateLabels.validateLabels(transformedAst);
 
+            auto loopLabeling = LoopLabeling();
+            auto labeledAst = loopLabeling.labelLoops(transformedAst);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(transformedAst);
+            auto tacky = tackyGen.gen(labeledAst);
 
             CodeGen codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);

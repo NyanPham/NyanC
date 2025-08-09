@@ -12,10 +12,16 @@ function_definition = Function(identifier name, block body)
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
 declaration = Declaration(identifier name, exp? init)
+for_init = InitDecl(declaration) | InitExp(exp?)
 statement = Return(exp)
     | Expression(exp)
     | If(exp condition, statement then, statement? else)
     | Compound(block)
+    | Break
+    | Continue
+    | While(exp condition, statement body, identifier id)
+    | DoWhile(statement body, exp condition, identifier id)
+    | For(for_init init, exp? condition, exp? post, statement body, identifier id)
     | Null
     | LabeledStatement(indentifier label, statement)
     | Goto(identifier label)
@@ -51,9 +57,17 @@ namespace AST
     class ExpressionStmt;
     class If;
     class Compound;
+    class Break;
+    class Continue;
+    class While;
+    class DoWhile;
+    class For;
     class Null;
     class LabeledStatement;
     class Goto;
+    class ForInit;
+    class InitDecl;
+    class InitExp;
     class Expression;
     class Statement;
     class Declaration;
@@ -70,6 +84,11 @@ namespace AST
         ExpressionStmt,
         If,
         Compound,
+        Break,
+        Continue,
+        While,
+        DoWhile,
+        For,
         Null,
         LabeledStatement,
         Goto,
@@ -82,6 +101,8 @@ namespace AST
         PostfixIncr,
         PostfixDecr,
         Conditional,
+        InitDecl,
+        InitExp,
     };
 
     enum class UnaryOp
@@ -133,6 +154,13 @@ namespace AST
     public:
         Expression(NodeType type) : Node(type) {}
         virtual ~Expression() = default;
+    };
+
+    class ForInit : public Node
+    {
+    public:
+        ForInit(NodeType type) : Node(type) {}
+        virtual ~ForInit() = default;
     };
 
     class BlockItem : public Node
@@ -343,6 +371,91 @@ namespace AST
         Block _block;
     };
 
+    class Break : public Statement
+    {
+    public:
+        Break(const std::string &id)
+            : Statement(NodeType::Break), _id{std::move(id)} {}
+
+        const std::string &getId() const { return _id; }
+
+    private:
+        const std::string _id;
+    };
+
+    class Continue : public Statement
+    {
+    public:
+        Continue(const std::string &id)
+            : Statement(NodeType::Continue), _id{std::move(id)} {}
+
+        const std::string &getId() const { return _id; }
+
+    private:
+        const std::string _id;
+    };
+
+    class While : public Statement
+    {
+    public:
+        While(std::shared_ptr<Expression> condition, std::shared_ptr<Statement> body, const std::string &id)
+            : Statement(NodeType::While), _condition{condition}, _body{body}, _id{id} {}
+
+        const std::shared_ptr<Expression> &getCondition() const { return _condition; }
+        const std::shared_ptr<Statement> &getBody() const { return _body; }
+        const std::string &getId() const { return _id; }
+
+    private:
+        std::shared_ptr<Expression> _condition;
+        std::shared_ptr<Statement> _body;
+        std::string _id;
+    };
+
+    class DoWhile : public Statement
+    {
+    public:
+        DoWhile(std::shared_ptr<Statement> body, std::shared_ptr<Expression> condition, const std::string &id)
+            : Statement(NodeType::DoWhile), _body{body}, _condition{condition}, _id{id} {}
+
+        const std::shared_ptr<Statement> &getBody() const { return _body; }
+        const std::shared_ptr<Expression> &getCondition() const { return _condition; }
+        const std::string &getId() const { return _id; }
+
+    private:
+        std::shared_ptr<Statement> _body;
+        std::shared_ptr<Expression> _condition;
+        std::string _id;
+    };
+
+    class For : public Statement
+    {
+    public:
+        For(std::shared_ptr<ForInit> init,
+            std::optional<std::shared_ptr<Expression>> condition,
+            std::optional<std::shared_ptr<Expression>> post,
+            std::shared_ptr<Statement> body,
+            std::string id)
+            : Statement(NodeType::For), _init{std::move(init)}, _condition{std::move(condition)}, _post{std::move(post)}, _body{std::move(body)}, _id{std::move(id)}
+        {
+        }
+
+        bool hasCondition() { return _condition.has_value(); }
+        bool hasPost() { return _post.has_value(); }
+
+        auto &getInit() const { return _init; }
+        auto &getCondition() const { return _condition; }
+        auto &getPost() const { return _post; }
+        auto &getBody() const { return _body; }
+        auto &getId() const { return _id; }
+
+    private:
+        std::shared_ptr<ForInit> _init;
+        std::optional<std::shared_ptr<Expression>> _condition;
+        std::optional<std::shared_ptr<Expression>> _post;
+        std::shared_ptr<Statement> _body;
+        std::string _id;
+    };
+
     class Null : public Statement
     {
     public:
@@ -376,6 +489,36 @@ namespace AST
 
     private:
         std::string _label;
+    };
+
+    class InitDecl : public ForInit
+    {
+    public:
+        InitDecl(std::shared_ptr<Declaration> decl)
+            : ForInit(NodeType::InitDecl), _decl{std::move(decl)}
+        {
+        }
+
+        auto getDecl() const { return _decl; }
+
+    private:
+        std::shared_ptr<Declaration> _decl;
+    };
+
+    class InitExp : public ForInit
+    {
+    public:
+        InitExp(std::optional<std::shared_ptr<Expression>> exp)
+            : ForInit(NodeType::InitExp), _exp{std::move(exp)}
+        {
+        }
+
+        bool hasExp() const { return _exp.has_value(); }
+        auto getOptExp() const { return _exp; }
+        auto getExp() const { return _exp.value(); }
+
+    private:
+        std::optional<std::shared_ptr<Expression>> _exp;
     };
 
     class FunctionDefinition : public Node

@@ -16,10 +16,16 @@ EBNF for a subset of C:
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
 <declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
+<for-init> ::= <declaration> | [ <exp> ] ";"
 <statement> ::= "return" <exp> ";"
             | <exp> ";"
             | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
             | <block>
+            | "break" ";"
+            | "continue" ";"
+            | "while" "(" <exp> ")" <statement>
+            | "do" <statement> "while" "(" <exp> ")" ";"
+            | "for" "(" <for-init> [ <exp> ] ";" [ <exp> ] ")" <statement>
             | ";"
             | <identifier> ":" <statement>
             | "goto" <identifier> ";"
@@ -398,6 +404,79 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
+std::optional<std::shared_ptr<AST::Expression>> Parser::parseOptionalExp(TokenType delim)
+{
+    auto nextToken{peekToken()};
+
+    if (nextToken.has_value() && nextToken->getType() == delim)
+    {
+        takeToken();
+        return std::nullopt;
+    }
+    else
+    {
+        auto exp{parseExp(0)};
+        expect(delim);
+
+        return std::make_optional(exp);
+    }
+}
+
+std::shared_ptr<AST::ForInit> Parser::parseForInit()
+{
+    auto nextToken{peekToken()};
+
+    if (!nextToken.has_value())
+    {
+        raiseError("a for initializer", "empty token");
+    }
+
+    if (nextToken->getType() == TokenType::KEYWORD_INT)
+    {
+        return std::make_shared<AST::InitDecl>(parseDeclaration());
+    }
+    else
+    {
+        return std::make_shared<AST::InitExp>(parseOptionalExp(TokenType::SEMICOLON));
+    }
+}
+
+std::shared_ptr<AST::While> Parser::parseWhileLoop()
+{
+    expect(TokenType::KEYWORD_WHILE);
+    expect(TokenType::OPEN_PAREN);
+    auto condition{parseExp(0)};
+    expect(TokenType::CLOSE_PAREN);
+    auto body{parseStatement()};
+
+    return std::make_shared<AST::While>(condition, body, "");
+}
+
+std::shared_ptr<AST::DoWhile> Parser::parseDoLoop()
+{
+    expect(TokenType::KEYWORD_DO);
+    auto body{parseStatement()};
+    expect(TokenType::KEYWORD_WHILE);
+    expect(TokenType::OPEN_PAREN);
+    auto condition{parseExp(0)};
+    expect(TokenType::CLOSE_PAREN);
+    expect(TokenType::SEMICOLON);
+
+    return std::make_shared<AST::DoWhile>(body, condition, "");
+}
+
+std::shared_ptr<AST::For> Parser::parseForLoop()
+{
+    expect(TokenType::KEYWORD_FOR);
+    expect(TokenType::OPEN_PAREN);
+    auto init{parseForInit()};
+    auto condition{parseOptionalExp(TokenType::SEMICOLON)};
+    auto post{parseOptionalExp(TokenType::CLOSE_PAREN)};
+    auto body{parseStatement()};
+
+    return std::make_shared<AST::For>(init, condition, post, body, "");
+}
+
 std::shared_ptr<AST::Expression> Parser::parseConditionMiddle()
 {
     expect(TokenType::QUESTION_MARK);
@@ -572,11 +651,6 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
 
         return std::make_shared<AST::Return>(retVal);
     }
-    case TokenType::SEMICOLON:
-    {
-        takeToken();
-        return std::make_shared<AST::Null>();
-    }
     case TokenType::KEYWORD_IF:
     {
         takeToken();
@@ -617,14 +691,51 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
             auto stmt{parseStatement()};
             return std::make_shared<AST::LabeledStatement>(label, stmt);
         }
-        // Fall through to default to parse expression
+        else
+        {
+            auto innerExp{parseExp(0)};
+            expect(TokenType::SEMICOLON);
+
+            return std::make_shared<AST::ExpressionStmt>(innerExp);
+        }
+    }
+
+    case TokenType::KEYWORD_BREAK:
+    {
+        takeToken();
+        expect(TokenType::SEMICOLON);
+        return std::make_shared<AST::Break>("");
+    }
+    case TokenType::KEYWORD_CONTINUE:
+    {
+        takeToken();
+        expect(TokenType::SEMICOLON);
+        return std::make_shared<AST::Continue>("");
+    }
+    case TokenType::KEYWORD_WHILE:
+    {
+        return parseWhileLoop();
+    }
+    case TokenType::KEYWORD_DO:
+    {
+        return parseDoLoop();
+    }
+    case TokenType::KEYWORD_FOR:
+    {
+        return parseForLoop();
     }
 
     default:
-        auto innerExp{parseExp(0)};
-        expect(TokenType::SEMICOLON);
-
-        return std::make_shared<AST::ExpressionStmt>(innerExp);
+        // For Expression and Null statement
+        auto optExp{parseOptionalExp(TokenType::SEMICOLON)};
+        if (!optExp.has_value())
+        {
+            return std::make_shared<AST::Null>();
+        }
+        else
+        {
+            return std::make_shared<AST::ExpressionStmt>(optExp.value());
+        }
     }
 }
 

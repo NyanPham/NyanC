@@ -72,6 +72,21 @@ private:
         case AST::NodeType::Compound:
             visitCompound(static_cast<const AST::Compound &>(node), indent);
             break;
+        case AST::NodeType::Break:
+            visitBreak(static_cast<const AST::Break &>(node), indent);
+            break;
+        case AST::NodeType::Continue:
+            visitContinue(static_cast<const AST::Continue &>(node), indent);
+            break;
+        case AST::NodeType::While:
+            visitWhile(static_cast<const AST::While &>(node), indent);
+            break;
+        case AST::NodeType::DoWhile:
+            visitDoWhile(static_cast<const AST::DoWhile &>(node), indent);
+            break;
+        case AST::NodeType::For:
+            visitFor(static_cast<const AST::For &>(node), indent);
+            break;
         case AST::NodeType::Null:
             visitNull(static_cast<const AST::Null &>(node), indent);
             break;
@@ -414,7 +429,107 @@ private:
         {
             visit(*item);
         }
-        
+
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitBreak(const AST::Break &brk, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Break(" << brk.getId() << ")\n";
+    }
+    void visitContinue(const AST::Continue &cont, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Continue(" << cont.getId() << ")\n";
+    }
+    void visitWhile(const AST::While &whileLoop, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "While(\n";
+        increaseIndent();
+        std::cout << getIndent() << "condition=";
+        visit(*whileLoop.getCondition(), false);
+        std::cout << getIndent() << "body=";
+        visit(*whileLoop.getBody(), false);
+        std::cout << getIndent() << "id=\"" << whileLoop.getId() << "\"\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+    void visitDoWhile(const AST::DoWhile &doLoop, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "DoWhile(\n";
+        increaseIndent();
+        std::cout << getIndent() << "body=";
+        visit(*doLoop.getBody(), false);
+        std::cout << getIndent() << "condition=";
+        visit(*doLoop.getCondition(), false);
+        std::cout << getIndent() << "id=\"" << doLoop.getId() << "\"\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+    void visitFor(const AST::For &forLoop, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "For(\n";
+        increaseIndent();
+
+        std::cout << getIndent() << "init=";
+        auto &init = forLoop.getInit();
+
+        if (init->getType() == AST::NodeType::InitDecl)
+        {
+            visit(*static_cast<AST::InitDecl &>(*init).getDecl(), false);
+        }
+        else
+        {
+            auto &expInit = static_cast<AST::InitExp &>(*init);
+
+            if (expInit.hasExp())
+            {
+                visit(*expInit.getExp(), false);
+            }
+            else
+            {
+                std::cout << "None\n";
+            }
+        }
+
+        std::cout << getIndent() << "condition=";
+        if (forLoop.getCondition().has_value())
+        {
+            visit(**forLoop.getCondition(), false);
+        }
+        else
+        {
+            std::cout << "None\n";
+        }
+
+        std::cout << getIndent() << "post=";
+        if (forLoop.getPost().has_value())
+        {
+            visit(**forLoop.getPost(), false);
+        }
+        else
+        {
+            std::cout << "None\n";
+        }
+
+        std::cout << getIndent() << "body=";
+        visit(*forLoop.getBody(), false);
+        std::cout << getIndent() << "id=\"" << forLoop.getId() << "\"\n";
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }
@@ -461,7 +576,10 @@ private:
                       << getIndent() << "init=";
             visit(**decl.getInit(), false);
         }
-        std::cout << "\n";
+        else
+        {
+            std::cout << "\n";
+        }
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }

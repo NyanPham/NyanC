@@ -10,7 +10,7 @@
 
 /**
  * Check if the idenfitier is a keyword and convert it to the appropriate token
- * Recognized keywords are: int, void, return
+ * Recognized keywords are: int, void, return, if, else, goto, break, continue, while, do, for
  */
 Token convertIdentifer(const std::string &str, long pos)
 {
@@ -21,6 +21,11 @@ Token convertIdentifer(const std::string &str, long pos)
         {"if", TokenType::KEYWORD_IF},
         {"else", TokenType::KEYWORD_ELSE},
         {"goto", TokenType::KEYWORD_GOTO},
+        {"break", TokenType::KEYWORD_BREAK},
+        {"continue", TokenType::KEYWORD_CONTINUE},
+        {"while", TokenType::KEYWORD_WHILE},
+        {"do", TokenType::KEYWORD_DO},
+        {"for", TokenType::KEYWORD_FOR},
     };
 
     auto it = keywords.find(str);
@@ -50,7 +55,7 @@ void Lexer::defineTokenDefs()
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
         {std::regex("[0-9]+\\b"), convertConstant},
-        // The following 6 keywords match will not be reached after identifier, but still kept here for references.
+        // The following 11 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
@@ -74,6 +79,26 @@ void Lexer::defineTokenDefs()
         {std::regex("goto\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_GOTO, str, pos);
+         }},
+        {std::regex("break\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_BREAK, str, pos);
+         }},
+        {std::regex("continue\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_CONTINUE, str, pos);
+         }},
+        {std::regex("while\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_WHILE, str, pos);
+         }},
+        {std::regex("do\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_DO, str, pos);
+         }},
+        {std::regex("for\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_FOR, str, pos);
          }},
         {std::regex("\\("), [](const std::string &str, long pos) -> Token
          {

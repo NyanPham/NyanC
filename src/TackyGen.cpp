@@ -4,6 +4,16 @@
 #include "AST.h"
 #include "UniqueIds.h"
 
+std::string TackyGen::breakLabel(const std::string &id)
+{
+    return "break." + id;
+}
+
+std::string TackyGen::continueLabel(const std::string &id)
+{
+    return "continue." + id;
+}
+
 TACKY::UnaryOp TackyGen::convertUnop(AST::UnaryOp op)
 {
     switch (op)
@@ -65,6 +75,99 @@ TACKY::BinaryOp TackyGen::convertBinop(AST::BinaryOp op)
     default:
         throw std::runtime_error("Internal Error: Invalid Binary operator!");
     }
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForDoLoop(const std::shared_ptr<AST::DoWhile> &doLoop)
+{
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+    auto startLabel = UniqueIds::makeLabel("do_loop_start");
+    auto contLabel = continueLabel(doLoop->getId());
+    auto brkLabel = breakLabel(doLoop->getId());
+    auto bodyInsts = emitTackyForStatement(doLoop->getBody());
+    auto [evalCond, c] = emitTackyForExp(doLoop->getCondition());
+
+    insts.push_back(std::make_shared<TACKY::Label>(startLabel));
+    insts.insert(insts.end(), bodyInsts.begin(), bodyInsts.end());
+    insts.push_back(std::make_shared<TACKY::Label>(contLabel));
+    insts.insert(insts.end(), evalCond.begin(), evalCond.end());
+    insts.push_back(std::make_shared<TACKY::JumpIfNotZero>(c, startLabel));
+    insts.push_back(std::make_shared<TACKY::Label>(brkLabel));
+
+    return insts;
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForWhileLoop(const std::shared_ptr<AST::While> &whileLoop)
+{
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+    auto contLabel = continueLabel(whileLoop->getId());
+    auto brkLabel = breakLabel(whileLoop->getId());
+    auto [evalCond, c] = emitTackyForExp(whileLoop->getCondition());
+    auto bodyInsts = emitTackyForStatement(whileLoop->getBody());
+
+    insts.push_back(std::make_shared<TACKY::Label>(contLabel));
+    insts.insert(insts.end(), evalCond.begin(), evalCond.end());
+    insts.push_back(std::make_shared<TACKY::JumpIfZero>(c, brkLabel));
+    insts.insert(insts.end(), bodyInsts.begin(), bodyInsts.end());
+    insts.push_back(std::make_shared<TACKY::Jump>(contLabel));
+    insts.push_back(std::make_shared<TACKY::Label>(brkLabel));
+
+    return insts;
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop)
+{
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+    auto startLabel = UniqueIds::makeLabel("for_start");
+    auto contLabel = continueLabel(forLoop->getId());
+    auto brkLabel = breakLabel(forLoop->getId());
+    auto bodyInsts = emitTackyForStatement(forLoop->getBody());
+
+    auto forInitInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    if (auto initDecl = std::dynamic_pointer_cast<AST::InitDecl>(forLoop->getInit()))
+    {
+        auto innerInsts = emitTackyForDeclaration(initDecl->getDecl());
+        forInitInsts.insert(forInitInsts.end(), innerInsts.begin(), innerInsts.end());
+    }
+    else if (auto initExp = std::dynamic_pointer_cast<AST::InitExp>(forLoop->getInit()))
+    {
+        if (initExp->hasExp())
+        {
+            auto [innerInsts, _] = emitTackyForExp(initExp->getExp());
+            forInitInsts.insert(forInitInsts.end(), innerInsts.begin(), innerInsts.end());
+        }
+    }
+
+    auto testCondInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    if (forLoop->hasCondition())
+    {
+        auto [innerInsts, c] = emitTackyForExp(forLoop->getCondition().value());
+        testCondInsts.insert(testCondInsts.end(), innerInsts.begin(), innerInsts.end());
+        testCondInsts.push_back(std::make_shared<TACKY::JumpIfZero>(c, brkLabel));
+    }
+
+    auto postInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    if (forLoop->hasPost())
+    {
+        auto [innerInsts, _] = emitTackyForExp(forLoop->getPost().value());
+        postInsts.insert(postInsts.end(), innerInsts.begin(), innerInsts.end());
+    }
+
+    insts.insert(insts.end(), forInitInsts.begin(), forInitInsts.end());
+    insts.push_back(std::make_shared<TACKY::Label>(startLabel));
+    insts.insert(insts.end(), testCondInsts.begin(), testCondInsts.end());
+    insts.insert(insts.end(), bodyInsts.begin(), bodyInsts.end());
+    insts.push_back(std::make_shared<TACKY::Label>(contLabel));
+    insts.insert(insts.end(), postInsts.begin(), postInsts.end());
+    insts.push_back(std::make_shared<TACKY::Jump>(startLabel));
+    insts.push_back(std::make_shared<TACKY::Label>(brkLabel));
+
+    return insts;
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
@@ -446,6 +549,30 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
             std::make_shared<TACKY::Jump>(std::dynamic_pointer_cast<AST::Goto>(stmt)->getLabel()),
         };
     }
+    case AST::NodeType::Break:
+    {
+        return {
+            std::make_shared<TACKY::Jump>(breakLabel(std::dynamic_pointer_cast<AST::Break>(stmt)->getId())),
+        };
+    }
+    case AST::NodeType::Continue:
+    {
+        return {
+            std::make_shared<TACKY::Jump>(continueLabel(std::dynamic_pointer_cast<AST::Continue>(stmt)->getId())),
+        };
+    }
+    case AST::NodeType::While:
+    {
+        return emitTackyForWhileLoop(std::dynamic_pointer_cast<AST::While>(stmt));
+    }
+    case AST::NodeType::DoWhile:
+    {
+        return emitTackyForDoLoop(std::dynamic_pointer_cast<AST::DoWhile>(stmt));
+    }
+    case AST::NodeType::For:
+    {
+        return emitTackyForForLoop(std::dynamic_pointer_cast<AST::For>(stmt));
+    }
     case AST::NodeType::Null:
     {
         return {};
@@ -456,27 +583,30 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
 }
 
 std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForDeclaration(const std::shared_ptr<AST::Declaration> &decl)
+{
+
+    if (decl->getInit().has_value())
+    {
+        auto [evalAssignment, v] = emitTackyForExp(
+            std::make_shared<AST::Assignment>(
+                std::make_shared<AST::Var>(decl->getName()),
+                decl->getInit().value()));
+
+        return evalAssignment;
+    }
+
+    return {};
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
 TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem)
 {
     switch (blockItem->getType())
     {
     case AST::NodeType::Declaration:
     {
-        auto decl = std::dynamic_pointer_cast<AST::Declaration>(blockItem);
-
-        if (decl->getInit().has_value())
-        {
-            auto [evalAssignment, v] = emitTackyForExp(
-                std::make_shared<AST::Assignment>(
-                    std::make_shared<AST::Var>(decl->getName()),
-                    decl->getInit().value()));
-
-            return evalAssignment;
-        }
-        else
-        {
-            return {};
-        }
+        return emitTackyForDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem));
     }
     default:
         return emitTackyForStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem));

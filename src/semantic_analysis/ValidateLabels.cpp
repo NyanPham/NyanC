@@ -51,6 +51,24 @@ void ValidateLabels::collectLabelsFromStatement(
         }
         break;
     }
+    case AST::NodeType::While:
+    {
+        auto whileStmt = std::dynamic_pointer_cast<AST::While>(stmt);
+        collectLabelsFromStatement(definedLabels, usedLabels, whileStmt->getBody());
+        break;
+    }
+    case AST::NodeType::DoWhile:
+    {
+        auto doWhileStmt = std::dynamic_pointer_cast<AST::DoWhile>(stmt);
+        collectLabelsFromStatement(definedLabels, usedLabels, doWhileStmt->getBody());
+        break;
+    }
+    case AST::NodeType::For:
+    {
+        auto forStmt = std::dynamic_pointer_cast<AST::For>(stmt);
+        collectLabelsFromStatement(definedLabels, usedLabels, forStmt->getBody());
+        break;
+    }
     default:
         break;
     }

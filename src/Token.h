@@ -16,6 +16,11 @@ enum class TokenType
     KEYWORD_IF,
     KEYWORD_ELSE,
     KEYWORD_GOTO,
+    KEYWORD_BREAK,
+    KEYWORD_CONTINUE,
+    KEYWORD_WHILE,
+    KEYWORD_DO,
+    KEYWORD_FOR,
 
     // Punctuation
     OPEN_PAREN,

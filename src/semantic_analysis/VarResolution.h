@@ -23,6 +23,8 @@ public:
 
     VarMap copyVariableMap(const VarMap &varMap);
 
+    std::shared_ptr<AST::ForInit> resolveForInit(const std::shared_ptr<AST::ForInit> &forInit, VarMap &varMap);
+    std::optional<std::shared_ptr<AST::Expression>> resolveOptionalExp(const std::optional<std::shared_ptr<AST::Expression>> &optExp, VarMap &varMap);
     std::shared_ptr<AST::Expression> resolveExp(const std::shared_ptr<AST::Expression> &exp, VarMap &varMap);
     std::shared_ptr<AST::Statement> resolveStatement(const std::shared_ptr<AST::Statement> &stmt, VarMap &varMap);
     std::shared_ptr<AST::Declaration> resolveDeclaration(const std::shared_ptr<AST::Declaration> &decl, VarMap &varMap);
