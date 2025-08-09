@@ -27,6 +27,8 @@ public:
     std::shared_ptr<AST::Expression> parseFactor();
     std::shared_ptr<AST::Expression> parseExp(int minPrec = 0);
     std::shared_ptr<AST::Statement> parseStatement();
+    std::shared_ptr<AST::Declaration> parseDeclaration();
+    std::shared_ptr<AST::BlockItem> parseBlockItem();
     std::shared_ptr<AST::FunctionDefinition> parseFunctionDefinition();
     std::shared_ptr<AST::Program> parseProgram();
     std::shared_ptr<AST::Program> parse(const std::string &input);

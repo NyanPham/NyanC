@@ -5,6 +5,7 @@
 #include "Compiler.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "semantic_analysis/VarResolution.h"
 #include "TackyGen.h"
 #include "Emit.h"
 #include "backend/CodeGen.h"
@@ -74,13 +75,30 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             return 0;
         }
 
+        case Stage::Validate:
+        {
+            auto parser = Parser();
+            auto ast = parser.parse(input);
+
+            auto varResolution = VarResolution();
+            auto transformedAst = varResolution.resolve(ast);
+
+            if (debugging)
+                astPrettyPrint.print(*transformedAst);
+
+            return 0;
+        }
+
         case Stage::Tacky:
         {
             auto parser = Parser();
             auto ast = parser.parse(input);
 
+            auto varResolution = VarResolution();
+            auto transformedAst = varResolution.resolve(ast);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(ast);
+            auto tacky = tackyGen.gen(transformedAst);
 
             if (debugging)
                 tackyPrettyPrint.print(*tacky);
@@ -93,8 +111,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto parser = Parser();
             auto ast = parser.parse(input);
 
+            auto varResolution = VarResolution();
+            auto transformedAst = varResolution.resolve(ast);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(ast);
+            auto tacky = tackyGen.gen(transformedAst);
 
             auto codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -128,8 +149,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto parser = Parser();
             auto ast = parser.parse(input);
 
+            auto varResolution = VarResolution();
+            auto transformedAst = varResolution.resolve(ast);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(ast);
+            auto tacky = tackyGen.gen(transformedAst);
 
             auto codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);
@@ -153,8 +177,11 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto parser = Parser();
             auto ast = parser.parse(input);
 
+            auto varResolution = VarResolution();
+            auto transformedAst = varResolution.resolve(ast);
+
             auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(ast);
+            auto tacky = tackyGen.gen(transformedAst);
 
             CodeGen codeGen = CodeGen();
             auto asmProg = codeGen.gen(tacky);

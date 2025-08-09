@@ -160,6 +160,13 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
             {},
             std::make_shared<TACKY::Constant>(std::dynamic_pointer_cast<AST::Constant>(exp)->getValue())};
     }
+    case AST::NodeType::Var:
+    {
+        return {
+            {},
+            std::make_shared<TACKY::Var>(std::dynamic_pointer_cast<AST::Var>(exp)->getName()),
+        };
+    }
     case AST::NodeType::Unary:
     {
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
@@ -189,6 +196,25 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
             return emitBinaryExp(binary);
         }
     }
+    case AST::NodeType::Assignment:
+    {
+        auto assignment = std::dynamic_pointer_cast<AST::Assignment>(exp);
+
+        if (assignment->getLeftExp()->getType() != AST::NodeType::Var)
+        {
+            throw std::runtime_error("Internal error: Bad lvalue!");
+        }
+
+        auto [rhsInsts, rhsResult] = emitTackyForExp(assignment->getRightExp());
+        auto lhsVar = std::make_shared<TACKY::Var>(std::dynamic_pointer_cast<AST::Var>(assignment->getLeftExp())->getName());
+        rhsInsts.push_back(
+            std::make_shared<TACKY::Copy>(rhsResult, lhsVar));
+
+        return {
+            rhsInsts,
+            rhsResult,
+        };
+    }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");
     }
@@ -201,21 +227,69 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
     {
     case AST::NodeType::Return:
     {
-        auto [instructions, v] = emitTackyForExp(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue());
-        instructions.push_back(std::make_shared<TACKY::Return>(v));
+        auto [insts, v] = emitTackyForExp(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue());
+        insts.push_back(std::make_shared<TACKY::Return>(v));
 
-        return instructions;
+        return insts;
+    }
+    case AST::NodeType::ExpressionStmt:
+    {
+        auto [insts, v] = emitTackyForExp(std::dynamic_pointer_cast<AST::ExpressionStmt>(stmt)->getExp()); // Discard the evaluated v destination, we only care the side effect
+
+        return insts;
+    }
+    case AST::NodeType::Null:
+    {
+        return {};
     }
     default:
         throw std::invalid_argument("Internal error: Invalid statement");
     }
 }
 
+std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem)
+{
+    switch (blockItem->getType())
+    {
+    case AST::NodeType::Declaration:
+    {
+        auto decl = std::dynamic_pointer_cast<AST::Declaration>(blockItem);
+
+        if (decl->getInit().has_value())
+        {
+            auto [evalAssignment, v] = emitTackyForExp(
+                std::make_shared<AST::Assignment>(
+                    std::make_shared<AST::Var>(decl->getName()),
+                    decl->getInit().value()));
+
+            return evalAssignment;
+        }
+        else
+        {
+            return {};
+        }
+    }
+    default:
+        return emitTackyForStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem));
+    }
+}
+
 std::shared_ptr<TACKY::Function>
 TackyGen::emitTackyForFunction(const std::shared_ptr<AST::FunctionDefinition> &funDef)
 {
-    auto instructions = emitTackyForStatement(funDef->getBody());
-    return std::make_shared<TACKY::Function>(funDef->getName(), instructions);
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts = {};
+
+    for (auto &blockItem : funDef->getBody())
+    {
+        auto emitInsts = emitTackyForBlockItem(blockItem);
+        insts.insert(insts.end(), emitInsts.begin(), emitInsts.end());
+    }
+
+    auto extraReturn = std::make_shared<TACKY::Return>(std::make_shared<TACKY::Constant>(0));
+    insts.push_back(extraReturn);
+
+    return std::make_shared<TACKY::Function>(funDef->getName(), insts);
 }
 
 std::shared_ptr<TACKY::Program>

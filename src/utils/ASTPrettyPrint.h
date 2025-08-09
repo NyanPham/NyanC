@@ -45,6 +45,21 @@ private:
         case AST::NodeType::Binary:
             visitBinary(static_cast<const AST::Binary &>(node), indent);
             break;
+        case AST::NodeType::Var:
+            visitVar(static_cast<const AST::Var &>(node), indent);
+            break;
+        case AST::NodeType::Assignment:
+            visitAssignment(static_cast<const AST::Assignment &>(node), indent);
+            break;
+        case AST::NodeType::ExpressionStmt:
+            visitExpressionStmt(static_cast<const AST::ExpressionStmt &>(node), indent);
+            break;
+        case AST::NodeType::Null:
+            visitNull(static_cast<const AST::Null &>(node), indent);
+            break;
+        case AST::NodeType::Declaration:
+            visitDeclaration(static_cast<const AST::Declaration &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -65,8 +80,13 @@ private:
         std::cout << getIndent() << "Function(\n";
         increaseIndent();
         std::cout << getIndent() << "name=\"" << funcDef.getName() << "\",\n";
-        std::cout << getIndent() << "body=";
-        visit(*funcDef.getBody(), false);
+        std::cout << getIndent() << "body=\n";
+        increaseIndent();
+        for (const auto &item : funcDef.getBody())
+        {
+            visit(*item);
+        }
+        decreaseIndent();
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }
@@ -186,6 +206,63 @@ private:
         visit(*binary.getExp1(), false);
         std::cout << getIndent() << "right=";
         visit(*binary.getExp2(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitVar(const AST::Var &var, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Var(" << var.getName() << ")\n";
+    }
+
+    void visitAssignment(const AST::Assignment &assignment, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Assignment(\n";
+        increaseIndent();
+        std::cout << getIndent() << "left=";
+        visit(*assignment.getLeftExp(), false);
+        std::cout << getIndent() << "right=";
+        visit(*assignment.getRightExp(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitExpressionStmt(const AST::ExpressionStmt &exprStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "ExpressionStmt(\n";
+        increaseIndent();
+        visit(*exprStmt.getExp());
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitNull(const AST::Null &null, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Null()\n";
+    }
+
+    void visitDeclaration(const AST::Declaration &decl, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Declaration(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=\"" << decl.getName() << "\"";
+        if (decl.getInit())
+        {
+            std::cout << ",\n"
+                      << getIndent() << "init=";
+            visit(**decl.getInit(), false);
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }

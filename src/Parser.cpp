@@ -12,16 +12,19 @@
 EBNF for a subset of C:
 
 <program> ::= <function>
-<function> ::= "int" <identifier> "(" "void" ")" "{" <statement> "}"
-<statement> ::= "return" <exp> ";"
+<function> ::= "int" <identifier> "(" "void" ")" "{" { <block-item> } "}"
+<block-item> ::= <statement> | <declaration>
+<declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
+<statement> ::= "return" <exp> ";" | <exp> ";" | ";"
 <exp> ::= <factor> | <exp> <binop> <exp>
-<factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
+<factor> ::= <int> | <identifier> | <unop> <factor> | "(" <exp> ")"
 <unop> ::= "-" | "~" | "!"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
         | "&&" | "||"
         | "==" | "!=" | "<" | "<="
         | ">" | ">="
         | "&" | "^" | "|" | "<<" | ">>"
+        | "="
 <int> ::= ? An integer token ?
 <identifier> ::= ? An identifier token ?
 */
@@ -58,6 +61,8 @@ int Parser::getPrecedence(TokenType tokenType)
         return 10;
     case TokenType::LOGICAL_OR:
         return 5;
+    case TokenType::EQUAL_SIGN:
+        return 1;
     default:
         throw std::runtime_error("Internal Error: Token is not an operator to get precedence!");
     }
@@ -85,6 +90,7 @@ bool Parser::isBinop(TokenType tokenType)
     case TokenType::NOT_EQUAL:
     case TokenType::LOGICAL_AND:
     case TokenType::LOGICAL_OR:
+    case TokenType::EQUAL_SIGN:
         return true;
     default:
         return false;
@@ -273,6 +279,17 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
     case TokenType::CONSTANT:
         return parseConst();
 
+    case TokenType::IDENTIFIER:
+    {
+        takeToken();
+        if (std::holds_alternative<std::string>(nextToken->getValue()))
+        {
+            return std::make_shared<AST::Var>(std::get<std::string>(nextToken->getValue()));
+        }
+
+        raiseError("an identifier", "non-string value");
+    }
+
     case TokenType::HYPHEN:
     case TokenType::TILDE:
     case TokenType::BANG:
@@ -304,9 +321,19 @@ std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
 
     while (nextToken.has_value() && isBinop(nextToken->getType()) && getPrecedence(nextToken->getType()) >= minPrec)
     {
-        auto binOp{parseBinop()};
-        auto right{parseExp(getPrecedence(nextToken->getType()) + 1)};
-        left = std::make_shared<AST::Binary>(binOp, left, right);
+        if (nextToken->getType() == TokenType::EQUAL_SIGN)
+        {
+            takeToken();
+            auto right{parseExp(getPrecedence(nextToken->getType()))};
+            left = std::make_shared<AST::Assignment>(left, right);
+        }
+        else
+        {
+            auto binOp{parseBinop()};
+            auto right{parseExp(getPrecedence(nextToken->getType()) + 1)};
+            left = std::make_shared<AST::Binary>(binOp, left, right);
+        }
+
         nextToken = peekToken();
     }
 
@@ -315,11 +342,78 @@ std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
 
 std::shared_ptr<AST::Statement> Parser::parseStatement()
 {
-    expect(TokenType::KEYWORD_RETURN);
-    std::shared_ptr<AST::Expression> retVal{parseExp(0)};
-    expect(TokenType::SEMICOLON);
+    auto nextToken{peekToken()};
 
-    return std::make_shared<AST::Return>(retVal);
+    switch (nextToken->getType())
+    {
+    case TokenType::KEYWORD_RETURN:
+    {
+        takeToken();
+        auto retVal{parseExp(0)};
+        expect(TokenType::SEMICOLON);
+
+        return std::make_shared<AST::Return>(retVal);
+    }
+    case TokenType::SEMICOLON:
+    {
+        takeToken();
+
+        return std::make_shared<AST::Null>();
+    }
+    default:
+        auto innerExp{parseExp(0)};
+        expect(TokenType::SEMICOLON);
+
+        return std::make_shared<AST::ExpressionStmt>(innerExp);
+    }
+}
+
+std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
+{
+    expect(TokenType::KEYWORD_INT);
+    auto varName{parseIdentifier()};
+
+    std::optional<Token> token{takeToken()};
+
+    if (!token.has_value())
+    {
+        raiseError("a semicolon or initializer", "empty token");
+    }
+
+    switch (token->getType())
+    {
+    case TokenType::SEMICOLON:
+    {
+        std::optional<std::shared_ptr<AST::Expression>> init = std::nullopt;
+        return std::make_shared<AST::Declaration>(varName, init);
+    }
+    case TokenType::EQUAL_SIGN:
+    {
+        auto rhs = parseExp(0);
+        std::optional<std::shared_ptr<AST::Expression>> init = std::make_optional(rhs);
+        expect(TokenType::SEMICOLON);
+
+        return std::make_shared<AST::Declaration>(varName, init);
+    }
+    default:
+        raiseError("An initializer or semicolon", tokenTypeToString(token->getType()));
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()
+{
+    auto nextToken{peekToken()};
+
+    if (nextToken->getType() == TokenType::KEYWORD_INT)
+    {
+        return parseDeclaration();
+    }
+    else
+    {
+        return parseStatement();
+    }
 }
 
 std::shared_ptr<AST::FunctionDefinition> Parser::parseFunctionDefinition()
@@ -330,8 +424,18 @@ std::shared_ptr<AST::FunctionDefinition> Parser::parseFunctionDefinition()
     expect(TokenType::KEYWORD_VOID);
     expect(TokenType::CLOSE_PAREN);
     expect(TokenType::OPEN_BRACE);
-    std::shared_ptr<AST::Statement> body{parseStatement()};
-    expect(TokenType::CLOSE_BRACE);
+
+    std::vector<std::shared_ptr<AST::BlockItem>> body{};
+    auto nextToken{peekToken()};
+
+    while (nextToken->getType() != TokenType::CLOSE_BRACE)
+    {
+        auto blockItem{parseBlockItem()};
+        body.push_back(blockItem);
+        nextToken = peekToken();
+    }
+
+    takeToken();
 
     return std::make_shared<AST::FunctionDefinition>(name, body);
 }

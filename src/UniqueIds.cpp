@@ -21,3 +21,8 @@ std::string UniqueIds::makeLabel(const std::string &prefix)
 
     return std::move(name);
 }
+
+std::string UniqueIds::makeNamedTemporary(const std::string &name)
+{
+    return makeLabel(name);
+}

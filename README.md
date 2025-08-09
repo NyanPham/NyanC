@@ -145,8 +145,8 @@ The NyanC compiler processes C code in several stages:
 
 - [x] Generation of a Three-Address Code (TAC) Intermediate Representation (IR).
 - [x] Support for unary, binary arithmetic, bitwise, logical, and relational operators.
-- [ ] Local variables 
-- [ ] Implementation of a semantic analysis phase.
+- [x] Local variables 
+- [x] Implementation of a semantic analysis phase.
 - [ ] Support if statements and conditional expressions
 - [ ] Support C types (e.g., double, pointers, arrays, strings, structs, unions).
 - [ ] Optimization passes on the TAC IR and code generation.

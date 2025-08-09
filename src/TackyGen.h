@@ -20,6 +20,7 @@ public:
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitBinaryExp(const std::shared_ptr<AST::Binary> &binary);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitTackyForExp(const std::shared_ptr<AST::Expression> &exp);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt);
+    std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem);
     std::shared_ptr<TACKY::Function> emitTackyForFunction(const std::shared_ptr<AST::FunctionDefinition> &funDef);
     std::shared_ptr<TACKY::Program> gen(const std::shared_ptr<AST::Program> &prog);
 };

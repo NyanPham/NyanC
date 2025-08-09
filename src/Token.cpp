@@ -10,7 +10,7 @@ std::string Token::toString() const
         else
             return std::to_string(arg); }, _value);
 
-    return "Token(type=" + tokenTypeToString(_type) + ", value=" + valueStr + ", pos=" + std::to_string(_pos) + ")";
+    return "Token(type=" + tokenTypeToString(_type) + ", value=\"" + valueStr + "\", pos=" + std::to_string(_pos) + ")";
 }
 
 std::string tokenTypeToString(TokenType type)
@@ -79,6 +79,8 @@ std::string tokenTypeToString(TokenType type)
         return "GREATER_THAN";
     case TokenType::GREATER_OR_EQUAL:
         return "GREATER_OR_EQUAL";
+    case TokenType::EQUAL_SIGN:
+        return "EQUAL_SIGN";
     default:
         return "UNKNOWN";
     }

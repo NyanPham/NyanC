@@ -166,6 +166,10 @@ void Lexer::defineTokenDefs()
          {
              return Token(TokenType::GREATER_OR_EQUAL, str, pos);
          }},
+        {std::regex("="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::EQUAL_SIGN, str, pos);
+         }},
     };
 };
 

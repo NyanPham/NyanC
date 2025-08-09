@@ -14,6 +14,10 @@ Stage parseStage(const std::string &stageStr)
     {
         return Stage::Parsing;
     }
+    else if (stageStr == "--validate")
+    {
+        return Stage::Validate;
+    }
     else if (stageStr == "--tacky")
     {
         return Stage::Tacky;

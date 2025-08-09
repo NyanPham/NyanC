@@ -3,14 +3,20 @@
 
 #include <string>
 #include <memory>
+#include <optional>
+#include <vector>
 
 /*
 program = Program(function_definition)
-function_definition = Function(identifier name, statement body)
-statement = Return(exp)
+function_definition = Function(identifier name, block_item* body)
+block_item = S(Statement) | D(Declaration)
+declaration = Declaration(identifier name, exp? init)
+statement = Return(exp) | Expression(exp) | Null
 exp = Constant(int)
+    | Var(identifier)
     | Unary(unary_operator, exp)
     | Binary(binary_operator, exp, exp)
+    | Assignment(exp, exp)
 unary_operator = Complement | Negate | Not
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -22,11 +28,17 @@ namespace AST
 {
     class Node;
     class Constant;
+    class Var;
+    class Assignment;
     class Binary;
     class Unary;
     class Return;
+    class ExpressionStmt;
+    class Null;
     class Expression;
     class Statement;
+    class Declaration;
+    class BlockItem;
     class FunctionDefinition;
     class Program;
 
@@ -34,10 +46,15 @@ namespace AST
     {
         Program,
         FunctionDefinition,
+        Declaration,
         Return,
+        ExpressionStmt,
+        Null,
         Constant,
         Unary,
         Binary,
+        Var,
+        Assignment,
     };
 
     enum class UnaryOp
@@ -87,11 +104,34 @@ namespace AST
         virtual ~Expression() = default;
     };
 
-    class Statement : public Node
+    class BlockItem : public Node
     {
     public:
-        Statement(NodeType type) : Node(type) {}
+        BlockItem(NodeType type) : Node(type) {}
+        virtual ~BlockItem() = default;
+    };
+
+    class Statement : public BlockItem
+    {
+    public:
+        Statement(NodeType type) : BlockItem(type) {}
         virtual ~Statement() = default;
+    };
+
+    class Declaration : public BlockItem
+    {
+    public:
+        Declaration(std::string name, std::optional<std::shared_ptr<Expression>> init)
+            : BlockItem(NodeType::Declaration), _name{std::move(name)}, _init{std::move(init)}
+        {
+        }
+
+        const std::string &getName() const { return _name; }
+        const std::optional<std::shared_ptr<Expression>> &getInit() const { return _init; }
+
+    private:
+        std::string _name;
+        std::optional<std::shared_ptr<Expression>> _init;
     };
 
     class Constant : public Expression
@@ -135,6 +175,32 @@ namespace AST
         std::shared_ptr<Expression> _exp;
     };
 
+    class Var : public Expression
+    {
+    public:
+        Var(const std::string &name) : Expression(NodeType::Var), _name{std::move(name)} {}
+        auto getName() const { return _name; }
+
+    private:
+        std::string _name;
+    };
+
+    class Assignment : public Expression
+    {
+    public:
+        Assignment(std::shared_ptr<Expression> left, std::shared_ptr<Expression> right)
+            : Expression(NodeType::Assignment), _left{std::move(left)}, _right{std::move(right)}
+        {
+        }
+
+        auto getLeftExp() const { return _left; }
+        auto getRightExp() const { return _right; }
+
+    private:
+        std::shared_ptr<Expression> _left;
+        std::shared_ptr<Expression> _right;
+    };
+
     class Return : public Statement
     {
     public:
@@ -146,17 +212,35 @@ namespace AST
         std::shared_ptr<Expression> _value;
     };
 
+    class ExpressionStmt : public Statement
+    {
+    public:
+        ExpressionStmt(std::shared_ptr<Expression> exp)
+            : Statement(NodeType::ExpressionStmt), _exp{std::move(exp)} {}
+
+        const std::shared_ptr<Expression> &getExp() const { return _exp; }
+
+    private:
+        std::shared_ptr<Expression> _exp;
+    };
+
+    class Null : public Statement
+    {
+    public:
+        Null() : Statement(NodeType::Null) {}
+    };
+
     class FunctionDefinition : public Node
     {
     public:
-        FunctionDefinition(const std::string &name, std::shared_ptr<Statement> body)
-            : Node(NodeType::FunctionDefinition), _name{name}, _body{body} {}
+        FunctionDefinition(const std::string &name, std::vector<std::shared_ptr<BlockItem>> body)
+            : Node(NodeType::FunctionDefinition), _name{name}, _body{std::move(body)} {}
         const std::string &getName() const { return _name; }
-        std::shared_ptr<Statement> getBody() const { return _body; }
+        const std::vector<std::shared_ptr<BlockItem>> &getBody() const { return _body; }
 
     private:
         std::string _name;
-        std::shared_ptr<Statement> _body;
+        std::vector<std::shared_ptr<BlockItem>> _body;
     };
 
     class Program : public Node

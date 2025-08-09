@@ -43,6 +43,7 @@ enum class TokenType
     PIPE,
     DOUBLE_LEFT_BRACKET,
     DOUBLE_RIGHT_BRACKET,
+    EQUAL_SIGN,
 };
 
 using TokenValue = std::variant<std::string, int, long>;
