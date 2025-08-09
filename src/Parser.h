@@ -26,6 +26,7 @@ public:
     AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
+    std::shared_ptr<AST::Expression> parseConditionMiddle();
     std::shared_ptr<AST::Expression> parsePostfixHelper(std::shared_ptr<AST::Expression> primary);
     std::shared_ptr<AST::Expression> parsePostfixExp();
     std::shared_ptr<AST::Expression> parsePrimaryExp();

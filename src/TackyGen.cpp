@@ -68,6 +68,36 @@ TACKY::BinaryOp TackyGen::convertBinop(AST::BinaryOp op)
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
+TackyGen::emitConditionalExp(const std::shared_ptr<AST::Conditional> &conditional)
+{
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts{};
+
+    auto [evalCond, v] = emitTackyForExp(conditional->getCondition());
+    auto [evalV1, v1] = emitTackyForExp(conditional->getThen());
+    auto [evalV2, v2] = emitTackyForExp(conditional->getElse());
+
+    auto e2Label = UniqueIds::makeLabel("conditional_else");
+    auto endLabel = UniqueIds::makeLabel("conditional_end");
+    auto dstName = UniqueIds::makeTemporary();
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+
+    insts.insert(insts.end(), evalCond.begin(), evalCond.end());
+    insts.push_back(std::make_shared<TACKY::JumpIfZero>(v, e2Label));
+    insts.insert(insts.end(), evalV1.begin(), evalV1.end());
+    insts.push_back(std::make_shared<TACKY::Copy>(v1, dst));
+    insts.push_back(std::make_shared<TACKY::Jump>(endLabel));
+    insts.push_back(std::make_shared<TACKY::Label>(e2Label));
+    insts.insert(insts.end(), evalV2.begin(), evalV2.end());
+    insts.push_back(std::make_shared<TACKY::Copy>(v2, dst));
+    insts.push_back(std::make_shared<TACKY::Label>(endLabel));
+
+    return {
+        insts,
+        dst,
+    };
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
 TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var)
 {
     auto dstName = UniqueIds::makeTemporary();
@@ -319,9 +349,51 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
 
         return emitPostfix(AST::BinaryOp::Subtract, std::dynamic_pointer_cast<AST::Var>(postfixDecr->getExp()));
     }
+    case AST::NodeType::Conditional:
+    {
+        return emitConditionalExp(std::dynamic_pointer_cast<AST::Conditional>(exp));
+    }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");
     }
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitTackyForIfStatement(const std::shared_ptr<AST::If> &ifStmt)
+{
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts{};
+
+    if (!ifStmt->getElseClause().has_value())
+    {
+        auto endLabel = UniqueIds::makeLabel("if_end");
+
+        auto [evalCond, c] = emitTackyForExp(ifStmt->getCondition());
+        auto evalThen = emitTackyForStatement(ifStmt->getThenClause());
+
+        insts.insert(insts.end(), evalCond.begin(), evalCond.end());
+        insts.push_back(std::make_shared<TACKY::JumpIfZero>(c, endLabel));
+        insts.insert(insts.end(), evalThen.begin(), evalThen.end());
+        insts.push_back(std::make_shared<TACKY::Label>(endLabel));
+    }
+    else
+    {
+        auto elseLabel = UniqueIds::makeLabel("if_else");
+        auto endLabel = UniqueIds::makeLabel("if_end");
+
+        auto [evalCond, c] = emitTackyForExp(ifStmt->getCondition());
+        auto evalThen = emitTackyForStatement(ifStmt->getThenClause());
+        auto evalElse = emitTackyForStatement(ifStmt->getElseClause().value());
+
+        insts.insert(insts.end(), evalCond.begin(), evalCond.end());
+        insts.push_back(std::make_shared<TACKY::JumpIfZero>(c, elseLabel));
+        insts.insert(insts.end(), evalThen.begin(), evalThen.end());
+        insts.push_back(std::make_shared<TACKY::Jump>(endLabel));
+        insts.push_back(std::make_shared<TACKY::Label>(elseLabel));
+        insts.insert(insts.end(), evalElse.begin(), evalElse.end());
+        insts.push_back(std::make_shared<TACKY::Label>(endLabel));
+    }
+
+    return insts;
 }
 
 std::vector<std::shared_ptr<TACKY::Instruction>>
@@ -341,6 +413,10 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
         auto [insts, v] = emitTackyForExp(std::dynamic_pointer_cast<AST::ExpressionStmt>(stmt)->getExp()); // Discard the evaluated v destination, we only care the side effect
 
         return insts;
+    }
+    case AST::NodeType::If:
+    {
+        return emitTackyForIfStatement(std::dynamic_pointer_cast<AST::If>(stmt));
     }
     case AST::NodeType::Null:
     {

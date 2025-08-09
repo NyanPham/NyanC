@@ -17,7 +17,10 @@ Token convertIdentifer(const std::string &str, long pos)
     static const std::unordered_map<std::string, TokenType> keywords = {
         {"int", TokenType::KEYWORD_INT},
         {"void", TokenType::KEYWORD_VOID},
-        {"return", TokenType::KEYWORD_RETURN}};
+        {"return", TokenType::KEYWORD_RETURN},
+        {"if", TokenType::KEYWORD_IF},
+        {"else", TokenType::KEYWORD_ELSE},
+    };
 
     auto it = keywords.find(str);
     if (it != keywords.end())
@@ -46,7 +49,7 @@ void Lexer::defineTokenDefs()
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
         {std::regex("[0-9]+\\b"), convertConstant},
-        // The following 3 keywords match will not be reached after identifier, but still kept here for references.
+        // The following 5 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
@@ -58,6 +61,14 @@ void Lexer::defineTokenDefs()
         {std::regex("return\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_RETURN, str, pos);
+         }},
+        {std::regex("if\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_IF, str, pos);
+         }},
+        {std::regex("else\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_ELSE, str, pos);
          }},
         {std::regex("\\("), [](const std::string &str, long pos) -> Token
          {
@@ -213,6 +224,14 @@ void Lexer::defineTokenDefs()
         {std::regex(">>="), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::DOUBLE_RIGHT_BRACKET_EQUAL, str, pos);
+         }},
+        {std::regex("\\?"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::QUESTION_MARK, str, pos);
+         }},
+        {std::regex("\\:"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::COLON, str, pos);
          }},
     };
 };

@@ -60,8 +60,14 @@ private:
         case AST::NodeType::PostfixDecr:
             visitPostfixDecr(static_cast<const AST::PostfixDecr &>(node), indent);
             break;
+        case AST::NodeType::Conditional:
+            visitConditional(static_cast<const AST::Conditional &>(node), indent);
+            break;
         case AST::NodeType::ExpressionStmt:
             visitExpressionStmt(static_cast<const AST::ExpressionStmt &>(node), indent);
+            break;
+        case AST::NodeType::If:
+            visitIf(static_cast<const AST::If &>(node), indent);
             break;
         case AST::NodeType::Null:
             visitNull(static_cast<const AST::Null &>(node), indent);
@@ -336,6 +342,24 @@ private:
         std::cout << getIndent() << ")\n";
     }
 
+    void visitConditional(const AST::Conditional &conditional, bool indent = true)
+    {
+        if (indent)
+        {
+            std::cout << getIndent();
+        }
+        std::cout << "Conditional(\n";
+        increaseIndent();
+        std::cout << getIndent() << "condition=";
+        visit(*conditional.getCondition(), false);
+        std::cout << getIndent() << "then=";
+        visit(*conditional.getThen(), false);
+        std::cout << getIndent() << "else=";
+        visit(*conditional.getElse(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
     void visitExpressionStmt(const AST::ExpressionStmt &exprStmt, bool indent = true)
     {
         if (indent)
@@ -343,6 +367,28 @@ private:
         std::cout << "ExpressionStmt(\n";
         increaseIndent();
         visit(*exprStmt.getExp());
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitIf(const AST::If &ifStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "If(\n";
+        increaseIndent();
+        std::cout << getIndent() << "condition=";
+        visit(*ifStmt.getCondition(), false);
+        std::cout << getIndent() << "thenClause=";
+        visit(*ifStmt.getThenClause(), false);
+
+        if (ifStmt.getElseClause().has_value())
+        {
+            std::cout << getIndent() << "elseClause=";
+            visit(**ifStmt.getElseClause(), false);
+        }
+
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }

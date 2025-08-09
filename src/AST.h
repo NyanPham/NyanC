@@ -11,7 +11,10 @@ program = Program(function_definition)
 function_definition = Function(identifier name, block_item* body)
 block_item = S(Statement) | D(Declaration)
 declaration = Declaration(identifier name, exp? init)
-statement = Return(exp) | Expression(exp) | Null
+statement = Return(exp)
+    | Expression(exp)
+    | If(exp condition, statement then, statement? else)
+    | Null
 exp = Constant(int)
     | Var(identifier)
     | Unary(unary_operator, exp)
@@ -20,6 +23,7 @@ exp = Constant(int)
     | CompoundAssignment(binary_operator, exp, exp)
     | PostfixIncr(exp)
     | PostfixDecr(exp)
+    | Conditional(exp condition, exp then, exp else)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -36,10 +40,12 @@ namespace AST
     class CompoundAssignment;
     class PostfixIncr;
     class PostfixDecr;
+    class Conditional;
     class Binary;
     class Unary;
     class Return;
     class ExpressionStmt;
+    class If;
     class Null;
     class Expression;
     class Statement;
@@ -55,6 +61,7 @@ namespace AST
         Declaration,
         Return,
         ExpressionStmt,
+        If,
         Null,
         Constant,
         Unary,
@@ -64,6 +71,7 @@ namespace AST
         CompoundAssignment,
         PostfixIncr,
         PostfixDecr,
+        Conditional,
     };
 
     enum class UnaryOp
@@ -258,6 +266,22 @@ namespace AST
         std::shared_ptr<Expression> _exp;
     };
 
+    class Conditional : public Expression
+    {
+    public:
+        Conditional(std::shared_ptr<Expression> condition, std::shared_ptr<Expression> then, std::shared_ptr<Expression> elseExp)
+            : Expression(NodeType::Conditional), _condition{condition}, _then{then}, _else { elseExp } {}
+
+        auto getCondition() const { return _condition; }
+        auto getThen() const { return _then; }
+        auto getElse() const { return _else; }
+
+    private:
+        std::shared_ptr<Expression> _condition;
+        std::shared_ptr<Expression> _then;
+        std::shared_ptr<Expression> _else;
+    };
+
     class Return : public Statement
     {
     public:
@@ -279,6 +303,22 @@ namespace AST
 
     private:
         std::shared_ptr<Expression> _exp;
+    };
+
+    class If : public Statement
+    {
+    public:
+        If(std::shared_ptr<AST::Expression> condition, std::shared_ptr<AST::Statement> thenClause, std::optional<std::shared_ptr<AST::Statement>> elseClause)
+            : Statement(NodeType::If), _condition{condition}, _thenClause{thenClause}, _elseClause{elseClause} {}
+
+        auto getCondition() const { return _condition; }
+        auto getThenClause() const { return _thenClause; }
+        auto getElseClause() const { return _elseClause; }
+
+    private:
+        std::shared_ptr<AST::Expression> _condition;
+        std::shared_ptr<AST::Statement> _thenClause;
+        std::optional<std::shared_ptr<AST::Statement>> _elseClause;
     };
 
     class Null : public Statement

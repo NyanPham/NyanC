@@ -27,6 +27,10 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_VOID";
     case TokenType::KEYWORD_RETURN:
         return "KEYWORD_RETURN";
+    case TokenType::KEYWORD_IF:
+        return "KEYWORD_IF";
+    case TokenType::KEYWORD_ELSE:
+        return "KEYWORD_ELSE";
     case TokenType::OPEN_PAREN:
         return "OPEN_PAREN";
     case TokenType::CLOSE_PAREN:
@@ -103,6 +107,10 @@ std::string tokenTypeToString(TokenType type)
         return "DOUBLE_LEFT_BRACKET_EQUAL";
     case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
         return "DOUBLE_RIGHT_BRACKET_EQUAL";
+    case TokenType::QUESTION_MARK:
+        return "QUESTION_MARK";
+    case TokenType::COLON:
+        return "COLON";
     default:
         return "UNKNOWN";
     }

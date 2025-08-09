@@ -13,6 +13,8 @@ enum class TokenType
     KEYWORD_INT,
     KEYWORD_VOID,
     KEYWORD_RETURN,
+    KEYWORD_IF,
+    KEYWORD_ELSE,
 
     // Punctuation
     OPEN_PAREN,
@@ -55,6 +57,8 @@ enum class TokenType
     CARET_EQUAL,
     DOUBLE_LEFT_BRACKET_EQUAL,
     DOUBLE_RIGHT_BRACKET_EQUAL,
+    QUESTION_MARK,
+    COLON,
 };
 
 using TokenValue = std::variant<std::string, int, long>;

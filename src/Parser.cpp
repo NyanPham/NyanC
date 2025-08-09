@@ -15,8 +15,11 @@ EBNF for a subset of C:
 <function> ::= "int" <identifier> "(" "void" ")" "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
 <declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
-<statement> ::= "return" <exp> ";" | <exp> ";" | ";"
-<exp> ::= <factor> | <exp> <binop> <exp>
+<statement> ::= "return" <exp> ";"
+            | <exp> ";"
+            | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+            | ";"
+<exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
 <factor> ::=  <unop> <factor> | <postfix-exp>
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
 <primary-exp> ::= <int> | <identifier> | "(" <exp> ")"
@@ -68,6 +71,8 @@ int Parser::getPrecedence(TokenType tokenType)
         return 10;
     case TokenType::LOGICAL_OR:
         return 5;
+    case TokenType::QUESTION_MARK:
+        return 3;
     case TokenType::EQUAL_SIGN:
     case TokenType::PLUS_EQUAL:
     case TokenType::HYPHEN_EQUAL:
@@ -118,6 +123,7 @@ bool Parser::isBinop(TokenType tokenType)
     case TokenType::CARET_EQUAL:
     case TokenType::DOUBLE_LEFT_BRACKET_EQUAL:
     case TokenType::DOUBLE_RIGHT_BRACKET_EQUAL:
+    case TokenType::QUESTION_MARK: // Special case
         return true;
     default:
         return false;
@@ -388,6 +394,15 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
+std::shared_ptr<AST::Expression> Parser::parseConditionMiddle()
+{
+    expect(TokenType::QUESTION_MARK);
+    auto exp = parseExp(0);
+    expect(TokenType::COLON);
+
+    return exp;
+}
+
 std::shared_ptr<AST::Expression> Parser::parsePostfixHelper(std::shared_ptr<AST::Expression> primaryExp)
 {
     auto nextToken{peekToken()};
@@ -504,6 +519,12 @@ std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
                 left = std::make_shared<AST::CompoundAssignment>(op.value(), left, right);
             }
         }
+        else if (nextToken->getType() == TokenType::QUESTION_MARK)
+        {
+            auto middle = parseConditionMiddle();
+            auto right = parseExp(getPrecedence(nextToken->getType()));
+            left = std::make_shared<AST::Conditional>(left, middle, right);
+        }
         else
         {
             auto binOp{parseBinop()};
@@ -536,6 +557,23 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
         takeToken();
 
         return std::make_shared<AST::Null>();
+    }
+    case TokenType::KEYWORD_IF:
+    {
+        takeToken();
+        expect(TokenType::OPEN_PAREN);
+        auto condition = parseExp(0);
+        expect(TokenType::CLOSE_PAREN);
+        auto thenClause = parseStatement();
+        std::optional<std::shared_ptr<AST::Statement>> elseClause = std::nullopt;
+
+        if (peekToken()->getType() == TokenType::KEYWORD_ELSE)
+        {
+            takeToken();
+            elseClause = std::make_optional(parseStatement());
+        }
+
+        return std::make_shared<AST::If>(condition, thenClause, elseClause);
     }
     default:
         auto innerExp{parseExp(0)};

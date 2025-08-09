@@ -89,6 +89,11 @@ std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr
     {
         return exp;
     }
+    case AST::NodeType::Conditional:
+    {
+        auto conditional = std::dynamic_pointer_cast<AST::Conditional>(exp);
+        return std::make_shared<AST::Conditional>(resolveExp(conditional->getCondition(), varMap), resolveExp(conditional->getThen(), varMap), resolveExp(conditional->getElse(), varMap));
+    }
     default:
         throw std::runtime_error("Internal error: Unknown expression!");
     }
@@ -102,6 +107,15 @@ std::shared_ptr<AST::Statement> VarResolution::resolveStatement(const std::share
         return std::make_shared<AST::Return>(resolveExp(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue(), varMap));
     case AST::NodeType::ExpressionStmt:
         return std::make_shared<AST::ExpressionStmt>(resolveExp(std::dynamic_pointer_cast<AST::ExpressionStmt>(stmt)->getExp(), varMap));
+    case AST::NodeType::If:
+    {
+        auto ifStmt = std::dynamic_pointer_cast<AST::If>(stmt);
+
+        return std::make_shared<AST::If>(
+            resolveExp(ifStmt->getCondition(), varMap),
+            resolveStatement(ifStmt->getThenClause(), varMap),
+            ifStmt->getElseClause().has_value() ? std::make_optional(resolveStatement(ifStmt->getElseClause().value(), varMap)) : std::nullopt);
+    }
     case AST::NodeType::Null:
         return stmt;
     default:
