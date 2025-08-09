@@ -15,6 +15,7 @@ enum class TokenType
     KEYWORD_RETURN,
     KEYWORD_IF,
     KEYWORD_ELSE,
+    KEYWORD_GOTO,
 
     // Punctuation
     OPEN_PAREN,

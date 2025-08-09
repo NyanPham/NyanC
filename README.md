@@ -147,7 +147,8 @@ The NyanC compiler processes C code in several stages:
 - [x] Support for unary, binary arithmetic, bitwise, logical, and relational operators.
 - [x] Local variables 
 - [x] Implementation of a semantic analysis phase.
-- [ ] Support if statements and conditional expressions
+- [x] Support if statements and conditional expressions
+- [x] Support goto statements and labels
 - [ ] Support C types (e.g., double, pointers, arrays, strings, structs, unions).
 - [ ] Optimization passes on the TAC IR and code generation.
 

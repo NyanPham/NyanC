@@ -20,6 +20,7 @@ Token convertIdentifer(const std::string &str, long pos)
         {"return", TokenType::KEYWORD_RETURN},
         {"if", TokenType::KEYWORD_IF},
         {"else", TokenType::KEYWORD_ELSE},
+        {"goto", TokenType::KEYWORD_GOTO},
     };
 
     auto it = keywords.find(str);
@@ -49,7 +50,7 @@ void Lexer::defineTokenDefs()
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
         {std::regex("[0-9]+\\b"), convertConstant},
-        // The following 5 keywords match will not be reached after identifier, but still kept here for references.
+        // The following 6 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
@@ -69,6 +70,10 @@ void Lexer::defineTokenDefs()
         {std::regex("else\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_ELSE, str, pos);
+         }},
+        {std::regex("goto\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_GOTO, str, pos);
          }},
         {std::regex("\\("), [](const std::string &str, long pos) -> Token
          {
@@ -324,9 +329,9 @@ std::optional<Token> Lexer::peek()
     return nextToken;
 }
 
-std::vector<Token> Lexer::npeek(int n)
+std::vector<std::optional<Token>> Lexer::npeek(int n)
 {
-    std::vector<Token> tokens;
+    std::vector<std::optional<Token>> tokens;
     long savedPos = _pos;
 
     for (int i = 0; i < n; ++i)
@@ -335,7 +340,7 @@ std::vector<Token> Lexer::npeek(int n)
         if (nextToken == std::nullopt)
             break;
 
-        tokens.push_back(*nextToken);
+        tokens.push_back(nextToken);
     }
 
     _pos = savedPos;

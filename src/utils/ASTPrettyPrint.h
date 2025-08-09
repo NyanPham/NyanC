@@ -72,6 +72,12 @@ private:
         case AST::NodeType::Null:
             visitNull(static_cast<const AST::Null &>(node), indent);
             break;
+        case AST::NodeType::LabeledStatement:
+            visitLabeledStatement(static_cast<const AST::LabeledStatement &>(node), indent);
+            break;
+        case AST::NodeType::Goto:
+            visitGoto(static_cast<const AST::Goto &>(node), indent);
+            break;
         case AST::NodeType::Declaration:
             visitDeclaration(static_cast<const AST::Declaration &>(node), indent);
             break;
@@ -398,6 +404,28 @@ private:
         if (indent)
             std::cout << getIndent();
         std::cout << "Null()\n";
+    }
+
+    void visitLabeledStatement(const AST::LabeledStatement &labeledStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "LabeledStatement(\n";
+        increaseIndent();
+        std::cout << getIndent() << "label=" << labeledStmt.getLabel() << '\n';
+        std::cout << getIndent() << "statement=";
+        visit(*labeledStmt.getStatement(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitGoto(const AST::Goto &gotoStmt, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Goto(" << gotoStmt.getLabel() << ")\n";
     }
 
     void visitDeclaration(const AST::Declaration &decl, bool indent = true)

@@ -26,7 +26,7 @@ public:
     void skipWhitespaceAndComments();
     std::optional<Token> token();
     std::optional<Token> peek();
-    std::vector<Token> npeek(int n);
+    std::vector<std::optional<Token>> npeek(int n);
     std::vector<Token> tokens();
     const std::string_view getInput() const;
 

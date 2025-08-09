@@ -116,6 +116,12 @@ std::shared_ptr<AST::Statement> VarResolution::resolveStatement(const std::share
             resolveStatement(ifStmt->getThenClause(), varMap),
             ifStmt->getElseClause().has_value() ? std::make_optional(resolveStatement(ifStmt->getElseClause().value(), varMap)) : std::nullopt);
     }
+    case AST::NodeType::LabeledStatement:
+    {
+        auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
+        return std::make_shared<AST::LabeledStatement>(labeledStmt->getLabel(), resolveStatement(labeledStmt->getStatement(), varMap));
+    }
+    case AST::NodeType::Goto:
     case AST::NodeType::Null:
         return stmt;
     default:

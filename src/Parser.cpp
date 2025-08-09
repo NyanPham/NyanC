@@ -19,6 +19,8 @@ EBNF for a subset of C:
             | <exp> ";"
             | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
             | ";"
+            | <identifier> ":" <statement>
+            | "goto" <identifier> ";"
 <exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
 <factor> ::=  <unop> <factor> | <postfix-exp>
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
@@ -248,7 +250,7 @@ std::optional<Token> Parser::peekToken()
     return _lexer.peek();
 }
 
-std::vector<Token> Parser::peekTokens(int n)
+std::vector<std::optional<Token>> Parser::peekTokens(int n)
 {
     return _lexer.npeek(n);
 }
@@ -540,9 +542,9 @@ std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
 
 std::shared_ptr<AST::Statement> Parser::parseStatement()
 {
-    auto nextToken{peekToken()};
+    std::vector<std::optional<Token>> nextTokens{peekTokens(2)};
 
-    switch (nextToken->getType())
+    switch (nextTokens[0]->getType())
     {
     case TokenType::KEYWORD_RETURN:
     {
@@ -575,6 +577,28 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
 
         return std::make_shared<AST::If>(condition, thenClause, elseClause);
     }
+    case TokenType::KEYWORD_GOTO:
+    {
+        takeToken();
+        auto label{parseIdentifier()};
+        expect(TokenType::SEMICOLON);
+
+        return std::make_shared<AST::Goto>(label);
+    }
+
+    case TokenType::IDENTIFIER:
+    {
+        if (nextTokens[1]->getType() == TokenType::COLON)
+        {
+            auto label{parseIdentifier()}; // Take the label from identifier
+            takeToken();                   // Take the colon
+
+            auto stmt{parseStatement()};
+            return std::make_shared<AST::LabeledStatement>(label, stmt);
+        }
+        // Fall through to default to parse expression
+    }
+
     default:
         auto innerExp{parseExp(0)};
         expect(TokenType::SEMICOLON);

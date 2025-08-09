@@ -6,6 +6,7 @@
 #include "Lexer.h"
 #include "Parser.h"
 #include "semantic_analysis/VarResolution.h"
+#include "semantic_analysis/ValidateLabels.h"
 #include "TackyGen.h"
 #include "Emit.h"
 #include "backend/CodeGen.h"
@@ -83,6 +84,9 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto varResolution = VarResolution();
             auto transformedAst = varResolution.resolve(ast);
 
+            auto validateLabels = ValidateLabels();
+            validateLabels.validateLabels(transformedAst);
+            
             if (debugging)
                 astPrettyPrint.print(*transformedAst);
 
@@ -96,6 +100,9 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
 
             auto varResolution = VarResolution();
             auto transformedAst = varResolution.resolve(ast);
+
+            auto validateLabels = ValidateLabels();
+            validateLabels.validateLabels(transformedAst);
 
             auto tackyGen = TackyGen();
             auto tacky = tackyGen.gen(transformedAst);
@@ -113,6 +120,9 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
 
             auto varResolution = VarResolution();
             auto transformedAst = varResolution.resolve(ast);
+
+            auto validateLabels = ValidateLabels();
+            validateLabels.validateLabels(transformedAst);
 
             auto tackyGen = TackyGen();
             auto tacky = tackyGen.gen(transformedAst);
@@ -152,6 +162,9 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
             auto varResolution = VarResolution();
             auto transformedAst = varResolution.resolve(ast);
 
+            auto validateLabels = ValidateLabels();
+            validateLabels.validateLabels(transformedAst);
+
             auto tackyGen = TackyGen();
             auto tacky = tackyGen.gen(transformedAst);
 
@@ -179,6 +192,9 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
 
             auto varResolution = VarResolution();
             auto transformedAst = varResolution.resolve(ast);
+
+            auto validateLabels = ValidateLabels();
+            validateLabels.validateLabels(transformedAst);
 
             auto tackyGen = TackyGen();
             auto tacky = tackyGen.gen(transformedAst);

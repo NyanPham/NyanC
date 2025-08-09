@@ -42,7 +42,7 @@ public:
     void raiseError(const std::string &expected, const std::string &actual);
     std::optional<Token> takeToken();
     std::optional<Token> peekToken();
-    std::vector<Token> peekTokens(int n);
+    std::vector<std::optional<Token>> peekTokens(int n);
     void expect(TokenType expected);
 
 private:

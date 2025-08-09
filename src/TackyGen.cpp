@@ -418,6 +418,21 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
     {
         return emitTackyForIfStatement(std::dynamic_pointer_cast<AST::If>(stmt));
     }
+    case AST::NodeType::LabeledStatement:
+    {
+        auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
+
+        auto insts = emitTackyForStatement(labeledStmt->getStatement());
+        insts.insert(insts.begin(), std::make_shared<TACKY::Label>(labeledStmt->getLabel()));
+
+        return insts;
+    }
+    case AST::NodeType::Goto:
+    {
+        return {
+            std::make_shared<TACKY::Jump>(std::dynamic_pointer_cast<AST::Goto>(stmt)->getLabel()),
+        };
+    }
     case AST::NodeType::Null:
     {
         return {};

@@ -15,6 +15,8 @@ statement = Return(exp)
     | Expression(exp)
     | If(exp condition, statement then, statement? else)
     | Null
+    | LabeledStatement(indentifier label, statement)
+    | Goto(identifier label)
 exp = Constant(int)
     | Var(identifier)
     | Unary(unary_operator, exp)
@@ -47,6 +49,8 @@ namespace AST
     class ExpressionStmt;
     class If;
     class Null;
+    class LabeledStatement;
+    class Goto;
     class Expression;
     class Statement;
     class Declaration;
@@ -63,6 +67,8 @@ namespace AST
         ExpressionStmt,
         If,
         Null,
+        LabeledStatement,
+        Goto,
         Constant,
         Unary,
         Binary,
@@ -270,7 +276,7 @@ namespace AST
     {
     public:
         Conditional(std::shared_ptr<Expression> condition, std::shared_ptr<Expression> then, std::shared_ptr<Expression> elseExp)
-            : Expression(NodeType::Conditional), _condition{condition}, _then{then}, _else { elseExp } {}
+            : Expression(NodeType::Conditional), _condition{condition}, _then{then}, _else{elseExp} {}
 
         auto getCondition() const { return _condition; }
         auto getThen() const { return _then; }
@@ -325,6 +331,35 @@ namespace AST
     {
     public:
         Null() : Statement(NodeType::Null) {}
+    };
+
+    class LabeledStatement : public Statement
+    {
+    public:
+        LabeledStatement(const std::string &label, std::shared_ptr<AST::Statement> statement)
+            : Statement(NodeType::LabeledStatement), _label{std::move(label)}, _statement{statement}
+        {
+        }
+        auto getLabel() const { return _label; }
+        auto getStatement() const { return _statement; }
+
+    private:
+        std::string _label;
+        std::shared_ptr<AST::Statement> _statement;
+    };
+
+    class Goto : public Statement
+    {
+    public:
+        Goto(const std::string &label)
+            : Statement(NodeType::Goto), _label{std::move(label)}
+        {
+        }
+
+        auto getLabel() const { return _label; }
+
+    private:
+        std::string _label;
     };
 
     class FunctionDefinition : public Node
