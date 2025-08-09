@@ -96,7 +96,22 @@ private:
 
         std::cout << "Unary(\n";
         increaseIndent();
-        std::cout << getIndent() << "op=" << (unary.getOp() == AST::UnaryOp::Complement ? "Complement" : "Negate") << ",\n";
+        std::cout << getIndent() << "op=";
+        switch (unary.getOp())
+        {
+        case AST::UnaryOp::Complement:
+            std::cout << "Complement";
+            break;
+        case AST::UnaryOp::Negate:
+            std::cout << "Negate";
+            break;
+        case AST::UnaryOp::Not:
+            std::cout << "Not";
+            break;
+        default:
+            break;
+        }
+        std::cout << ",\n";
         std::cout << getIndent() << "exp=";
         visit(*unary.getExp(), false);
         decreaseIndent();
@@ -127,8 +142,29 @@ private:
         case AST::BinaryOp::Remainder:
             std::cout << "Remainder";
             break;
-        case AST::BinaryOp::BitwiseAnd:
-            std::cout << "BitwiseAnd";
+        case AST::BinaryOp::And:
+            std::cout << "And";
+            break;
+        case AST::BinaryOp::Or:
+            std::cout << "Or";
+            break;
+        case AST::BinaryOp::Equal:
+            std::cout << "Equal";
+            break;
+        case AST::BinaryOp::NotEqual:
+            std::cout << "NotEqual";
+            break;
+        case AST::BinaryOp::LessThan:
+            std::cout << "LessThan";
+            break;
+        case AST::BinaryOp::LessOrEqual:
+            std::cout << "LessOrEqual";
+            break;
+        case AST::BinaryOp::GreaterThan:
+            std::cout << "GreaterThan";
+            break;
+        case AST::BinaryOp::GreaterOrEqual:
+            std::cout << "GreaterOrEqual";
             break;
         case AST::BinaryOp::BitwiseXor:
             std::cout << "BitwiseXor";

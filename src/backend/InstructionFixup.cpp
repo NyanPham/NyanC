@@ -32,7 +32,7 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
                 inst,
             };
         }
-    };
+    }
     case Assembly::NodeType::Idiv:
     {
         /* Idiv cannot operate on constant */
@@ -74,7 +74,8 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
 
                 return {
                     std::make_shared<Assembly::Mov>(binary->getSrc(), RegR10),
-                    std::make_shared<Assembly::Binary>(binary->getOp(), RegR10, binary->getDst())};
+                    std::make_shared<Assembly::Binary>(binary->getOp(), RegR10, binary->getDst()),
+                };
             }
             else
             {
@@ -102,11 +103,51 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
                     binary};
             }
         }
+
+        default:
+        {
+            return {
+                binary,
+            };
+        }
+        }
+    }
+    case Assembly::NodeType::Cmp:
+    {
+        auto cmp = std::dynamic_pointer_cast<Assembly::Cmp>(inst);
+
+        if (cmp->getSrc()->getType() == Assembly::NodeType::Stack && cmp->getDst()->getType() == Assembly::NodeType::Stack)
+        {
+            // Both operands of cmp can't be in memory
+            auto r10Reg{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
+
+            return {
+                std::make_shared<Assembly::Mov>(cmp->getSrc(), r10Reg),
+                std::make_shared<Assembly::Cmp>(r10Reg, cmp->getDst()),
+            };
+        }
+        else if (cmp->getDst()->getType() == Assembly::NodeType::Imm)
+        {
+            // Destination of cmp cannot be an immediate
+            auto r11Reg{std::make_shared<Assembly::Reg>(Assembly::RegName::R11)};
+            auto immVal = std::dynamic_pointer_cast<Assembly::Imm>(cmp->getDst())->getValue();
+
+            return {
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Imm>(immVal), r11Reg),
+                std::make_shared<Assembly::Cmp>(cmp->getSrc(), r11Reg)};
+        }
+        else
+        {
+            return {
+                inst,
+            };
         }
     }
     default:
+    {
         return {
             inst};
+    }
     }
 }
 

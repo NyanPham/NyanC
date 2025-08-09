@@ -61,6 +61,24 @@ std::string tokenTypeToString(TokenType type)
         return "DOUBLE_LEFT_BRACKET";
     case TokenType::DOUBLE_RIGHT_BRACKET:
         return "DOUBLE_RIGHT_BRACKET";
+    case TokenType::BANG:
+        return "BANG";
+    case TokenType::LOGICAL_AND:
+        return "LOGICAL_AND";
+    case TokenType::LOGICAL_OR:
+        return "LOGICAL_OR";
+    case TokenType::DOUBLE_EQUAL:
+        return "DOUBLE_EQUAL";
+    case TokenType::NOT_EQUAL:
+        return "NOT_EQUAL";
+    case TokenType::LESS_THAN:
+        return "LESS_THAN";
+    case TokenType::LESS_OR_EQUAL:
+        return "LESS_OR_EQUAL";
+    case TokenType::GREATER_THAN:
+        return "GREATER_THAN";
+    case TokenType::GREATER_OR_EQUAL:
+        return "GREATER_OR_EQUAL";
     default:
         return "UNKNOWN";
     }

@@ -16,8 +16,12 @@ EBNF for a subset of C:
 <statement> ::= "return" <exp> ";"
 <exp> ::= <factor> | <exp> <binop> <exp>
 <factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
-<unop> ::= "-" | "~"
-<binop> ::= "+" | "-" | "*" | "/" | "%" | "&" | "^" | "|" | "<<" | ">>"
+<unop> ::= "-" | "~" | "!"
+<binop> ::= "+" | "-" | "*" | "/" | "%"
+        | "&&" | "||"
+        | "==" | "!=" | "<" | "<="
+        | ">" | ">="
+        | "&" | "^" | "|" | "<<" | ">>"
 <int> ::= ? An integer token ?
 <identifier> ::= ? An identifier token ?
 */
@@ -36,12 +40,24 @@ int Parser::getPrecedence(TokenType tokenType)
     case TokenType::DOUBLE_LEFT_BRACKET:
     case TokenType::DOUBLE_RIGHT_BRACKET:
         return 40;
+    case TokenType::LESS_THAN:
+    case TokenType::LESS_OR_EQUAL:
+    case TokenType::GREATER_THAN:
+    case TokenType::GREATER_OR_EQUAL:
+        return 35;
+    case TokenType::DOUBLE_EQUAL:
+    case TokenType::NOT_EQUAL:
+        return 30;
     case TokenType::AMPERSAND:
         return 25;
     case TokenType::CARET:
         return 20;
     case TokenType::PIPE:
         return 15;
+    case TokenType::LOGICAL_AND:
+        return 10;
+    case TokenType::LOGICAL_OR:
+        return 5;
     default:
         throw std::runtime_error("Internal Error: Token is not an operator to get precedence!");
     }
@@ -61,6 +77,14 @@ bool Parser::isBinop(TokenType tokenType)
     case TokenType::PIPE:
     case TokenType::DOUBLE_LEFT_BRACKET:
     case TokenType::DOUBLE_RIGHT_BRACKET:
+    case TokenType::LESS_THAN:
+    case TokenType::LESS_OR_EQUAL:
+    case TokenType::GREATER_THAN:
+    case TokenType::GREATER_OR_EQUAL:
+    case TokenType::DOUBLE_EQUAL:
+    case TokenType::NOT_EQUAL:
+    case TokenType::LOGICAL_AND:
+    case TokenType::LOGICAL_OR:
         return true;
     default:
         return false;
@@ -100,17 +124,16 @@ std::vector<Token> Parser::peekTokens(int n)
 
 void Parser::expect(TokenType type)
 {
-    std::optional<Token> tokPtr{takeToken()};
+    std::optional<Token> token{takeToken()};
 
-    if (!tokPtr.has_value())
+    if (!token.has_value())
     {
         raiseError(tokenTypeToString(type), "empty token");
     }
 
-    Token tok{*tokPtr};
-    if (tok.getType() != type)
+    if (token->getType() != type)
     {
-        raiseError(tokenTypeToString(type), tokenTypeToString(tok.getType()));
+        raiseError(tokenTypeToString(type), tokenTypeToString(token->getType()));
     }
 }
 
@@ -128,6 +151,8 @@ AST::UnaryOp Parser::parseUnop()
         return AST::UnaryOp::Negate;
     case TokenType::TILDE:
         return AST::UnaryOp::Complement;
+    case TokenType::BANG:
+        return AST::UnaryOp::Not;
     default:
         raiseError("a unary operator", tokenTypeToString(nextToken->getType()));
     }
@@ -156,6 +181,22 @@ AST::BinaryOp Parser::parseBinop()
         return AST::BinaryOp::Divide;
     case TokenType::PERCENT:
         return AST::BinaryOp::Remainder;
+    case TokenType::LOGICAL_AND:
+        return AST::BinaryOp::And;
+    case TokenType::LOGICAL_OR:
+        return AST::BinaryOp::Or;
+    case TokenType::DOUBLE_EQUAL:
+        return AST::BinaryOp::Equal;
+    case TokenType::NOT_EQUAL:
+        return AST::BinaryOp::NotEqual;
+    case TokenType::LESS_THAN:
+        return AST::BinaryOp::LessThan;
+    case TokenType::LESS_OR_EQUAL:
+        return AST::BinaryOp::LessOrEqual;
+    case TokenType::GREATER_THAN:
+        return AST::BinaryOp::GreaterThan;
+    case TokenType::GREATER_OR_EQUAL:
+        return AST::BinaryOp::GreaterOrEqual;
     case TokenType::AMPERSAND:
         return AST::BinaryOp::BitwiseAnd;
     case TokenType::CARET:
@@ -173,19 +214,18 @@ AST::BinaryOp Parser::parseBinop()
 
 std::shared_ptr<AST::Constant> Parser::parseConst()
 {
-    std::optional<Token> tokPtr{takeToken()};
+    std::optional<Token> token{takeToken()};
 
-    if (tokPtr.has_value())
+    if (token.has_value())
     {
-        Token tok{*tokPtr};
-        if (tok.getType() != TokenType::CONSTANT)
+        if (token->getType() != TokenType::CONSTANT)
         {
-            raiseError("a constant", tokenTypeToString(tok.getType()));
+            raiseError("a constant", tokenTypeToString(token->getType()));
         }
 
-        if (std::holds_alternative<int>(tok.getValue()))
+        if (std::holds_alternative<int>(token->getValue()))
         {
-            int value{std::get<int>(tok.getValue())};
+            int value{std::get<int>(token->getValue())};
             return std::make_shared<AST::Constant>(value);
         }
 
@@ -198,22 +238,21 @@ std::shared_ptr<AST::Constant> Parser::parseConst()
 
 std::string Parser::parseIdentifier()
 {
-    std::optional<Token> tokPtr{takeToken()};
+    std::optional<Token> token{takeToken()};
 
-    if (tokPtr.has_value())
+    if (token.has_value())
     {
-        Token tok{*tokPtr};
-        if (tok.getType() != TokenType::IDENTIFIER)
+        if (token->getType() != TokenType::IDENTIFIER)
         {
-            raiseError("an identifier", tokenTypeToString(tok.getType()));
+            raiseError("an identifier", tokenTypeToString(token->getType()));
         }
 
-        if (std::holds_alternative<std::string>(tok.getValue()))
+        if (std::holds_alternative<std::string>(token->getValue()))
         {
-            return std::get<std::string>(tok.getValue());
+            return std::get<std::string>(token->getValue());
         }
 
-        raiseError("an identifier", tokenTypeToString(tok.getType()));
+        raiseError("an identifier", tokenTypeToString(token->getType()));
     }
 
     raiseError("an identifier", "empty token");
@@ -236,6 +275,7 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
 
     case TokenType::HYPHEN:
     case TokenType::TILDE:
+    case TokenType::BANG:
     {
         AST::UnaryOp op{parseUnop()};
         std::shared_ptr<AST::Expression> innerExp{parseFactor()};

@@ -45,11 +45,26 @@ private:
         case Assembly::NodeType::Binary:
             visitBinary(static_cast<const Assembly::Binary &>(node), indent);
             break;
+        case Assembly::NodeType::Cmp:
+            visitCmp(static_cast<const Assembly::Cmp &>(node), indent);
+            break;
         case Assembly::NodeType::Idiv:
             visitIdiv(static_cast<const Assembly::Idiv &>(node), indent);
             break;
         case Assembly::NodeType::Cdq:
             visitCdq(static_cast<const Assembly::Cdq &>(node));
+            break;
+        case Assembly::NodeType::Jmp:
+            visitJmp(static_cast<const Assembly::Jmp &>(node), indent);
+            break;
+        case Assembly::NodeType::JmpCC:
+            visitJmpCC(static_cast<const Assembly::JmpCC &>(node), indent);
+            break;
+        case Assembly::NodeType::SetCC:
+            visitSetCC(static_cast<const Assembly::SetCC &>(node), indent);
+            break;
+        case Assembly::NodeType::Label:
+            visitLabel(static_cast<const Assembly::Label &>(node), indent);
             break;
         case Assembly::NodeType::AllocateStack:
             visitAllocateStack(static_cast<const Assembly::AllocateStack &>(node), indent);
@@ -164,6 +179,18 @@ private:
         std::cout << getIndent() << ")\n";
     }
 
+    void visitCmp(const Assembly::Cmp &cmp, bool indent = true)
+    {
+        std::cout << getIndent() << "Cmp(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*cmp.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*cmp.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
     void visitIdiv(const Assembly::Idiv &idiv, bool indent = true)
     {
         std::cout << getIndent() << "Idiv(\n";
@@ -177,6 +204,47 @@ private:
     void visitCdq(const Assembly::Cdq &cdq)
     {
         std::cout << getIndent() << "Cdq()\n";
+    }
+
+    void visitJmp(const Assembly::Jmp &jmp, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Jmp(target=" << jmp.getTarget() << ")\n";
+    }
+
+    void visitJmpCC(const Assembly::JmpCC &jmpCC, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "JmpCC(\n";
+        increaseIndent();
+        std::cout << getIndent() << "condCode=" << showCondCode(jmpCC.getCondCode()) << ",\n";
+        std::cout << getIndent() << "target=" << jmpCC.getTarget() << '\n';
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitSetCC(const Assembly::SetCC &setCC, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "SetCC(\n";
+        increaseIndent();
+        std::cout << getIndent() << "condCode=" << showCondCode(setCC.getCondCode()) << ",\n";
+        std::cout << getIndent() << "operand=";
+        visit(*setCC.getOperand(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitLabel(const Assembly::Label &label, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Label(name=" << label.getName() << ")\n";
     }
 
     void visitAllocateStack(const Assembly::AllocateStack &alloc, bool indent = true)
@@ -195,7 +263,7 @@ private:
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "Reg(" << (reg.getName() == Assembly::RegName::AX ? "AX" : "R10") << ")\n";
+        std::cout << "Reg(" << showRegName(reg.getName()) << ")\n";
     }
 
     void visitPseudo(const Assembly::Pseudo &pseudo, bool indent = true)
@@ -218,6 +286,46 @@ private:
         std::cout << getIndent() << name << "=";
         visit(value, false);
     }
+
+    std::string showCondCode(Assembly::CondCode condCode)
+    {
+        switch (condCode)
+        {
+        case Assembly::CondCode::E:
+            return "E";
+        case Assembly::CondCode::NE:
+            return "NE";
+        case Assembly::CondCode::L:
+            return "L";
+        case Assembly::CondCode::LE:
+            return "LE";
+        case Assembly::CondCode::G:
+            return "G";
+        case Assembly::CondCode::GE:
+            return "GE";
+        default:
+            return "Unknown";
+        }
+    }
+
+    std::string showRegName(Assembly::RegName regName)
+    {
+        switch (regName)
+        {
+        case Assembly::RegName::AX:
+            return "AX";
+        case Assembly::RegName::DX:
+            return "DX";
+        case Assembly::RegName::CX:
+            return "CX";
+        case Assembly::RegName::R10:
+            return "R10";
+        case Assembly::RegName::R11:
+            return "R11";
+        default:
+            return "Unknown";
+        }
+    }
 };
 
-#endif // CODE_GEN_PRETTY_PRINT_H
+#endif

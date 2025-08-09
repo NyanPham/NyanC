@@ -11,9 +11,17 @@ function_definition = Function(identifier name, Instruction* instructions)
 instruction = Return(val)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
+    | Copy(val src, val dst)
+    | Jump(identifier target)
+    | JumpIfZero(val condition, identifier target)
+    | JumpIfNotZero(val condition, identifier target)
+    | Label(identifier)
 val = Constant(int) | Var(identifier)
-unary_operator = Complement | Negate
-binary_operator = Add | Subtract | Multiply | Divide | Remainder | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
+unary_operator = Complement | Negate | Not
+binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
+    | Equal | NotEqual | LessThan | LessOrEqual
+    | GreaterThan | GreaterOrEqual
+    | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
 */
 
 namespace TACKY
@@ -26,6 +34,11 @@ namespace TACKY
     class Return;
     class Unary;
     class Binary;
+    class Copy;
+    class Jump;
+    class JumpIfZero;
+    class JumpIfNotZero;
+    class Label;
     class Val;
     class Constant;
     class Var;
@@ -37,6 +50,11 @@ namespace TACKY
         Return,
         Unary,
         Binary,
+        Copy,
+        Jump,
+        JumpIfZero,
+        JumpIfNotZero,
+        Label,
         Constant,
         Var,
     };
@@ -45,6 +63,7 @@ namespace TACKY
     {
         Complement,
         Negate,
+        Not,
     };
 
     enum class BinaryOp
@@ -54,6 +73,14 @@ namespace TACKY
         Multiply,
         Divide,
         Remainder,
+        And,
+        Or,
+        Equal,
+        NotEqual,
+        LessThan,
+        LessOrEqual,
+        GreaterThan,
+        GreaterOrEqual,
         BitwiseAnd,
         BitwiseOr,
         BitwiseXor,
@@ -143,6 +170,74 @@ namespace TACKY
         std::shared_ptr<Val> _src1;
         std::shared_ptr<Val> _src2;
         std::shared_ptr<Val> _dst;
+    };
+
+    class Copy : public Instruction
+    {
+    public:
+        Copy(std::shared_ptr<Val> src, std::shared_ptr<Val> dst)
+            : Instruction(NodeType::Copy), _src{std::move(src)}, _dst{std::move(dst)}
+        {
+        }
+        std::shared_ptr<Val> getSrc() const { return _src; }
+        std::shared_ptr<Val> getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class Jump : public Instruction
+    {
+    public:
+        Jump(const std::string &target)
+            : Instruction(NodeType::Jump), _target{std::move(target)} {}
+        const std::string &getTarget() const { return _target; }
+
+    private:
+        std::string _target;
+    };
+
+    class JumpIfZero : public Instruction
+    {
+    public:
+        JumpIfZero(std::shared_ptr<Val> cond, const std::string &target)
+            : Instruction(NodeType::JumpIfZero), _cond{std::move(cond)}, _target{std::move(target)}
+        {
+        }
+        const std::shared_ptr<Val> getCond() const { return _cond; }
+        const std::string &getTarget() const { return _target; }
+
+    private:
+        std::shared_ptr<Val> _cond;
+        std::string _target;
+    };
+
+    class JumpIfNotZero : public Instruction
+    {
+    public:
+        JumpIfNotZero(std::shared_ptr<Val> cond, const std::string &target)
+            : Instruction(NodeType::JumpIfNotZero), _cond{std::move(cond)}, _target{std::move(target)}
+        {
+        }
+        const std::shared_ptr<Val> getCond() const { return _cond; }
+        const std::string &getTarget() const { return _target; }
+
+    private:
+        std::shared_ptr<Val> _cond;
+        std::string _target;
+    };
+
+    class Label : public Instruction
+    {
+    public:
+        Label(const std::string &name)
+            : Instruction(NodeType::Label), _name{std::move(name)} {}
+
+        const std::string &getName() const { return _name; }
+
+    private:
+        std::string _name;
     };
 
     class Return : public Instruction

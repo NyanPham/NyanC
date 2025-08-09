@@ -130,6 +130,42 @@ void Lexer::defineTokenDefs()
          {
              return Token(TokenType::DOUBLE_RIGHT_BRACKET, str, pos);
          }},
+        {std::regex("!"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::BANG, str, pos);
+         }},
+        {std::regex("\\&\\&"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::LOGICAL_AND, str, pos);
+         }},
+        {std::regex("\\|\\|"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::LOGICAL_OR, str, pos);
+         }},
+        {std::regex("=="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::DOUBLE_EQUAL, str, pos);
+         }},
+        {std::regex("!="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::NOT_EQUAL, str, pos);
+         }},
+        {std::regex("<"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::LESS_THAN, str, pos);
+         }},
+        {std::regex("<="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::LESS_OR_EQUAL, str, pos);
+         }},
+        {std::regex(">"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::GREATER_THAN, str, pos);
+         }},
+        {std::regex(">="), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::GREATER_OR_EQUAL, str, pos);
+         }},
     };
 };
 

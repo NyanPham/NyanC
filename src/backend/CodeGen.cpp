@@ -38,6 +38,8 @@ Assembly::UnaryOp CodeGen::convertUnop(const TACKY::UnaryOp op)
     {
         return Assembly::UnaryOp::Neg;
     }
+    case TACKY::UnaryOp::Not:
+        throw std::runtime_error("Internal Error: Cannot convert NOT operator directly from TACKY to Assembly!");
     default:
     {
         throw std::runtime_error("Invalid unary operator");
@@ -67,9 +69,36 @@ Assembly::BinaryOp CodeGen::convertBinop(const TACKY::BinaryOp op)
         return Assembly::BinaryOp::Sar;
     case TACKY::BinaryOp::Divide:
     case TACKY::BinaryOp::Remainder:
+    case TACKY::BinaryOp::Equal:
+    case TACKY::BinaryOp::NotEqual:
+    case TACKY::BinaryOp::LessThan:
+    case TACKY::BinaryOp::LessOrEqual:
+    case TACKY::BinaryOp::GreaterThan:
+    case TACKY::BinaryOp::GreaterOrEqual:
         throw std::runtime_error("Internal Error: Shouldn't handle division like other binary operators!");
     default:
         throw std::runtime_error("Internal Error: Unknown Binary Operators!");
+    }
+}
+
+Assembly::CondCode CodeGen::convertCondCode(const TACKY::BinaryOp op)
+{
+    switch (op)
+    {
+    case TACKY::BinaryOp::Equal:
+        return Assembly::CondCode::E;
+    case TACKY::BinaryOp::NotEqual:
+        return Assembly::CondCode::NE;
+    case TACKY::BinaryOp::LessThan:
+        return Assembly::CondCode::L;
+    case TACKY::BinaryOp::LessOrEqual:
+        return Assembly::CondCode::LE;
+    case TACKY::BinaryOp::GreaterThan:
+        return Assembly::CondCode::G;
+    case TACKY::BinaryOp::GreaterOrEqual:
+        return Assembly::CondCode::GE;
+    default:
+        throw std::runtime_error("Internal Error: Unknown binary to cond_code!");
     }
 }
 
@@ -77,6 +106,17 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
 {
     switch (inst->getType())
     {
+    case TACKY::NodeType::Copy:
+    {
+        auto copyInst = std::dynamic_pointer_cast<TACKY::Copy>(inst);
+
+        auto asmSrc = convertVal(copyInst->getSrc());
+        auto asmDst = convertVal(copyInst->getDst());
+
+        return {
+            std::make_shared<Assembly::Mov>(asmSrc, asmDst),
+        };
+    }
     case TACKY::NodeType::Return:
     {
         auto asmVal = convertVal(std::dynamic_pointer_cast<TACKY::Return>(inst)->getValue());
@@ -90,14 +130,28 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
     {
         auto unaryInst = std::dynamic_pointer_cast<TACKY::Unary>(inst);
 
-        auto asmOp = convertUnop(unaryInst->getOp());
-        auto asmSrc = convertVal(unaryInst->getSrc());
-        auto asmDst = convertVal(unaryInst->getDst());
+        if (unaryInst->getOp() == TACKY::UnaryOp::Not)
+        {
+            auto asmSrc = convertVal(unaryInst->getSrc());
+            auto asmDst = convertVal(unaryInst->getDst());
 
-        return {
-            std::make_shared<Assembly::Mov>(asmSrc, asmDst),
-            std::make_shared<Assembly::Unary>(asmOp, asmDst),
-        };
+            return {
+                std::make_shared<Assembly::Cmp>(std::make_shared<Assembly::Imm>(0), asmSrc),
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Imm>(0), asmDst),
+                std::make_shared<Assembly::SetCC>(Assembly::CondCode::E, asmDst),
+            };
+        }
+        else
+        {
+            auto asmOp = convertUnop(unaryInst->getOp());
+            auto asmSrc = convertVal(unaryInst->getSrc());
+            auto asmDst = convertVal(unaryInst->getDst());
+
+            return {
+                std::make_shared<Assembly::Mov>(asmSrc, asmDst),
+                std::make_shared<Assembly::Unary>(asmOp, asmDst),
+            };
+        }
     }
     case TACKY::NodeType::Binary:
     {
@@ -109,6 +163,22 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
 
         switch (binaryInst->getOp())
         {
+        // Relational Operators
+        case TACKY::BinaryOp::Equal:
+        case TACKY::BinaryOp::NotEqual:
+        case TACKY::BinaryOp::LessThan:
+        case TACKY::BinaryOp::LessOrEqual:
+        case TACKY::BinaryOp::GreaterThan:
+        case TACKY::BinaryOp::GreaterOrEqual:
+        {
+            auto condCode = convertCondCode(binaryInst->getOp());
+
+            return {
+                std::make_shared<Assembly::Cmp>(asmSrc1, asmSrc2),
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Imm>(0), asmDst),
+                std::make_shared<Assembly::SetCC>(condCode, asmDst),
+            };
+        }
 
         // For Division/Modulo
         case TACKY::BinaryOp::Divide:
@@ -163,6 +233,38 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
             };
         }
         }
+    }
+    case TACKY::NodeType::Jump:
+    {
+        return {
+            std::make_shared<Assembly::Jmp>(std::dynamic_pointer_cast<TACKY::Jump>(inst)->getTarget()),
+        };
+    }
+    case TACKY::NodeType::JumpIfZero:
+    {
+        auto jumpIfZeroInst = std::dynamic_pointer_cast<TACKY::JumpIfZero>(inst);
+        auto asmCond = convertVal(jumpIfZeroInst->getCond());
+
+        return {
+            std::make_shared<Assembly::Cmp>(std::make_shared<Assembly::Imm>(0), asmCond),
+            std::make_shared<Assembly::JmpCC>(Assembly::CondCode::E, jumpIfZeroInst->getTarget()),
+        };
+    }
+    case TACKY::NodeType::JumpIfNotZero:
+    {
+        auto jumpIfNotZeroInst = std::dynamic_pointer_cast<TACKY::JumpIfNotZero>(inst);
+        auto asmCond = convertVal(jumpIfNotZeroInst->getCond());
+
+        return {
+            std::make_shared<Assembly::Cmp>(std::make_shared<Assembly::Imm>(0), asmCond),
+            std::make_shared<Assembly::JmpCC>(Assembly::CondCode::NE, jumpIfNotZeroInst->getTarget()),
+        };
+    }
+    case TACKY::NodeType::Label:
+    {
+        return {
+            std::make_shared<Assembly::Label>(std::dynamic_pointer_cast<TACKY::Label>(inst)->getName()),
+        };
     }
     default:
         throw std::runtime_error("Internal Error: Invalid TACKY instruction");

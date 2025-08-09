@@ -96,19 +96,51 @@ ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_pt
             state2,
         };
     }
+    case Assembly::NodeType::Cmp:
+    {
+        auto cmp = std::dynamic_pointer_cast<Assembly::Cmp>(inst);
+
+        auto [newSrc, state1] = replaceOperand(cmp->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(cmp->getDst(), state1);
+
+        auto newCmp = std::make_shared<Assembly::Cmp>(newSrc, newDst);
+
+        return {
+            newCmp,
+            state2,
+        };
+    }
     case Assembly::NodeType::Idiv:
     {
         auto idiv = std::dynamic_pointer_cast<Assembly::Idiv>(inst);
 
         auto [newOperand, state1] = replaceOperand(idiv->getOperand(), state);
+
         auto newIdiv = std::make_shared<Assembly::Idiv>(newOperand);
 
         return {
             newIdiv,
-            state1};
+            state1,
+        };
+    }
+    case Assembly::NodeType::SetCC:
+    {
+        auto setCC = std::dynamic_pointer_cast<Assembly::SetCC>(inst);
+
+        auto [newOperand, state1] = replaceOperand(setCC->getOperand(), state);
+
+        auto newSetCC = std::make_shared<Assembly::SetCC>(setCC->getCondCode(), newOperand);
+
+        return {
+            newSetCC,
+            state1,
+        };
     }
     case Assembly::NodeType::Ret:
     case Assembly::NodeType::Cdq:
+    case Assembly::NodeType::Label:
+    case Assembly::NodeType::JmpCC:
+    case Assembly::NodeType::Jmp:
     {
         return {
             inst,

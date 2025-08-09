@@ -41,6 +41,21 @@ private:
         case TACKY::NodeType::Binary:
             visitBinary(static_cast<const TACKY::Binary &>(node), indent);
             break;
+        case TACKY::NodeType::Copy:
+            visitCopy(static_cast<const TACKY::Copy &>(node), indent);
+            break;
+        case TACKY::NodeType::Jump:
+            visitJump(static_cast<const TACKY::Jump &>(node), indent);
+            break;
+        case TACKY::NodeType::JumpIfZero:
+            visitJumpIfZero(static_cast<const TACKY::JumpIfZero &>(node), indent);
+            break;
+        case TACKY::NodeType::JumpIfNotZero:
+            visitJumpIfNotZero(static_cast<const TACKY::JumpIfNotZero &>(node), indent);
+            break;
+        case TACKY::NodeType::Label:
+            visitLabel(static_cast<const TACKY::Label &>(node), indent);
+            break;
         case TACKY::NodeType::Constant:
             visitConstant(static_cast<const TACKY::Constant &>(node), indent);
             break;
@@ -129,6 +144,30 @@ private:
         case TACKY::BinaryOp::Remainder:
             std::cout << "Remainder";
             break;
+        case TACKY::BinaryOp::And:
+            std::cout << "And";
+            break;
+        case TACKY::BinaryOp::Or:
+            std::cout << "Or";
+            break;
+        case TACKY::BinaryOp::Equal:
+            std::cout << "Equal";
+            break;
+        case TACKY::BinaryOp::NotEqual:
+            std::cout << "NotEqual";
+            break;
+        case TACKY::BinaryOp::LessThan:
+            std::cout << "LessThan";
+            break;
+        case TACKY::BinaryOp::LessOrEqual:
+            std::cout << "LessOrEqual";
+            break;
+        case TACKY::BinaryOp::GreaterThan:
+            std::cout << "GreaterThan";
+            break;
+        case TACKY::BinaryOp::GreaterOrEqual:
+            std::cout << "GreaterOrEqual";
+            break;
         case TACKY::BinaryOp::BitwiseAnd:
             std::cout << "BitwiseAnd";
             break;
@@ -156,6 +195,60 @@ private:
         std::cout << getIndent() << ")\n";
     }
 
+    void visitCopy(const TACKY::Copy &copy, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Copy(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*copy.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*copy.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitJump(const TACKY::Jump &jump, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Jump(target=" << jump.getTarget() << ")\n";
+    }
+
+    void visitJumpIfZero(const TACKY::JumpIfZero &jumpIfZero, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "JumpIfZero(\n";
+        increaseIndent();
+        std::cout << getIndent() << "cond=";
+        visit(*jumpIfZero.getCond(), false);
+        std::cout << getIndent() << "target=" << jumpIfZero.getTarget() << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitJumpIfNotZero(const TACKY::JumpIfNotZero &jumpIfNotZero, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "JumpIfNotZero(\n";
+        increaseIndent();
+        std::cout << getIndent() << "cond=";
+        visit(*jumpIfNotZero.getCond(), false);
+        std::cout << getIndent() << "target=" << jumpIfNotZero.getTarget() << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitLabel(const TACKY::Label &label, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Label(name=" << label.getName() << ")\n";
+    }
+
     void visitConstant(const TACKY::Constant &constant, bool indent = true)
     {
         if (indent)
@@ -171,4 +264,4 @@ private:
     }
 };
 
-#endif // TACKY_PRETTY_PRINT_H
+#endif

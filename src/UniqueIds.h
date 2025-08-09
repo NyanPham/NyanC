@@ -8,6 +8,7 @@ class UniqueIds
 {
 public:
     static std::string makeTemporary();
+    static std::string makeLabel(const std::string& prefix);
 
 private:
     static int _counter;

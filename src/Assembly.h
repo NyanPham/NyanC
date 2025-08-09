@@ -11,13 +11,19 @@ function_definition = Function(identifier name, instruction* instructions)
 instruction = Mov(operand src, operand dst)
     | Unary(unary_operator, operand dst)
     | Binary(binary_operator, operand src, operand dst)
+    | Cmp(operand src, operand dst)
     | Idiv(operand)
     | Cdq
+    | Jmp(identifier)
+    | JmpCC(cond_code, identifier)
+    | SetCC(cond_code, operand)
+    | Label(identifier)
     | AllocateStack(int)
     | Ret
 unary_operator = Neg | Not
 binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int)
+cond_code = E | NE | L | LE | G | GE
 reg = AX | CX | DX | R10 | R11
 */
 
@@ -33,8 +39,13 @@ namespace Assembly
     class Mov;
     class Unary;
     class Binary;
+    class Cmp;
     class Idiv;
     class Cdq;
+    class Jmp;
+    class JmpCC;
+    class SetCC;
+    class Label;
     class AllocateStack;
     class Ret;
     class Function;
@@ -48,8 +59,13 @@ namespace Assembly
         Mov,
         Unary,
         Binary,
+        Cmp,
         Idiv,
         Cdq,
+        Jmp,
+        JmpCC,
+        SetCC,
+        Label,
         AllocateStack,
         Imm,
         Reg,
@@ -64,6 +80,16 @@ namespace Assembly
         CX,
         R10,
         R11,
+    };
+
+    enum class CondCode
+    {
+        E,
+        NE,
+        L,
+        LE,
+        G,
+        GE,
     };
 
     enum class UnaryOp
@@ -197,6 +223,20 @@ namespace Assembly
         std::shared_ptr<Operand> _dst;
     };
 
+    class Cmp : public Instruction
+    {
+    public:
+        Cmp(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Cmp), _src{std::move(src)}, _dst{std::move(dst)} {}
+
+        auto getSrc() const { return _src; }
+        auto getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
     class Idiv : public Instruction
     {
     public:
@@ -211,6 +251,58 @@ namespace Assembly
     {
     public:
         Cdq() : Instruction(NodeType::Cdq) {}
+    };
+
+    class Jmp : public Instruction
+    {
+    public:
+        Jmp(const std::string &target)
+            : Instruction(NodeType::Jmp), _target{std::move(target)} {}
+
+        auto getTarget() const { return _target; }
+
+    private:
+        std::string _target;
+    };
+
+    class JmpCC : public Instruction
+    {
+    public:
+        JmpCC(CondCode condCode, const std::string &target)
+            : Instruction(NodeType::JmpCC), _condCode{condCode}, _target{std::move(target)} {}
+
+        auto getCondCode() const { return _condCode; }
+        auto getTarget() const { return _target; }
+
+    private:
+        CondCode _condCode;
+        std::string _target;
+    };
+
+    class SetCC : public Instruction
+    {
+    public:
+        SetCC(CondCode condCode, std::shared_ptr<Operand> operand)
+            : Instruction(NodeType::SetCC), _condCode{condCode}, _operand{std::move(operand)} {}
+
+        auto getCondCode() const { return _condCode; }
+        auto getOperand() const { return _operand; }
+
+    private:
+        CondCode _condCode;
+        std::shared_ptr<Operand> _operand;
+    };
+
+    class Label : public Instruction
+    {
+    public:
+        Label(const std::string &name)
+            : Instruction(NodeType::Label), _name{std::move(name)} {}
+
+        auto getName() const { return _name; }
+
+    private:
+        std::string _name;
     };
 
     class AllocateStack : public Instruction

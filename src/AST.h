@@ -11,8 +11,11 @@ statement = Return(exp)
 exp = Constant(int)
     | Unary(unary_operator, exp)
     | Binary(binary_operator, exp, exp)
-unary_operator = Complement | Negate
-binary_operator = Add | Subtract | Multiply | Divide | Remainder | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
+unary_operator = Complement | Negate | Not
+binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
+    | Equal | NotEqual | LessThan | LessOrEqual
+    | GreaterThan | GreaterOrEqual
+    | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
 */
 
 namespace AST
@@ -41,6 +44,7 @@ namespace AST
     {
         Complement,
         Negate,
+        Not,
     };
 
     enum class BinaryOp
@@ -50,6 +54,14 @@ namespace AST
         Multiply,
         Divide,
         Remainder,
+        And,
+        Or,
+        Equal,
+        NotEqual,
+        LessThan,
+        LessOrEqual,
+        GreaterThan,
+        GreaterOrEqual,
         BitwiseAnd,
         BitwiseOr,
         BitwiseXor,
