@@ -8,12 +8,14 @@
 
 /*
 program = Program(function_definition)
-function_definition = Function(identifier name, block_item* body)
+function_definition = Function(identifier name, block body)
+block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
 declaration = Declaration(identifier name, exp? init)
 statement = Return(exp)
     | Expression(exp)
     | If(exp condition, statement then, statement? else)
+    | Compound(block)
     | Null
     | LabeledStatement(indentifier label, statement)
     | Goto(identifier label)
@@ -48,6 +50,7 @@ namespace AST
     class Return;
     class ExpressionStmt;
     class If;
+    class Compound;
     class Null;
     class LabeledStatement;
     class Goto;
@@ -66,6 +69,7 @@ namespace AST
         Return,
         ExpressionStmt,
         If,
+        Compound,
         Null,
         LabeledStatement,
         Goto,
@@ -110,6 +114,8 @@ namespace AST
         BitShiftLeft,
         BitShiftRight,
     };
+
+    using Block = std::vector<std::shared_ptr<BlockItem>>;
 
     class Node
     {
@@ -327,6 +333,16 @@ namespace AST
         std::optional<std::shared_ptr<AST::Statement>> _elseClause;
     };
 
+    class Compound : public Statement
+    {
+    public:
+        Compound(const Block &block) : Statement(NodeType::Compound), _block{std::move(block)} {}
+        auto getBlock() const { return _block; }
+
+    private:
+        Block _block;
+    };
+
     class Null : public Statement
     {
     public:
@@ -365,14 +381,14 @@ namespace AST
     class FunctionDefinition : public Node
     {
     public:
-        FunctionDefinition(const std::string &name, std::vector<std::shared_ptr<BlockItem>> body)
+        FunctionDefinition(const std::string &name, Block body)
             : Node(NodeType::FunctionDefinition), _name{name}, _body{std::move(body)} {}
         const std::string &getName() const { return _name; }
-        const std::vector<std::shared_ptr<BlockItem>> &getBody() const { return _body; }
+        const Block &getBody() const { return _body; }
 
     private:
         std::string _name;
-        std::vector<std::shared_ptr<BlockItem>> _body;
+        Block _body;
     };
 
     class Program : public Node

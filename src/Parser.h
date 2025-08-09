@@ -32,6 +32,7 @@ public:
     std::shared_ptr<AST::Expression> parsePrimaryExp();
     std::shared_ptr<AST::Expression> parseFactor();
     std::shared_ptr<AST::Expression> parseExp(int minPrec = 0);
+    AST::Block parseBlock();
     std::shared_ptr<AST::Statement> parseStatement();
     std::shared_ptr<AST::Declaration> parseDeclaration();
     std::shared_ptr<AST::BlockItem> parseBlockItem();

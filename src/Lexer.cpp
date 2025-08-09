@@ -337,9 +337,6 @@ std::vector<std::optional<Token>> Lexer::npeek(int n)
     for (int i = 0; i < n; ++i)
     {
         std::optional<Token> nextToken = token();
-        if (nextToken == std::nullopt)
-            break;
-
         tokens.push_back(nextToken);
     }
 

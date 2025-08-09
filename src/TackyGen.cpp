@@ -418,6 +418,19 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
     {
         return emitTackyForIfStatement(std::dynamic_pointer_cast<AST::If>(stmt));
     }
+    case AST::NodeType::Compound:
+    {
+        auto compoundStmt = std::dynamic_pointer_cast<AST::Compound>(stmt);
+        auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+        for (auto &blockItem : compoundStmt->getBlock())
+        {
+            auto innerInsts = emitTackyForBlockItem(blockItem);
+            insts.insert(insts.end(), innerInsts.begin(), innerInsts.end());
+        }
+
+        return insts;
+    }
     case AST::NodeType::LabeledStatement:
     {
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
@@ -473,12 +486,12 @@ TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem
 std::shared_ptr<TACKY::Function>
 TackyGen::emitTackyForFunction(const std::shared_ptr<AST::FunctionDefinition> &funDef)
 {
-    std::vector<std::shared_ptr<TACKY::Instruction>> insts = {};
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
 
     for (auto &blockItem : funDef->getBody())
     {
-        auto emitInsts = emitTackyForBlockItem(blockItem);
-        insts.insert(insts.end(), emitInsts.begin(), emitInsts.end());
+        auto innerInsts = emitTackyForBlockItem(blockItem);
+        insts.insert(insts.end(), innerInsts.begin(), innerInsts.end());
     }
 
     auto extraReturn = std::make_shared<TACKY::Return>(std::make_shared<TACKY::Constant>(0));

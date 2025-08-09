@@ -7,6 +7,22 @@
 #include "VarResolution.h"
 #include "UniqueIds.h"
 
+VarMap
+VarResolution::copyVariableMap(const VarMap &varMap)
+{
+    VarMap newVarMap = {};
+
+    for (const auto &entry : varMap)
+    {
+        newVarMap[entry.first] = {
+            entry.second.uniqueName,
+            false,
+        };
+    }
+
+    return newVarMap;
+}
+
 std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, VarMap &varMap)
 {
     switch (exp->getType())
@@ -62,7 +78,7 @@ std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr
         auto it = varMap.find(var->getName());
         if (it != varMap.end())
         {
-            return std::make_shared<AST::Var>(it->second);
+            return std::make_shared<AST::Var>(it->second.uniqueName);
         }
         else
         {
@@ -99,7 +115,8 @@ std::shared_ptr<AST::Expression> VarResolution::resolveExp(const std::shared_ptr
     }
 }
 
-std::shared_ptr<AST::Statement> VarResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, VarMap &varMap)
+std::shared_ptr<AST::Statement>
+VarResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, VarMap &varMap)
 {
     switch (stmt->getType())
     {
@@ -116,6 +133,11 @@ std::shared_ptr<AST::Statement> VarResolution::resolveStatement(const std::share
             resolveStatement(ifStmt->getThenClause(), varMap),
             ifStmt->getElseClause().has_value() ? std::make_optional(resolveStatement(ifStmt->getElseClause().value(), varMap)) : std::nullopt);
     }
+    case AST::NodeType::Compound:
+    {
+        auto newVarMap = copyVariableMap(varMap);
+        return std::make_shared<AST::Compound>(resolveBlock(std::dynamic_pointer_cast<AST::Compound>(stmt)->getBlock(), newVarMap));
+    }
     case AST::NodeType::LabeledStatement:
     {
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
@@ -129,18 +151,28 @@ std::shared_ptr<AST::Statement> VarResolution::resolveStatement(const std::share
     }
 }
 
-std::shared_ptr<AST::Declaration> VarResolution::resolveDeclaration(const std::shared_ptr<AST::Declaration> &decl, VarMap &varMap)
+std::shared_ptr<AST::Declaration>
+VarResolution::resolveDeclaration(const std::shared_ptr<AST::Declaration> &decl, VarMap &varMap)
 {
     std::optional<std::shared_ptr<AST::Expression>> init = std::nullopt;
     auto it = varMap.find(decl->getName());
 
-    if (it != varMap.end())
+    if (it != varMap.end() && it->second.fromCurrentBlock)
     {
         throw std::runtime_error("Duplicate variable declaration: " + decl->getName());
     }
 
     auto uniqueName{UniqueIds::makeNamedTemporary(decl->getName())};
-    varMap.insert({decl->getName(), uniqueName});
+
+    if (it == varMap.end())
+    {
+        varMap.insert({decl->getName(), {uniqueName, true}});
+    }
+    else
+    {
+        it->second.uniqueName = uniqueName;
+        it->second.fromCurrentBlock = true;
+    }
 
     if (decl->getInit().has_value())
     {
@@ -150,7 +182,8 @@ std::shared_ptr<AST::Declaration> VarResolution::resolveDeclaration(const std::s
     return std::make_shared<AST::Declaration>(uniqueName, init);
 }
 
-std::shared_ptr<AST::BlockItem> VarResolution::resolveBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, VarMap &varMap)
+std::shared_ptr<AST::BlockItem>
+VarResolution::resolveBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, VarMap &varMap)
 {
     switch (blockItem->getType())
     {
@@ -161,21 +194,31 @@ std::shared_ptr<AST::BlockItem> VarResolution::resolveBlockItem(const std::share
     }
 }
 
-std::shared_ptr<AST::FunctionDefinition> VarResolution::resolveFunctionDef(const std::shared_ptr<AST::FunctionDefinition> &funDef)
+AST::Block
+VarResolution::resolveBlock(const AST::Block &block, VarMap &varMap)
+{
+    AST::Block resolvedBlock = {};
+
+    for (auto &blockItem : block)
+    {
+        auto resolvedItem = resolveBlockItem(blockItem, varMap);
+        resolvedBlock.push_back(resolvedItem);
+    }
+
+    return resolvedBlock;
+}
+
+std::shared_ptr<AST::FunctionDefinition>
+VarResolution::resolveFunctionDef(const std::shared_ptr<AST::FunctionDefinition> &funDef)
 {
     VarMap varMap = {};
-    std::vector<std::shared_ptr<AST::BlockItem>> resolvedBody = {};
-
-    for (auto &blockItem : funDef->getBody())
-    {
-        auto resolvedBlockItem = resolveBlockItem(blockItem, varMap);
-        resolvedBody.push_back(resolvedBlockItem);
-    }
+    auto resolvedBody = resolveBlock(funDef->getBody(), varMap);
 
     return std::make_shared<AST::FunctionDefinition>(funDef->getName(), resolvedBody);
 }
 
-std::shared_ptr<AST::Program> VarResolution::resolve(const std::shared_ptr<AST::Program> &prog)
+std::shared_ptr<AST::Program>
+VarResolution::resolve(const std::shared_ptr<AST::Program> &prog)
 {
     return std::make_shared<AST::Program>(resolveFunctionDef(prog->getFunctionDefinition()));
 }

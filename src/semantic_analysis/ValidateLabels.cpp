@@ -42,6 +42,15 @@ void ValidateLabels::collectLabelsFromStatement(
         }
         break;
     }
+    case AST::NodeType::Compound:
+    {
+        auto compoundStmt = std::dynamic_pointer_cast<AST::Compound>(stmt);
+        for (auto &blockItem : compoundStmt->getBlock())
+        {
+            collectLabelsFromBlockItem(definedLabels, usedLabels, blockItem);
+        }
+        break;
+    }
     default:
         break;
     }

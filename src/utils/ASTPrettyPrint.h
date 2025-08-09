@@ -69,6 +69,9 @@ private:
         case AST::NodeType::If:
             visitIf(static_cast<const AST::If &>(node), indent);
             break;
+        case AST::NodeType::Compound:
+            visitCompound(static_cast<const AST::Compound &>(node), indent);
+            break;
         case AST::NodeType::Null:
             visitNull(static_cast<const AST::Null &>(node), indent);
             break;
@@ -395,6 +398,23 @@ private:
             visit(**ifStmt.getElseClause(), false);
         }
 
+        decreaseIndent();
+        std::cout << getIndent() << ")\n";
+    }
+
+    void visitCompound(const AST::Compound &compound, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Compound(\n";
+        increaseIndent();
+
+        for (const auto &item : compound.getBlock())
+        {
+            visit(*item);
+        }
+        
         decreaseIndent();
         std::cout << getIndent() << ")\n";
     }

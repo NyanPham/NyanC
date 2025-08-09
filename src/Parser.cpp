@@ -12,12 +12,14 @@
 EBNF for a subset of C:
 
 <program> ::= <function>
-<function> ::= "int" <identifier> "(" "void" ")" "{" { <block-item> } "}"
+<function> ::= "int" <identifier> "(" "void" ")" <block>
+<block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
 <declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
 <statement> ::= "return" <exp> ";"
             | <exp> ";"
             | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
+            | <block>
             | ";"
             | <identifier> ":" <statement>
             | "goto" <identifier> ";"
@@ -540,6 +542,22 @@ std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
     return left;
 }
 
+AST::Block Parser::parseBlock()
+{
+    expect(TokenType::OPEN_BRACE);
+    AST::Block block{};
+
+    while (peekToken().has_value() && peekToken()->getType() != TokenType::CLOSE_BRACE)
+    {
+        auto nextBlockItem{parseBlockItem()};
+        block.push_back(nextBlockItem);
+    }
+
+    expect(TokenType::CLOSE_BRACE);
+
+    return block;
+}
+
 std::shared_ptr<AST::Statement> Parser::parseStatement()
 {
     std::vector<std::optional<Token>> nextTokens{peekTokens(2)};
@@ -557,7 +575,6 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
     case TokenType::SEMICOLON:
     {
         takeToken();
-
         return std::make_shared<AST::Null>();
     }
     case TokenType::KEYWORD_IF:
@@ -576,6 +593,10 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
         }
 
         return std::make_shared<AST::If>(condition, thenClause, elseClause);
+    }
+    case TokenType::OPEN_BRACE:
+    {
+        return std::make_shared<AST::Compound>(parseBlock());
     }
     case TokenType::KEYWORD_GOTO:
     {
@@ -662,19 +683,7 @@ std::shared_ptr<AST::FunctionDefinition> Parser::parseFunctionDefinition()
     expect(TokenType::OPEN_PAREN);
     expect(TokenType::KEYWORD_VOID);
     expect(TokenType::CLOSE_PAREN);
-    expect(TokenType::OPEN_BRACE);
-
-    std::vector<std::shared_ptr<AST::BlockItem>> body{};
-    auto nextToken{peekToken()};
-
-    while (nextToken->getType() != TokenType::CLOSE_BRACE)
-    {
-        auto blockItem{parseBlockItem()};
-        body.push_back(blockItem);
-        nextToken = peekToken();
-    }
-
-    takeToken();
+    AST::Block body{parseBlock()};
 
     return std::make_shared<AST::FunctionDefinition>(name, body);
 }
@@ -682,7 +691,7 @@ std::shared_ptr<AST::FunctionDefinition> Parser::parseFunctionDefinition()
 std::shared_ptr<AST::Program> Parser::parseProgram()
 {
     std::shared_ptr<AST::FunctionDefinition> funDef{parseFunctionDefinition()};
-    std::optional<Token> nextToken{takeToken()};
+    std::optional<Token> nextToken{peekToken()};
 
     if (nextToken.has_value())
     {
