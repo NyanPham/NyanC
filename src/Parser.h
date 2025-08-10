@@ -5,10 +5,12 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <set>
 
 #include "Token.h"
 #include "Lexer.h"
 #include "AST.h"
+#include "Types.h"
 
 class Parser
 {
@@ -26,6 +28,10 @@ public:
     AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
+
+    std::vector<Token> parseSpecifierList();
+    AST::StorageClass parseStorageClass(const Token &spec);
+    std::pair<Types::DataType, std::optional<AST::StorageClass>> parseTypeAndStorageClass(const std::vector<Token> &specifierList);
 
     std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
     std::shared_ptr<AST::Switch> parseSwitchStatement();
@@ -49,11 +55,11 @@ public:
     std::vector<std::shared_ptr<AST::Expression>> parseOptionalArgList();
     std::vector<std::shared_ptr<AST::Expression>> parseArgList();
     std::vector<std::string> parseParamList();
-    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name);
-    std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name);
+    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass);
+    std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> parseVariableDeclaration();
     std::shared_ptr<AST::FunctionDeclaration> parseFunctionDeclaration();
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> parseFunctionDeclarationList();
+    std::vector<std::shared_ptr<AST::Declaration>> parseDeclarationList();
     std::shared_ptr<AST::Program> parseProgram();
     std::shared_ptr<AST::Program> parse(const std::string &input);
 
@@ -66,6 +72,11 @@ public:
 private:
     Lexer _lexer;
     std::optional<Token> _currToken;
+    std::set<TokenType> _specifierTypes = {
+        TokenType::KEYWORD_INT,
+        TokenType::KEYWORD_STATIC,
+        TokenType::KEYWORD_EXTERN,
+    };
 };
 
 class ParseError : public std::runtime_error

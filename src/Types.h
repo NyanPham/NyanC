@@ -3,7 +3,10 @@
 
 #include <string>
 #include <variant>
+#include <optional>
 #include <iostream>
+
+#include "./utils/VariantHelper.h"
 
 namespace Types
 {
@@ -47,32 +50,22 @@ namespace Types
 
     inline std::optional<IntType> getIntType(const DataType &type)
     {
-        if (auto intType = std::get_if<IntType>(&type))
-        {
-            return *intType;
-        }
-
-        return std::nullopt;
+        return getVariant<IntType>(type);
     }
 
     inline std::optional<FunType> getFunType(const DataType &type)
     {
-        if (auto funType = std::get_if<FunType>(&type))
-        {
-            return *funType;
-        }
-
-        return std::nullopt;
+        return getVariant<FunType>(type);
     }
 
     inline bool isIntType(const DataType &type)
     {
-        return std::holds_alternative<IntType>(type);
+        return isVariant<IntType>(type);
     }
 
     inline bool isFunType(const DataType &type)
     {
-        return std::holds_alternative<FunType>(type);
+        return isVariant<FunType>(type);
     }
 }
 

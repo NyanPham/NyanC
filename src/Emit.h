@@ -16,6 +16,8 @@ class Emit
 public:
     Emit() {}
 
+    std::string alignDirective();
+    std::string emitGlobalDirective(bool global, const std::string &label);
     std::string showReg(const std::shared_ptr<Assembly::Reg> &reg);
     std::string showOperand(const std::shared_ptr<Assembly::Operand> &operand);
     std::string showByteReg(const std::shared_ptr<Assembly::Reg> &reg);
@@ -44,8 +46,7 @@ public:
     std::string emitCall(std::shared_ptr<Assembly::Call> call);
     std::string emitRet(std::shared_ptr<Assembly::Ret> ret);
     std::string emitInst(std::shared_ptr<Assembly::Instruction> inst);
-    std::string emitFunction(std::shared_ptr<Assembly::Function> fun);
-    std::string emitProgram(std::shared_ptr<Assembly::Program> prog);
+    std::string emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel);
     std::string emitStackNote();
     void emit(std::shared_ptr<Assembly::Program> prog, const std::string &output);
 };

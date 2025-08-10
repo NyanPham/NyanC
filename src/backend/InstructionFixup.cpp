@@ -6,6 +6,18 @@
 #include "InstructionFixup.h"
 #include "Rounding.h"
 
+bool isMemoryOperand(const std::shared_ptr<Assembly::Operand> &operand)
+{
+    switch (operand->getType())
+    {
+    case Assembly::NodeType::Stack:
+    case Assembly::NodeType::Data:
+        return true;
+    default:
+        return false;
+    }
+}
+
 std::vector<std::shared_ptr<Assembly::Instruction>>
 InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> &inst)
 {
@@ -16,9 +28,7 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         /* Mov can't move a value from one memory address to another */
         auto mov = std::dynamic_pointer_cast<Assembly::Mov>(inst);
 
-        if (
-            mov->getSrc()->getType() == Assembly::NodeType::Stack &&
-            mov->getDst()->getType() == Assembly::NodeType::Stack)
+        if (isMemoryOperand(mov->getSrc()) && isMemoryOperand(mov->getDst()))
         {
             auto RegR10{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
 
@@ -68,8 +78,7 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         case Assembly::BinaryOp::Xor:
         {
             /* Add/Sub can't use memory addresses for both operands */
-            if (binary->getSrc()->getType() == Assembly::NodeType::Stack &&
-                binary->getDst()->getType() == Assembly::NodeType::Stack)
+            if (isMemoryOperand(binary->getSrc()) && isMemoryOperand(binary->getDst()))
             {
                 auto RegR10{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
 
@@ -88,7 +97,7 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         case Assembly::BinaryOp::Mult:
         {
             /* Mult can't have destination as a memory address */
-            if (binary->getDst()->getType() == Assembly::NodeType::Stack)
+            if (isMemoryOperand(binary->getDst()))
             {
                 auto RegR11{std::make_shared<Assembly::Reg>(Assembly::RegName::R11)};
 
@@ -117,7 +126,7 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     {
         auto cmp = std::dynamic_pointer_cast<Assembly::Cmp>(inst);
 
-        if (cmp->getSrc()->getType() == Assembly::NodeType::Stack && cmp->getDst()->getType() == Assembly::NodeType::Stack)
+        if (isMemoryOperand(cmp->getSrc()) && isMemoryOperand(cmp->getDst()))
         {
             // Both operands of cmp can't be in memory
             auto r10Reg{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
@@ -152,33 +161,38 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     }
 }
 
-std::shared_ptr<Assembly::Function>
-InstructionFixup::fixupFunction(const std::shared_ptr<Assembly::Function> &fun)
+std::shared_ptr<Assembly::TopLevel>
+InstructionFixup::fixupTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLevel)
 {
-    auto stackBytes = -_symbolTable.get(fun->getName()).stackFrameSize;
-
-    std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{
-        std::make_shared<Assembly::AllocateStack>(Rounding::roundAwayFromZero(16, stackBytes)),
-    };
-
-    for (auto &inst : fun->getInstructions())
+    if (auto fun = std::dynamic_pointer_cast<Assembly::Function>(topLevel))
     {
-        auto innerFixedInsts = fixupInstruction(inst);
-        fixedInstructions.insert(fixedInstructions.end(), innerFixedInsts.begin(), innerFixedInsts.end());
-    }
+        auto stackBytes = -_symbolTable.getStackFrameSize(fun->getName());
 
-    return std::make_shared<Assembly::Function>(fun->getName(), fixedInstructions);
+        std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{
+            std::make_shared<Assembly::AllocateStack>(Rounding::roundAwayFromZero(16, stackBytes)),
+        };
+
+        for (auto &inst : fun->getInstructions())
+        {
+            auto innerFixedInsts = fixupInstruction(inst);
+            fixedInstructions.insert(fixedInstructions.end(), innerFixedInsts.begin(), innerFixedInsts.end());
+        }
+
+        return std::make_shared<Assembly::Function>(fun->getName(), fun->isGlobal(), fixedInstructions);
+    }
+    else
+        return topLevel;
 }
 
 std::shared_ptr<Assembly::Program>
 InstructionFixup::fixupProgram(const std::shared_ptr<Assembly::Program> &prog)
 {
-    std::vector<std::shared_ptr<Assembly::Function>> fixedFns{};
+    std::vector<std::shared_ptr<Assembly::TopLevel>> fixedTls{};
 
-    for (auto &fn : prog->getFunctions())
+    for (auto &tl : prog->getTopLevels())
     {
-        fixedFns.push_back(fixupFunction(fn));
+        fixedTls.push_back(fixupTopLevel(tl));
     }
 
-    return std::make_shared<Assembly::Program>(fixedFns);
+    return std::make_shared<Assembly::Program>(fixedTls);
 }

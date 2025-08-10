@@ -8,7 +8,8 @@
 #include "TACKY.h"
 #include "Assembly.h"
 
-std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::passParams(const std::vector<std::string> &params)
+std::vector<std::shared_ptr<Assembly::Instruction>>
+CodeGen::passParams(const std::vector<std::string> &params)
 {
     std::vector<std::string> regParams(
         params.begin(),
@@ -39,7 +40,8 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::passParams(const st
     return insts;
 }
 
-std::shared_ptr<Assembly::Operand> CodeGen::convertVal(const std::shared_ptr<TACKY::Val> &val)
+std::shared_ptr<Assembly::Operand>
+CodeGen::convertVal(const std::shared_ptr<TACKY::Val> &val)
 {
     switch (val->getType())
     {
@@ -58,7 +60,8 @@ std::shared_ptr<Assembly::Operand> CodeGen::convertVal(const std::shared_ptr<TAC
     }
 }
 
-Assembly::UnaryOp CodeGen::convertUnop(const TACKY::UnaryOp op)
+Assembly::UnaryOp
+CodeGen::convertUnop(const TACKY::UnaryOp op)
 {
     switch (op)
     {
@@ -79,7 +82,8 @@ Assembly::UnaryOp CodeGen::convertUnop(const TACKY::UnaryOp op)
     }
 }
 
-Assembly::BinaryOp CodeGen::convertBinop(const TACKY::BinaryOp op)
+Assembly::BinaryOp
+CodeGen::convertBinop(const TACKY::BinaryOp op)
 {
     switch (op)
     {
@@ -113,7 +117,8 @@ Assembly::BinaryOp CodeGen::convertBinop(const TACKY::BinaryOp op)
     }
 }
 
-Assembly::CondCode CodeGen::convertCondCode(const TACKY::BinaryOp op)
+Assembly::CondCode
+CodeGen::convertCondCode(const TACKY::BinaryOp op)
 {
     switch (op)
     {
@@ -134,7 +139,8 @@ Assembly::CondCode CodeGen::convertCondCode(const TACKY::BinaryOp op)
     }
 }
 
-std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall)
+std::vector<std::shared_ptr<Assembly::Instruction>>
+CodeGen::convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall)
 {
     std::vector<std::shared_ptr<TACKY::Val>> regArgs(
         fnCall->getArgs().begin(),
@@ -193,7 +199,8 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertFunCall(cons
     return insts;
 }
 
-std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
+std::vector<std::shared_ptr<Assembly::Instruction>>
+CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
 {
     switch (inst->getType())
     {
@@ -366,31 +373,44 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
     }
 }
 
-std::shared_ptr<Assembly::Function> CodeGen::convertFunction(const std::shared_ptr<TACKY::Function> &fn)
+std::shared_ptr<Assembly::TopLevel>
+CodeGen::convertTopLevel(const std::shared_ptr<TACKY::TopLevel> &topLevel)
 {
-    std::vector<std::shared_ptr<Assembly::Instruction>> insts{};
-
-    auto paramInsts = passParams(fn->getParams());
-    insts.insert(insts.end(), paramInsts.begin(), paramInsts.end());
-
-    for (auto &inst : fn->getInstructions())
+    if (auto fn = std::dynamic_pointer_cast<TACKY::Function>(topLevel))
     {
-        auto asmInsts = convertInstruction(inst);
-        insts.insert(insts.end(), asmInsts.begin(), asmInsts.end());
-    }
+        std::vector<std::shared_ptr<Assembly::Instruction>> insts{};
 
-    return std::make_shared<Assembly::Function>(fn->getName(), insts);
+        auto paramInsts = passParams(fn->getParams());
+        insts.insert(insts.end(), paramInsts.begin(), paramInsts.end());
+
+        for (auto &inst : fn->getInstructions())
+        {
+            auto asmInsts = convertInstruction(inst);
+            insts.insert(insts.end(), asmInsts.begin(), asmInsts.end());
+        }
+
+        return std::make_shared<Assembly::Function>(fn->getName(), fn->isGlobal(), insts);
+    }
+    else if (auto staticVar = std::dynamic_pointer_cast<TACKY::StaticVariable>(topLevel))
+    {
+        return std::make_shared<Assembly::StaticVariable>(staticVar->getName(), staticVar->isGlobal(), staticVar->getInit());
+    }
+    else
+    {
+        throw std::runtime_error("Internal Error: Invalid TACKY top level");
+    }
 }
 
-std::shared_ptr<Assembly::Program> CodeGen::gen(std::shared_ptr<TACKY::Program> prog)
+std::shared_ptr<Assembly::Program>
+CodeGen::gen(std::shared_ptr<TACKY::Program> prog)
 {
-    std::vector<std::shared_ptr<Assembly::Function>> convertedFns{};
+    std::vector<std::shared_ptr<Assembly::TopLevel>> convertedTl{};
 
-    for (const auto &fn : prog->getFunctions())
+    for (const auto &tl : prog->getTopLevels())
     {
-        auto asmFnDef = convertFunction(fn);
-        convertedFns.push_back(asmFnDef);
+        auto asmTl = convertTopLevel(tl);
+        convertedTl.push_back(asmTl);
     }
 
-    return std::make_shared<Assembly::Program>(convertedFns);
+    return std::make_shared<Assembly::Program>(convertedTl);
 }

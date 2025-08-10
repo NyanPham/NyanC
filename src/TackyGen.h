@@ -38,7 +38,8 @@ public:
     std::vector<std::shared_ptr<TACKY::Instruction>> emitLocalDeclaration(const std::shared_ptr<AST::Declaration> &decl);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem);
-    std::optional<std::shared_ptr<TACKY::Function>> emitFunctionDecalaration(const std::shared_ptr<AST::FunctionDeclaration> &funDef);
+    std::optional<std::shared_ptr<TACKY::Function>> emitFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &funDef);
+    std::vector<std::shared_ptr<TACKY::StaticVariable>> convertSymbolsToTacky();
     std::shared_ptr<TACKY::Program> gen(const std::shared_ptr<AST::Program> &prog);
 
 private:

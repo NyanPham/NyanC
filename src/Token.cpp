@@ -49,6 +49,10 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_CASE";
     case TokenType::KEYWORD_DEFAULT:
         return "KEYWORD_DEFAULT";
+    case TokenType::KEYWORD_STATIC:
+        return "KEYWORD_STATIC";
+    case TokenType::KEYWORD_EXTERN:
+        return "KEYWORD_EXTERN";
     case TokenType::OPEN_PAREN:
         return "OPEN_PAREN";
     case TokenType::CLOSE_PAREN:

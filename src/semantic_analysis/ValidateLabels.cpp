@@ -158,7 +158,7 @@ ValidateLabels::validateLabelsInFun(const std::shared_ptr<AST::FunctionDeclarati
 
             throw std::runtime_error(errMsg);
         }
-        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), std::make_optional(renamedBlock));
+        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), std::make_optional(renamedBlock), fnDecl->getOptStorageClass());
     }
     else
     {
@@ -166,17 +166,26 @@ ValidateLabels::validateLabelsInFun(const std::shared_ptr<AST::FunctionDeclarati
     }
 }
 
+std::shared_ptr<AST::Declaration>
+ValidateLabels::validateLabelsInDecl(const std::shared_ptr<AST::Declaration> &decl)
+{
+    if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
+        return validateLabelsInFun(fnDecl);
+    else
+        return decl;
+}
+
 std::shared_ptr<AST::Program>
 ValidateLabels::validateLabels(const std::shared_ptr<AST::Program> &prog)
 {
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> validatedFns;
-    validatedFns.reserve(prog->getFunctionDeclarations().size());
+    std::vector<std::shared_ptr<AST::Declaration>> validatedDecls;
+    validatedDecls.reserve(prog->getDeclarations().size());
 
-    for (const auto &fnDecl : prog->getFunctionDeclarations())
+    for (const auto &decl : prog->getDeclarations())
     {
-        auto newFn = validateLabelsInFun(fnDecl);
-        validatedFns.push_back(newFn);
+        auto newDecl = validateLabelsInDecl(decl);
+        validatedDecls.push_back(newDecl);
     }
 
-    return std::make_shared<AST::Program>(validatedFns);
+    return std::make_shared<AST::Program>(validatedDecls);
 }

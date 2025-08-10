@@ -24,6 +24,8 @@ enum class TokenType
     KEYWORD_SWITCH,
     KEYWORD_CASE,
     KEYWORD_DEFAULT,
+    KEYWORD_STATIC,
+    KEYWORD_EXTERN,
 
     // Punctuation
     OPEN_PAREN,

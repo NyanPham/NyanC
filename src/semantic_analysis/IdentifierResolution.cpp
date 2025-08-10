@@ -266,12 +266,25 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
 
 // Helper to resolve local variables; deals with validation and updating variable map
 std::string
-IdentifierResolution::resolveLocalVarHelper(const std::string &name, IdMap &idMap)
+IdentifierResolution::resolveLocalVarHelper(const std::string &name, std::optional<AST::StorageClass> optStorageClass, IdMap &idMap)
 {
-    auto entry = idMap.find(name);
-    if (entry != idMap.end() && entry->second.fromCurrentScope)
+    auto it = idMap.find(name);
+    if (it != idMap.end() && it->second.fromCurrentScope)
     {
-        throw std::runtime_error("Duplicate variable declaration: " + name);
+        auto entry = it->second;
+        if (!(entry.hasLinkage && optStorageClass.has_value() && optStorageClass.value() == AST::StorageClass::Extern))
+            throw std::runtime_error("Duplicate variable declaration: " + name); // Variable is present in the map and was defined in the current scope
+    }
+
+    if (optStorageClass.has_value() && optStorageClass.value() == AST::StorageClass::Extern)
+    {
+        idMap.insert_or_assign(name, IdMapEntry{
+                                         .uniqueName = name,
+                                         .fromCurrentScope = true,
+                                         .hasLinkage = true,
+                                     });
+
+        return name;
     }
 
     auto uniqueName = UniqueIds::makeNamedTemporary(name);
@@ -285,12 +298,12 @@ IdentifierResolution::resolveLocalVarHelper(const std::string &name, IdMap &idMa
 }
 
 std::shared_ptr<AST::VariableDeclaration>
-IdentifierResolution::resolveLocalVarDeclaration(std::shared_ptr<AST::VariableDeclaration> varDecl, IdMap &idMap)
+IdentifierResolution::resolveLocalVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap)
 {
-    auto uniqueName = resolveLocalVarHelper(varDecl->getName(), idMap);
+    auto uniqueName = resolveLocalVarHelper(varDecl->getName(), varDecl->getOptStorageClass(), idMap);
     std::optional<std::shared_ptr<AST::Expression>> resolvedInit = resolveOptionalExp(varDecl->getOptInit(), idMap);
 
-    return std::make_shared<AST::VariableDeclaration>(uniqueName, resolvedInit);
+    return std::make_shared<AST::VariableDeclaration>(uniqueName, resolvedInit, varDecl->getOptStorageClass());
 }
 
 std::shared_ptr<AST::BlockItem>
@@ -330,9 +343,11 @@ IdentifierResolution::resolveLocalDeclaration(const std::shared_ptr<AST::Declara
     if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
     {
         if (fnDecl->getOptBody().has_value())
-        {
             throw std::runtime_error("Nested function definitions are not allowed!");
-        }
+
+        if (fnDecl->getOptStorageClass().has_value() && fnDecl->getOptStorageClass().value() == AST::StorageClass::Static)
+            throw std::runtime_error("Static keyword not allowd on local function declarations");
+
         return resolveFunDeclaration(fnDecl, idMap);
     }
     throw std::runtime_error("Internal error: Unknown declaration!");
@@ -346,13 +361,25 @@ IdentifierResolution::resolveParams(const std::vector<std::string> &params, IdMa
 
     for (auto &param : params)
     {
-        resolvedParams.push_back(resolveLocalVarHelper(param, idMap));
+        resolvedParams.push_back(resolveLocalVarHelper(param, std::nullopt, idMap));
     }
     return resolvedParams;
 }
 
+std::shared_ptr<AST::VariableDeclaration>
+IdentifierResolution::resolveGlobalScopeVariableDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap)
+{
+    idMap.insert_or_assign(varDecl->getName(), IdMapEntry{
+                                                   .uniqueName = varDecl->getName(),
+                                                   .fromCurrentScope = true,
+                                                   .hasLinkage = true,
+                                               });
+
+    return varDecl;
+}
+
 std::shared_ptr<AST::FunctionDeclaration>
-IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> fnDecl, IdMap &idMap)
+IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl, IdMap &idMap)
 {
     auto entry = idMap.find(fnDecl->getName());
 
@@ -377,19 +404,37 @@ IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionD
         resolvedBody = std::make_optional(resolveBlock(fnDecl->getOptBody().value(), innerMap));
     }
 
-    return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), resolvedParams, resolvedBody);
+    return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), resolvedParams, resolvedBody, fnDecl->getOptStorageClass());
+}
+
+std::shared_ptr<AST::Declaration>
+IdentifierResolution::resolveGlobalDeclaration(const std::shared_ptr<AST::Declaration> &decl, IdMap &idMap)
+{
+    if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
+    {
+        return resolveFunDeclaration(fnDecl, idMap);
+    }
+    else if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
+    {
+        return resolveGlobalScopeVariableDeclaration(varDecl, idMap);
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: Unknown declaration!");
+    }
 }
 
 std::shared_ptr<AST::Program>
 IdentifierResolution::resolve(const std::shared_ptr<AST::Program> &prog)
 {
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> resolvedFnDecls;
+    std::vector<std::shared_ptr<AST::Declaration>> resolvedDecls{};
+    resolvedDecls.reserve(prog->getDeclarations().size());
     IdMap idMap;
 
-    for (const auto &fnDecl : prog->getFunctionDeclarations())
+    for (const auto &decl : prog->getDeclarations())
     {
-        resolvedFnDecls.push_back(resolveFunDeclaration(fnDecl, idMap));
+        resolvedDecls.push_back(resolveGlobalDeclaration(decl, idMap));
     }
 
-    return std::make_shared<AST::Program>(resolvedFnDecls);
+    return std::make_shared<AST::Program>(resolvedDecls);
 }

@@ -18,6 +18,7 @@ public:
     std::pair<std::optional<AST::CaseMap>, std::shared_ptr<AST::BlockItem>> analyzeBlockItem(const std::shared_ptr<AST::BlockItem> &blkItem, std::optional<AST::CaseMap> optCaseMap);
     std::pair<std::optional<AST::CaseMap>, AST::Block> analyzeBlock(const AST::Block &blk, std::optional<AST::CaseMap> optCaseMap);
     std::shared_ptr<AST::FunctionDeclaration> analyzeFunctionDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &funDef);
+    std::shared_ptr<AST::Declaration> analyzeDeclaration(const std::shared_ptr<AST::Declaration> &decl);
     std::shared_ptr<AST::Program> analyzeSwitches(const std::shared_ptr<AST::Program> &prog);
 };
 

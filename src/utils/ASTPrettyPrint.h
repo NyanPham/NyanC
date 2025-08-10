@@ -122,13 +122,13 @@ private:
         std::cout << getIndent() << "Program(\n";
         increaseIndent();
 
-        for (const auto &fnDecl : program.getFunctionDeclarations())
+        for (const auto &decl : program.getDeclarations())
         {
-            visit(*fnDecl);
+            visit(*decl);
         }
 
         decreaseIndent();
-        std::cout << getIndent() << "),\n";
+        std::cout << getIndent() << ")\n";
     }
 
     void visitFunctionDeclaration(const AST::FunctionDeclaration &fnDecl)
@@ -159,6 +159,23 @@ private:
         else
         {
             std::cout << getIndent() << "body=None\n";
+        }
+
+        std::cout << getIndent() << "storageClass=";
+        if (fnDecl.getOptStorageClass().has_value())
+        {
+            if (fnDecl.getOptStorageClass().value() == AST::StorageClass::Static)
+            {
+                std::cout << "Static,\n";
+            }
+            else
+            {
+                std::cout << "Extern,\n";
+            }
+        }
+        else
+        {
+            std::cout << "None,\n";
         }
 
         decreaseIndent();
@@ -694,17 +711,32 @@ private:
 
         std::cout << "Declaration(\n";
         increaseIndent();
-        std::cout << getIndent() << "name=\"" << varDecl.getName() << "\"";
-
+        std::cout << getIndent() << "name=\"" << varDecl.getName() << "\",\n";
+        std::cout << getIndent() << "init=";
         if (varDecl.getOptInit().has_value())
         {
-            std::cout << ",\n"
-                      << getIndent() << "init=";
             visit(*varDecl.getOptInit().value(), false);
         }
         else
         {
-            std::cout << "\n";
+            std::cout << "None\n";
+        }
+
+        std::cout << getIndent() << "storageClass=";
+        if (varDecl.getOptStorageClass().has_value())
+        {
+            if (varDecl.getOptStorageClass().value() == AST::StorageClass::Static)
+            {
+                std::cout << "Static,\n";
+            }
+            else
+            {
+                std::cout << "Extern,\n";
+            }
+        }
+        else
+        {
+            std::cout << "None,\n";
         }
 
         decreaseIndent();

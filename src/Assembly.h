@@ -6,8 +6,9 @@
 #include <vector>
 
 /*
-program = Program(function_definition*)
-function_definition = Function(identifier name, instruction* instructions)
+program = Program(top_level*)
+top_level = Function(identifier name, bool global, instruction* instructions)
+    | StaticVariable(identifier name, bool global, int init)
 instruction = Mov(operand src, operand dst)
     | Unary(unary_operator, operand dst)
     | Binary(binary_operator, operand src, operand dst)
@@ -25,7 +26,7 @@ instruction = Mov(operand src, operand dst)
     | Ret
 unary_operator = Neg | Not
 binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar
-operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int)
+operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int) | Data(identifier)
 cond_code = E | NE | L | LE | G | GE
 reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11
 */
@@ -39,6 +40,7 @@ namespace Assembly
     class Reg;
     class Pseudo;
     class Stack;
+    class Data;
     class Mov;
     class Unary;
     class Binary;
@@ -54,13 +56,16 @@ namespace Assembly
     class Push;
     class Call;
     class Ret;
+    class StaticVariable;
     class Function;
+    class TopLevel;
     class Program;
 
     enum class NodeType
     {
         Program,
         Function,
+        StaticVariable,
         Ret,
         Mov,
         Unary,
@@ -80,6 +85,7 @@ namespace Assembly
         Reg,
         Pseudo,
         Stack,
+        Data,
     };
 
     enum class RegName
@@ -148,6 +154,13 @@ namespace Assembly
         virtual ~Instruction() = default;
     };
 
+    class TopLevel : public Node
+    {
+    public:
+        TopLevel(NodeType type) : Node(type) {}
+        virtual ~TopLevel() = default;
+    };
+
     class Imm : public Operand
     {
     public:
@@ -190,6 +203,16 @@ namespace Assembly
 
     private:
         int _offset;
+    };
+
+    class Data : public Operand
+    {
+    public:
+        Data(const std::string &name) : Operand(NodeType::Data), _name{name} {}
+        const std::string &getName() const { return _name; }
+
+    private:
+        std::string _name;
     };
 
     class Mov : public Instruction
@@ -364,31 +387,49 @@ namespace Assembly
         Ret() : Instruction(NodeType::Ret) {}
     };
 
-    class Function : public Node
+    class StaticVariable : public TopLevel
     {
     public:
-        Function(const std::string &name, const std::vector<std::shared_ptr<Instruction>> &instructions)
-            : Node(NodeType::Function), _name{name}, _instructions{instructions}
+        StaticVariable(const std::string &name, bool global, int init)
+            : TopLevel(NodeType::StaticVariable), _name{name}, _global{global}, _init{init} {}
+
+        const std::string &getName() const { return _name; }
+        bool isGlobal() const { return _global; }
+        const int &getInit() const { return _init; }
+
+    private:
+        std::string _name;
+        bool _global;
+        int _init;
+    };
+
+    class Function : public TopLevel
+    {
+    public:
+        Function(const std::string &name, bool global, const std::vector<std::shared_ptr<Instruction>> &instructions)
+            : TopLevel(NodeType::Function), _name{name}, _global{global}, _instructions{instructions}
         {
         }
 
         const std::string &getName() const { return _name; }
+        bool isGlobal() const { return _global; }
         const std::vector<std::shared_ptr<Instruction>> &getInstructions() const { return _instructions; }
 
     private:
         std::string _name;
+        bool _global;
         std::vector<std::shared_ptr<Instruction>> _instructions;
     };
 
     class Program : public Node
     {
     public:
-        Program(const std::vector<std::shared_ptr<Function>> &fns) : Node(NodeType::Program), _fns{fns} {}
+        Program(const std::vector<std::shared_ptr<TopLevel>> &topLevels) : Node(NodeType::Program), _topLevels{topLevels} {}
 
-        const std::vector<std::shared_ptr<Function>> &getFunctions() const { return _fns; }
+        const std::vector<std::shared_ptr<TopLevel>> &getTopLevels() const { return _topLevels; }
 
     private:
-        std::vector<std::shared_ptr<Function>> _fns;
+        std::vector<std::shared_ptr<TopLevel>> _topLevels;
     };
 }
 

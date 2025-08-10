@@ -4,5 +4,6 @@
 #include "ASTPrettyPrint.h"
 #include "TackyPrettyPrint.h"
 #include "CodeGenPrettyPrint.h"
+#include "SymbolTablePrint.h"
 
 #endif

@@ -14,7 +14,7 @@ public:
     InstructionFixup(Symbols::SymbolTable &symbolTable) : _symbolTable{symbolTable} {};
 
     std::vector<std::shared_ptr<Assembly::Instruction>> fixupInstruction(const std::shared_ptr<Assembly::Instruction> &inst);
-    std::shared_ptr<Assembly::Function> fixupFunction(const std::shared_ptr<Assembly::Function> &fun);
+    std::shared_ptr<Assembly::TopLevel> fixupTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLevel);
     std::shared_ptr<Assembly::Program> fixupProgram(const std::shared_ptr<Assembly::Program> &prog);
 
 private:

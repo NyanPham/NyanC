@@ -8,10 +8,11 @@
 #include <map>
 
 /*
-program = Program(function_declarations*)
+program = Program(declaration*)
 declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
-variable_declaration = (identifier name, exp? init)
-function_declaration = (identifier name, identifier* params, block? body)
+variable_declaration = (identifier name, exp? init, storage_class?)
+function_declaration = (identifier name, identifier* params, block? body, storage_class?)
+storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
 for_init = InitDecl(variable_declaration) | InitExp(exp?)
@@ -151,6 +152,12 @@ namespace AST
         BitShiftRight,
     };
 
+    enum class StorageClass
+    {
+        Static,
+        Extern,
+    };
+
     using Block = std::vector<std::shared_ptr<BlockItem>>;
     using CaseMap = std::map<std::optional<int>, std::string>;
 
@@ -203,17 +210,19 @@ namespace AST
     class VariableDeclaration : public Declaration
     {
     public:
-        VariableDeclaration(std::string name, std::optional<std::shared_ptr<Expression>> init)
-            : Declaration(NodeType::VariableDeclaration), _name{std::move(name)}, _init{std::move(init)}
+        VariableDeclaration(std::string name, std::optional<std::shared_ptr<Expression>> init = std::nullopt, std::optional<StorageClass> storageClass = std::nullopt)
+            : Declaration(NodeType::VariableDeclaration), _name{std::move(name)}, _init{std::move(init)}, _storageClass{storageClass}
         {
         }
 
         const std::string &getName() const { return _name; }
         const std::optional<std::shared_ptr<Expression>> &getOptInit() const { return _init; }
+        const std::optional<StorageClass> &getOptStorageClass() const { return _storageClass; }
 
     private:
         std::string _name;
         std::optional<std::shared_ptr<Expression>> _init;
+        std::optional<StorageClass> _storageClass;
     };
 
     class Constant : public Expression
@@ -622,29 +631,31 @@ namespace AST
     class FunctionDeclaration : public Declaration
     {
     public:
-        FunctionDeclaration(const std::string &name, std::vector<std::string> params, std::optional<Block> body)
-            : Declaration(NodeType::FunctionDeclaration), _name{name}, _params{params}, _body{body} {}
+        FunctionDeclaration(const std::string &name, std::vector<std::string> params, std::optional<Block> body = std::nullopt, std::optional<StorageClass> storageClass = std::nullopt)
+            : Declaration(NodeType::FunctionDeclaration), _name{name}, _params{params}, _body{body}, _storageClass{storageClass} {}
 
         const std::string &getName() const { return _name; }
         const std::vector<std::string> &getParams() const { return _params; }
         const std::optional<Block> &getOptBody() const { return _body; }
+        const std::optional<StorageClass> &getOptStorageClass() const { return _storageClass; }
 
     private:
         std::string _name;
         std::vector<std::string> _params;
         std::optional<Block> _body;
+        std::optional<StorageClass> _storageClass;
     };
 
     class Program : public Node
     {
     public:
-        Program(std::vector<std::shared_ptr<FunctionDeclaration>> fnDecls)
-            : Node(NodeType::Program), _fnDecls{fnDecls} {}
+        Program(std::vector<std::shared_ptr<Declaration>> decls)
+            : Node(NodeType::Program), decls{decls} {}
 
-        const std::vector<std::shared_ptr<FunctionDeclaration>> &getFunctionDeclarations() const { return _fnDecls; }
+        const std::vector<std::shared_ptr<Declaration>> &getDeclarations() const { return decls; }
 
     private:
-        std::vector<std::shared_ptr<FunctionDeclaration>> _fnDecls;
+        std::vector<std::shared_ptr<Declaration>> decls;
     };
 }
 

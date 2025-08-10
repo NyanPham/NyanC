@@ -22,7 +22,7 @@ public:
     Assembly::CondCode convertCondCode(const TACKY::BinaryOp op);
     std::vector<std::shared_ptr<Assembly::Instruction>> convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall);
     std::vector<std::shared_ptr<Assembly::Instruction>> convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst);
-    std::shared_ptr<Assembly::Function> convertFunction(const std::shared_ptr<TACKY::Function> &fun);
+    std::shared_ptr<Assembly::TopLevel> convertTopLevel(const std::shared_ptr<TACKY::TopLevel> &topLevel);
     std::shared_ptr<Assembly::Program> gen(std::shared_ptr<TACKY::Program> prog);
 
 private:

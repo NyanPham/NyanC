@@ -701,8 +701,17 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
 std::vector<std::shared_ptr<TACKY::Instruction>>
 TackyGen::emitLocalDeclaration(const std::shared_ptr<AST::Declaration> &decl)
 {
-    if (decl->getType() == AST::NodeType::VariableDeclaration)
+    if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
+    {
+        if (varDecl->getOptStorageClass().has_value())
+        {
+            // With storage class in local declaration, variable should have been processed in TypeChecking pass
+            // thus it should be already in symbol table
+            // We don't process them here.
+            return {};
+        }
         return emitVarDeclaration(std::dynamic_pointer_cast<AST::VariableDeclaration>(decl));
+    }
     else
         return {};
 }
@@ -712,6 +721,7 @@ TackyGen::emitVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &va
 {
     if (varDecl->getOptInit().has_value())
     {
+        // Treat declaration with initializer as assignment
         auto [evalAssignment, v] = emitTackyForExp(
             std::make_shared<AST::Assignment>(
                 std::make_shared<AST::Var>(varDecl->getName()),
@@ -739,12 +749,14 @@ TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem
 }
 
 std::optional<std::shared_ptr<TACKY::Function>>
-TackyGen::emitFunctionDecalaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl)
+TackyGen::emitFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl)
 {
     auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
 
     if (fnDecl->getOptBody().has_value())
     {
+        bool global = _symbolTable.isGlobal(fnDecl->getName());
+
         for (auto &blockItem : fnDecl->getOptBody().value())
         {
             auto innerInsts = emitTackyForBlockItem(blockItem);
@@ -754,10 +766,49 @@ TackyGen::emitFunctionDecalaration(const std::shared_ptr<AST::FunctionDeclaratio
         auto extraReturn = std::make_shared<TACKY::Return>(std::make_shared<TACKY::Constant>(0));
         insts.push_back(extraReturn);
 
-        return std::make_optional(std::make_shared<TACKY::Function>(fnDecl->getName(), fnDecl->getParams(), insts));
+        return std::make_optional(std::make_shared<TACKY::Function>(fnDecl->getName(), global, fnDecl->getParams(), insts));
     }
 
     return std::nullopt;
+}
+
+std::vector<std::shared_ptr<TACKY::StaticVariable>>
+TackyGen::convertSymbolsToTacky()
+{
+    std::vector<std::shared_ptr<TACKY::StaticVariable>> staticVars{};
+
+    for (const auto &[name, symbol] : _symbolTable.getAllSymbols())
+    {
+        if (auto staticAttrs = Symbols::getStaticAttr(symbol.attrs))
+        {
+            if (auto initial = Symbols::getInitial(staticAttrs->init))
+            {
+                staticVars.push_back(
+                    std::make_shared<TACKY::StaticVariable>(
+                        name,
+                        staticAttrs->global,
+                        initial->value));
+            }
+            else if (auto tentative = Symbols::getTentative(staticAttrs->init))
+            {
+                staticVars.push_back(
+                    std::make_shared<TACKY::StaticVariable>(
+                        name,
+                        staticAttrs->global,
+                        0));
+            }
+            else
+            {
+                // staticAttrs is a NoInitializer, do nothing
+            }
+        }
+        else
+        {
+            // Do nothing
+        }
+    }
+
+    return staticVars;
 }
 
 std::shared_ptr<TACKY::Program>
@@ -765,12 +816,21 @@ TackyGen::gen(const std::shared_ptr<AST::Program> &prog)
 {
     auto tackyFnDefs = std::vector<std::shared_ptr<TACKY::Function>>{};
 
-    for (const auto &fnDecl : prog->getFunctionDeclarations())
+    for (const auto &decl : prog->getDeclarations())
     {
-        auto newFn = emitFunctionDecalaration(fnDecl);
-        if (newFn.has_value())
-            tackyFnDefs.push_back(newFn.value());
+        if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
+        {
+            auto newFn = emitFunDeclaration(fnDecl);
+            if (newFn.has_value())
+                tackyFnDefs.push_back(newFn.value());
+        }
     }
 
-    return std::make_shared<TACKY::Program>(tackyFnDefs);
+    auto tackyVarDefs = std::vector<std::shared_ptr<TACKY::StaticVariable>>{convertSymbolsToTacky()};
+
+    auto tackyDefs = std::vector<std::shared_ptr<TACKY::TopLevel>>{};
+    std::copy(tackyVarDefs.begin(), tackyVarDefs.end(), std::back_inserter(tackyDefs));
+    std::copy(tackyFnDefs.begin(), tackyFnDefs.end(), std::back_inserter(tackyDefs));
+
+    return std::make_shared<TACKY::Program>(tackyDefs);
 }

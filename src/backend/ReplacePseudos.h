@@ -26,7 +26,7 @@ public:
     ReplacementState createInitState();
     ReplaceOperandPair replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state);
     ReplaceInstPair replacePseudosInInstruction(const std::shared_ptr<Assembly::Instruction> &inst, ReplacementState &state);
-    std::shared_ptr<Assembly::Function> replacePseudosInFunction(const std::shared_ptr<Assembly::Function> &func);
+    std::shared_ptr<Assembly::TopLevel> replacePseudosInTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLevel);
     std::shared_ptr<Assembly::Program> replacePseudos(const std::shared_ptr<Assembly::Program> &prog);
 
 private:

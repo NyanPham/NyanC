@@ -18,6 +18,7 @@
 #include "backend/InstructionFixup.h"
 #include "Emit.h"
 #include "utils/ASTPrettyPrint.h"
+#include "utils/SymbolTablePrint.h"
 #include "utils/TackyPrettyPrint.h"
 #include "utils/CodeGenPrettyPrint.h"
 
@@ -62,6 +63,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
 
             auto input = buffer.str();
             ASTPrettyPrint astPrettyPrint;
+            SymbolTablePrint symbolTablePrint;
             TackyPrettyPrint tackyPrettyPrint;
             CodeGenPrettyPrint codeGenPrettyPrint;
 
@@ -134,6 +136,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                     std::cout << "Cases Collected:" << '\n';
                     astPrettyPrint.print(*casesCollectedAst);
 
+                    symbolTablePrint.print(typeChecker.getSymbolTable());
                     std::cout << "TypeChecked:" << '\n';
                     astPrettyPrint.print(*typeCheckedAst);
                 }
@@ -166,7 +169,11 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto tacky = tackyGen.gen(typeCheckedAst);
 
                 if (debugging)
+                {
+                    symbolTablePrint.print(symbolTable);
+                    std::cout << "TACKY:" << '\n';
                     tackyPrettyPrint.print(*tacky);
+                }
 
                 break;
             }
@@ -206,6 +213,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
 
                 if (debugging)
                 {
+                    symbolTablePrint.print(symbolTable);
                     std::cout << "======= RAW ASSEMBLY =======" << '\n';
                     codeGenPrettyPrint.print(*asmProg);
                     std::cout << '\n';
@@ -301,6 +309,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 std::string asmFile = settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
 
+                assembleAndLink(srcFiles, false, !debugging);
                 break;
             }
 
@@ -342,14 +351,10 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 std::string asmFile = settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
 
+                assembleAndLink(srcFiles, true, !debugging);
                 break;
             }
             }
-        }
-
-        if (stage == Stage::Executable || stage == Stage::Object)
-        {
-            assembleAndLink(srcFiles, stage == Stage::Executable, !debugging);
         }
 
         return 0;

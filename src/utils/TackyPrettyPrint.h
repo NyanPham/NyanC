@@ -32,6 +32,9 @@ private:
         case TACKY::NodeType::Function:
             visitFunction(static_cast<const TACKY::Function &>(node));
             break;
+        case TACKY::NodeType::StaticVariable:
+            visitStaticVariable(static_cast<const TACKY::StaticVariable &>(node));
+            break;
         case TACKY::NodeType::Return:
             visitReturn(static_cast<const TACKY::Return &>(node), indent);
             break;
@@ -76,13 +79,20 @@ private:
         std::cout << getIndent() << "Program(\n";
         increaseIndent();
 
-        for (const auto &fnDef : program.getFunctions())
+        for (const auto &tl : program.getTopLevels())
         {
-            visitFunction(*fnDef);
+            if (auto varDef = std::dynamic_pointer_cast<TACKY::StaticVariable>(tl))
+            {
+                visitStaticVariable(*varDef);
+            }
+            else if (auto funcDef = std::dynamic_pointer_cast<TACKY::Function>(tl))
+            {
+                visitFunction(*funcDef);
+            }
         }
 
         decreaseIndent();
-        std::cout << getIndent() << "),\n";
+        std::cout << getIndent() << ")\n";
     }
 
     void visitFunction(const TACKY::Function &func)
@@ -90,6 +100,7 @@ private:
         std::cout << getIndent() << "Function(\n";
         increaseIndent();
         std::cout << getIndent() << "name=\"" << func.getName() << "\",\n";
+        std::cout << getIndent() << "global=" << func.isGlobal() << ",\n";
         std::cout << getIndent() << "params=[\n";
 
         for (const auto &param : func.getParams())
@@ -104,6 +115,18 @@ private:
             visit(*instr);
         }
         decreaseIndent();
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitStaticVariable(const TACKY::StaticVariable &staticVar)
+    {
+        std::cout << getIndent() << "StaticVariable(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
+        std::cout << getIndent() << "global=" << staticVar.isGlobal() << ",\n";
+        std::cout << getIndent() << "init=" << std::to_string(staticVar.getInit()) << ",\n";
+
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

@@ -6,8 +6,9 @@
 #include <vector>
 
 /*
-program = Program(function_definition*)
-function_definition = Function(identifier name, identifier* params, Instruction* instructions)
+program = Program(top_level*)
+top_level = Function(identifier name, bool global, identifier* params, Instruction* instructions)
+    | StaticVariable(identifier name, bool global, int init)
 instruction = Return(val)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
@@ -27,10 +28,11 @@ binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
 
 namespace TACKY
 {
-
     class Node;
     class Program;
+    class TopLevel;
     class Function;
+    class StaticVariable;
     class Instruction;
     class Return;
     class Unary;
@@ -49,6 +51,7 @@ namespace TACKY
     {
         Program,
         Function,
+        StaticVariable,
         Return,
         Unary,
         Binary,
@@ -107,6 +110,13 @@ namespace TACKY
     public:
         Instruction(NodeType type) : Node(type) {}
         virtual ~Instruction() override = default;
+    };
+
+    class TopLevel : public Node
+    {
+    public:
+        TopLevel(NodeType type) : Node(type) {}
+        virtual ~TopLevel() override = default;
     };
 
     class Val : public Node
@@ -269,20 +279,40 @@ namespace TACKY
         std::shared_ptr<Val> _value;
     };
 
-    class Function : public Node
+    class StaticVariable : public TopLevel
     {
     public:
-        Function(const std::string &name, const std::vector<std::string> &params, std::vector<std::shared_ptr<Instruction>> instructions)
-            : Node(NodeType::Function), _name{std::move(name)}, _params{params}, _instructions{std::move(instructions)}
+        StaticVariable(const std::string &name, bool global, int init)
+            : TopLevel(NodeType::StaticVariable), _name{std::move(name)}, _global{global}, _init{init}
         {
         }
 
         const std::string &getName() const { return _name; }
+        bool isGlobal() const { return _global; }
+        const int &getInit() const { return _init; }
+
+    private:
+        std::string _name;
+        bool _global;
+        int _init;
+    };
+
+    class Function : public TopLevel
+    {
+    public:
+        Function(const std::string &name, bool global, const std::vector<std::string> &params, std::vector<std::shared_ptr<Instruction>> instructions)
+            : TopLevel(NodeType::Function), _name{std::move(name)}, _global{global}, _params{params}, _instructions{std::move(instructions)}
+        {
+        }
+
+        const std::string &getName() const { return _name; }
+        bool isGlobal() const { return _global; }
         const std::vector<std::string> &getParams() const { return _params; }
         const std::vector<std::shared_ptr<Instruction>> &getInstructions() const { return _instructions; }
 
     private:
         std::string _name;
+        bool _global;
         std::vector<std::string> _params;
         std::vector<std::shared_ptr<Instruction>> _instructions;
     };
@@ -290,11 +320,11 @@ namespace TACKY
     class Program : public Node
     {
     public:
-        Program(std::vector<std::shared_ptr<Function>> functions) : Node(NodeType::Program), _functions{std::move(functions)} {}
-        const std::vector<std::shared_ptr<Function>> &getFunctions() const { return _functions; }
+        Program(std::vector<std::shared_ptr<TopLevel>> topLevels) : Node(NodeType::Program), _topLevels{std::move(topLevels)} {}
+        const std::vector<std::shared_ptr<TopLevel>> &getTopLevels() const { return _topLevels; }
 
     private:
-        std::vector<std::shared_ptr<Function>> _functions;
+        std::vector<std::shared_ptr<TopLevel>> _topLevels;
     };
 };
 

@@ -2,6 +2,7 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <set>
 
 #include "Token.h"
 #include "Lexer.h"
@@ -11,11 +12,12 @@
 /*
 EBNF for a subset of C:
 
-<program> ::= { <function-declaration> }
+<program> ::= { <declaration> }
 <declaration> ::= <variable-declaration> | <function-declaration>
-<variable-declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
-<function-declaration> ::= "int" <identifier> "(" <param-list> ")" (<block> | ";")
+<variable-declaration> ::= { <specifier> }+ <identifier> [ "=" <exp> ] ";"
+<function-declaration> ::= { <specifier> }+ <identifier> "(" <param-list> ")" (<block> | ";")
 <param-list> :: = "void" | "int" <identifier> { "," "int" <identifier> }
+<specifier> ::= "int" | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
 <for-init> ::= <variable-declaration> | [ <exp> ] ";"
@@ -410,6 +412,63 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
+std::vector<Token> Parser::parseSpecifierList()
+{
+    std::vector<Token> specifiers{};
+    auto nextToken{peekToken()};
+
+    while (nextToken.has_value() && _specifierTypes.count(nextToken->getType()))
+    {
+        auto spec{takeToken()};
+        specifiers.push_back(spec.value());
+        nextToken = peekToken();
+    }
+
+    return specifiers;
+}
+
+AST::StorageClass Parser::parseStorageClass(const Token &spec)
+{
+    switch (spec.getType())
+    {
+    case TokenType::KEYWORD_STATIC:
+        return AST::StorageClass::Static;
+    case TokenType::KEYWORD_EXTERN:
+        return AST::StorageClass::Extern;
+    default:
+        throw std::runtime_error("Internal error: bad storage class");
+    }
+}
+
+std::pair<Types::DataType, std::optional<AST::StorageClass>> Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
+{
+    std::vector<Token> types{};
+    std::vector<Token> storageClasses{};
+
+    for (const auto &spec : specifierList)
+    {
+        if (spec.getType() == TokenType::KEYWORD_INT)
+            types.push_back(spec);
+        else
+            storageClasses.push_back(spec);
+    }
+
+    if (types.size() != 1)
+        throw std::runtime_error("Invalid type specifier");
+
+    Types::DataType type{Types::IntType()};
+    std::optional<AST::StorageClass> storageClass{};
+
+    if (storageClasses.empty())
+        storageClass = std::nullopt;
+    else if (storageClasses.size() == 1)
+        storageClass = std::make_optional(parseStorageClass(storageClasses[0]));
+    else
+        throw std::runtime_error("Invalid storage class");
+
+    return {type, storageClass};
+}
+
 std::optional<std::shared_ptr<AST::Expression>> Parser::parseOptionalExp(TokenType delim)
 {
     auto nextToken{peekToken()};
@@ -467,7 +526,7 @@ std::shared_ptr<AST::ForInit> Parser::parseForInit()
         raiseError("a for initializer", "empty token");
     }
 
-    if (nextToken->getType() == TokenType::KEYWORD_INT)
+    if (_specifierTypes.count(nextToken->getType()))
     {
         return std::make_shared<AST::InitDecl>(parseVariableDeclaration());
     }
@@ -858,7 +917,7 @@ std::vector<std::string> Parser::parseParamList()
     return args;
 }
 
-std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclaration(const std::string &name)
+std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass)
 {
     expect(TokenType::OPEN_PAREN);
     std::vector<std::string> params{};
@@ -902,10 +961,10 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclarati
         raiseError("a function body or semicolon", "invalid token");
     }
 
-    return std::make_shared<AST::FunctionDeclaration>(name, params, body);
+    return std::make_shared<AST::FunctionDeclaration>(name, params, body, storageClass);
 }
 
-std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclaration(const std::string &name)
+std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass)
 {
     auto nextToken{takeToken()};
     if (!nextToken.has_value())
@@ -914,13 +973,13 @@ std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclarati
     switch (nextToken->getType())
     {
     case TokenType::SEMICOLON:
-        return std::make_shared<AST::VariableDeclaration>(name, std::nullopt);
+        return std::make_shared<AST::VariableDeclaration>(name, std::nullopt, storageClass);
     case TokenType::EQUAL_SIGN:
     {
         auto init = parseExp(0);
         expect(TokenType::SEMICOLON);
 
-        return std::make_shared<AST::VariableDeclaration>(name, std::make_optional(init));
+        return std::make_shared<AST::VariableDeclaration>(name, std::make_optional(init), storageClass);
     }
     default:
         raiseError("an initializer or semicolon", tokenTypeToString(nextToken->getType()));
@@ -953,64 +1012,57 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
 
 std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
 {
-    expect(TokenType::KEYWORD_INT);
+    auto specifiers{parseSpecifierList()};
+    auto [_, storageClass] = parseTypeAndStorageClass(specifiers);
     auto name{parseIdentifier()};
 
     auto nextToken{peekToken()};
 
     if (nextToken.has_value() && nextToken->getType() == TokenType::OPEN_PAREN)
-        return finishParsingFunctionDeclaration(name);
+        return finishParsingFunctionDeclaration(name, storageClass);
     else
-        return finishParsingVariableDeclaration(name);
+        return finishParsingVariableDeclaration(name, storageClass);
 }
 
 std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()
 {
     auto nextToken{peekToken()};
 
-    if (nextToken->getType() == TokenType::KEYWORD_INT)
+    switch (nextToken->getType())
     {
+    case TokenType::KEYWORD_INT:
+    case TokenType::KEYWORD_STATIC:
+    case TokenType::KEYWORD_EXTERN:
         return parseDeclaration();
-    }
-    else
-    {
+    default:
         return parseStatement();
     }
 }
 
-std::vector<std::shared_ptr<AST::FunctionDeclaration>> Parser::parseFunctionDeclarationList()
+std::vector<std::shared_ptr<AST::Declaration>> Parser::parseDeclarationList()
 {
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> fnList{};
+    std::vector<std::shared_ptr<AST::Declaration>> declList{};
     auto nextToken{peekToken()};
 
     while (nextToken.has_value())
     {
         auto nextDecl{parseDeclaration()};
-
-        if (nextDecl->getType() == AST::NodeType::FunctionDeclaration)
-        {
-            fnList.push_back(std::dynamic_pointer_cast<AST::FunctionDeclaration>(nextDecl));
-        }
-        else
-        {
-            raiseError("a function declaration at top level", "a variable declaration");
-        }
-
+        declList.push_back(nextDecl);
         nextToken = peekToken();
     }
 
-    return fnList;
+    return declList;
 }
 
 std::shared_ptr<AST::Program> Parser::parseProgram()
 {
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> fnDecls{parseFunctionDeclarationList()};
+    std::vector<std::shared_ptr<AST::Declaration>> decls{parseDeclarationList()};
     std::optional<Token> nextToken{peekToken()};
 
     if (nextToken.has_value())
         raiseError("end of input", tokenTypeToString(nextToken->getType()));
 
-    return std::make_shared<AST::Program>(fnDecls);
+    return std::make_shared<AST::Program>(decls);
 }
 
 std::shared_ptr<AST::Program> Parser::parse(const std::string &input)

@@ -7,6 +7,19 @@
 #include "Emit.h"
 #include "Assembly.h"
 
+std::string Emit::alignDirective()
+{
+    // Target Linux
+    return ".align";
+}
+
+std::string Emit::emitGlobalDirective(bool global, const std::string &label)
+{
+    if (global)
+        return std::format("\t.global {}\n", label);
+    return "";
+}
+
 std::string Emit::showReg(const std::shared_ptr<Assembly::Reg> &reg)
 {
     switch (reg->getName())
@@ -49,6 +62,11 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::Operand> &operand)
     if (auto stack = std::dynamic_pointer_cast<Assembly::Stack>(operand))
     {
         return std::format("{}(%rbp)", stack->getOffset());
+    }
+
+    if (auto data = std::dynamic_pointer_cast<Assembly::Data>(operand))
+    {
+        return std::format("{}(%rip)", data->getName());
     }
 
     // Printing pseudo is only for debugging
@@ -363,33 +381,40 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     }
 }
 
-std::string Emit::emitFunction(std::shared_ptr<Assembly::Function> fun)
+std::string Emit::emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel)
 {
-    std::string result = std::format("\t.globl {}\n{}:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n", showLabel(fun->getName()), showLabel(fun->getName()));
-    for (const auto &inst : fun->getInstructions())
+    if (auto fun = std::dynamic_pointer_cast<Assembly::Function>(topLevel))
     {
-        result += emitInst(inst);
+        std::string label = showLabel(fun->getName());
+        std::string result = std::format("{}{}:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n", emitGlobalDirective(fun->isGlobal(), label), label);
+        for (const auto &inst : fun->getInstructions())
+        {
+            result += emitInst(inst);
+        }
+        return result;
     }
-    return result;
-}
-
-std::string Emit::emitProgram(std::shared_ptr<Assembly::Program> prog)
-{
-    std::string content{""};
-
-    for (const auto &fn : prog->getFunctions())
+    else if (auto staticVar = std::dynamic_pointer_cast<Assembly::StaticVariable>(topLevel))
     {
-        content += emitFunction(fn) + "\n";
+        auto label = showLabel(staticVar->getName());
+        if (staticVar->getInit() == 0)
+            return std::format("{}\t.bss\n\t{} 4\n{}:\n\t.zero 4\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), label);
+        else
+            return std::format("{}\t.data\n\t{} 4\n{}:\n\t.long {}\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), label, staticVar->getInit());
     }
-
-    content += emitStackNote();
-
-    return content;
+    else
+        throw std::runtime_error("Internal error: Unknown assembly toplevel type");
 }
 
 void Emit::emit(std::shared_ptr<Assembly::Program> prog, const std::string &output)
 {
-    std::string result = emitProgram(prog);
+    std::string content{""};
+
+    for (const auto &tl : prog->getTopLevels())
+    {
+        content += emitTopLevel(tl) + "\n";
+    }
+
+    content += emitStackNote();
     std::ofstream uout(output);
 
     if (!uout.is_open())
@@ -397,11 +422,11 @@ void Emit::emit(std::shared_ptr<Assembly::Program> prog, const std::string &outp
         throw std::runtime_error("Failed to open output file");
     }
 
-    uout << result;
+    uout << content;
     uout.close();
 }
 
 std::string Emit::emitStackNote()
 {
-    return "\n\t.section .note.GNU-stack,\"\",@progbits\n";
+    return "\t.section .note.GNU-stack,\"\",@progbits\n";
 }

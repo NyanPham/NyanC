@@ -231,7 +231,7 @@ CollectSwitchCases::analyzeFunctionDeclaration(const std::shared_ptr<AST::Functi
     if (fnDecl->getOptBody().has_value())
     {
         auto [_, blk] = analyzeBlock(fnDecl->getOptBody().value(), std::nullopt);
-        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), blk);
+        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), blk, fnDecl->getOptStorageClass());
     }
     else
     {
@@ -239,16 +239,25 @@ CollectSwitchCases::analyzeFunctionDeclaration(const std::shared_ptr<AST::Functi
     }
 }
 
+std::shared_ptr<AST::Declaration>
+CollectSwitchCases::analyzeDeclaration(const std::shared_ptr<AST::Declaration> &decl)
+{
+    if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
+        return analyzeFunctionDeclaration(fnDecl);
+    else
+        return decl;
+}
+
 std::shared_ptr<AST::Program>
 CollectSwitchCases::analyzeSwitches(const std::shared_ptr<AST::Program> &prog)
 {
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> analyzedFns;
-    analyzedFns.reserve(prog->getFunctionDeclarations().size());
+    std::vector<std::shared_ptr<AST::Declaration>> analyzedDecls;
+    analyzedDecls.reserve(prog->getDeclarations().size());
 
-    for (const auto &fnDecl : prog->getFunctionDeclarations())
+    for (const auto &decl : prog->getDeclarations())
     {
-        analyzedFns.push_back(analyzeFunctionDeclaration(fnDecl));
+        analyzedDecls.push_back(analyzeDeclaration(decl));
     }
 
-    return std::make_shared<AST::Program>(analyzedFns);
+    return std::make_shared<AST::Program>(analyzedDecls);
 }

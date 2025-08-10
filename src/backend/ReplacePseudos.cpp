@@ -6,7 +6,8 @@
 #include "Assembly.h"
 #include "ReplacePseudos.h"
 
-ReplacementState ReplacePseudos::createInitState()
+ReplacementState
+ReplacePseudos::createInitState()
 {
     return {
         currOffset : 0,
@@ -14,44 +15,53 @@ ReplacementState ReplacePseudos::createInitState()
     };
 }
 
-ReplaceOperandPair ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state)
+ReplaceOperandPair
+ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state)
 {
-    switch (operand->getType())
+    if (auto pseudo = std::dynamic_pointer_cast<Assembly::Pseudo>(operand))
     {
-    case Assembly::NodeType::Pseudo:
-    {
-        auto pseudo = std::dynamic_pointer_cast<Assembly::Pseudo>(operand);
-
-        auto it = state.offsetMap.find(pseudo->getName());
-        if (it == state.offsetMap.end())
+        if (_symbolTable.isStatic(pseudo->getName()))
         {
-            int newOffset = state.currOffset - 4;
-            state.offsetMap[pseudo->getName()] = newOffset;
-
-            ReplacementState newState = {
-                currOffset : newOffset,
-                offsetMap : state.offsetMap,
-            };
-
             return {
-                std::make_shared<Assembly::Stack>(newOffset),
-                newState,
+                std::make_shared<Assembly::Data>(pseudo->getName()),
+                state,
             };
         }
         else
         {
-            return {
-                std::make_shared<Assembly::Stack>(it->second),
-                state,
-            };
+            auto it = state.offsetMap.find(pseudo->getName());
+            if (it == state.offsetMap.end())
+            {
+                int newOffset = state.currOffset - 4;
+                state.offsetMap[pseudo->getName()] = newOffset;
+
+                ReplacementState newState = {
+                    currOffset : newOffset,
+                    offsetMap : state.offsetMap,
+                };
+
+                return {
+                    std::make_shared<Assembly::Stack>(newOffset),
+                    newState,
+                };
+            }
+            else
+            {
+                return {
+                    std::make_shared<Assembly::Stack>(it->second),
+                    state,
+                };
+            }
         }
     }
-    default:
+    else
+    {
         return {operand, state};
     }
 }
 
-ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Instruction> &inst, ReplacementState &state)
+ReplaceInstPair
+ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Instruction> &inst, ReplacementState &state)
 {
     switch (inst->getType())
     {
@@ -168,32 +178,38 @@ ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_pt
     }
 }
 
-std::shared_ptr<Assembly::Function> ReplacePseudos::replacePseudosInFunction(const std::shared_ptr<Assembly::Function> &func)
+std::shared_ptr<Assembly::TopLevel>
+ReplacePseudos::replacePseudosInTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLevel)
 {
-    auto currState{createInitState()};
-    std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{};
-
-    for (auto &inst : func->getInstructions())
+    if (auto func = std::dynamic_pointer_cast<Assembly::Function>(topLevel))
     {
-        auto [newInst, newState] = replacePseudosInInstruction(inst, currState);
-        currState = newState;
-        fixedInstructions.push_back(newInst);
+        auto currState{createInitState()};
+        std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{};
+
+        for (auto &inst : func->getInstructions())
+        {
+            auto [newInst, newState] = replacePseudosInInstruction(inst, currState);
+            currState = newState;
+            fixedInstructions.push_back(newInst);
+        }
+        _symbolTable.setStackFrameSize(func->getName(), currState.currOffset);
+
+        return std::make_shared<Assembly::Function>(func->getName(), func->isGlobal(), fixedInstructions);
     }
-
-    _symbolTable.setStackFrameSize(func->getName(), currState.currOffset);
-
-    return std::make_shared<Assembly::Function>(func->getName(), fixedInstructions);
+    else
+        return topLevel;
 }
 
-std::shared_ptr<Assembly::Program> ReplacePseudos::replacePseudos(const std::shared_ptr<Assembly::Program> &prog)
+std::shared_ptr<Assembly::Program>
+ReplacePseudos::replacePseudos(const std::shared_ptr<Assembly::Program> &prog)
 {
-    std::vector<std::shared_ptr<Assembly::Function>> fixedFns{};
+    std::vector<std::shared_ptr<Assembly::TopLevel>> fixedTls{};
 
-    for (auto &fn : prog->getFunctions())
+    for (auto &tl : prog->getTopLevels())
     {
-        auto fixedFn = replacePseudosInFunction(fn);
-        fixedFns.push_back(fixedFn);
+        auto fixedTl = replacePseudosInTopLevel(tl);
+        fixedTls.push_back(fixedTl);
     }
 
-    return std::make_shared<Assembly::Program>(fixedFns);
+    return std::make_shared<Assembly::Program>(fixedTls);
 }

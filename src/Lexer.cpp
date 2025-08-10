@@ -29,6 +29,8 @@ Token convertIdentifer(const std::string &str, long pos)
         {"switch", TokenType::KEYWORD_SWITCH},
         {"case", TokenType::KEYWORD_CASE},
         {"default", TokenType::KEYWORD_DEFAULT},
+        {"static", TokenType::KEYWORD_STATIC},
+        {"extern", TokenType::KEYWORD_EXTERN},
     };
 
     auto it = keywords.find(str);
@@ -58,7 +60,7 @@ void Lexer::defineTokenDefs()
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
         {std::regex("[0-9]+\\b"), convertConstant},
-        // The following 14 keywords match will not be reached after identifier, but still kept here for references.
+        // The following 16 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
@@ -114,6 +116,14 @@ void Lexer::defineTokenDefs()
         {std::regex("default\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_DEFAULT, str, pos);
+         }},
+        {std::regex("static\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_STATIC, str, pos);
+         }},
+        {std::regex("extern\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_EXTERN, str, pos);
          }},
         {std::regex("\\("), [](const std::string &str, long pos) -> Token
          {

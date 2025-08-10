@@ -33,6 +33,9 @@ private:
         case Assembly::NodeType::Function:
             visitFunction(static_cast<const Assembly::Function &>(node));
             break;
+        case Assembly::NodeType::StaticVariable:
+            visitStaticVariable(static_cast<const Assembly::StaticVariable &>(node));
+            break;
         case Assembly::NodeType::Ret:
             visitRet(static_cast<const Assembly::Ret &>(node));
             break;
@@ -90,6 +93,9 @@ private:
         case Assembly::NodeType::Stack:
             visitStack(static_cast<const Assembly::Stack &>(node), indent);
             break;
+        case Assembly::NodeType::Data:
+            visitData(static_cast<const Assembly::Data &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -101,11 +107,20 @@ private:
         std::cout << getIndent() << "Program(\n";
         increaseIndent();
 
-        for (const auto &fnDef : program.getFunctions())
-            visitFunction(*fnDef);
+        for (const auto &tl : program.getTopLevels())
+        {
+            if (auto fn = std::dynamic_pointer_cast<Assembly::Function>(tl))
+            {
+                visitFunction(*fn);
+            }
+            else if (auto var = std::dynamic_pointer_cast<Assembly::StaticVariable>(tl))
+            {
+                visitStaticVariable(*var);
+            }
+        }
 
         decreaseIndent();
-        std::cout << getIndent() << "),\n";
+        std::cout << getIndent() << ")\n";
     }
 
     void visitFunction(const Assembly::Function &func)
@@ -113,6 +128,7 @@ private:
         std::cout << getIndent() << "Function(\n";
         increaseIndent();
         std::cout << getIndent() << "name=\"" << func.getName() << "\",\n";
+        std::cout << getIndent() << "global=\"" << func.isGlobal() << "\",\n";
         std::cout << getIndent() << "instructions=\n";
         increaseIndent();
         for (const auto &instr : func.getInstructions())
@@ -124,9 +140,21 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
+    void visitStaticVariable(const Assembly::StaticVariable &staticVar)
+    {
+        std::cout << getIndent() << "StaticVariable(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
+        std::cout << getIndent() << "global=\"" << staticVar.isGlobal() << "\",\n";
+        std::cout << getIndent() << "init=\"" << std::to_string(staticVar.getInit()) << "\",\n";
+
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
     void visitRet(const Assembly::Ret &ret)
     {
-        std::cout << getIndent() << "Ret()\n";
+        std::cout << getIndent() << "Ret(),\n";
     }
 
     void visitMov(const Assembly::Mov &mov, bool indent = true)
@@ -315,6 +343,13 @@ private:
         if (indent)
             std::cout << getIndent();
         std::cout << "Stack(" << stack.getOffset() << ")\n";
+    }
+
+    void visitData(const Assembly::Data &data, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Data(" << data.getName() << ")\n";
     }
 
     template <typename T>

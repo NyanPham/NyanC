@@ -144,25 +144,32 @@ LoopLabeling::labelBlock(const AST::Block &block, std::optional<std::string> cur
     return labeledBlock;
 }
 
-std::shared_ptr<AST::FunctionDeclaration>
-LoopLabeling::labelFunctionDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl)
+std::shared_ptr<AST::Declaration>
+LoopLabeling::labelDeclaration(const std::shared_ptr<AST::Declaration> &decl)
 {
-    if (!fnDecl->getOptBody().has_value())
-        return fnDecl;
+    if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
+    {
+        if (!fnDecl->getOptBody().has_value())
+            return fnDecl;
 
-    return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), labelBlock(fnDecl->getOptBody().value(), std::nullopt, std::nullopt));
+        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), labelBlock(fnDecl->getOptBody().value(), std::nullopt, std::nullopt), fnDecl->getOptStorageClass());
+    }
+    else
+    {
+        return decl;
+    }
 }
 
 std::shared_ptr<AST::Program>
 LoopLabeling::labelLoops(const std::shared_ptr<AST::Program> &prog)
 {
-    std::vector<std::shared_ptr<AST::FunctionDeclaration>> labeledFns;
-    labeledFns.reserve(prog->getFunctionDeclarations().size());
+    std::vector<std::shared_ptr<AST::Declaration>> labeledDecls;
+    labeledDecls.reserve(prog->getDeclarations().size());
 
-    for (const auto &fnDcl : prog->getFunctionDeclarations())
+    for (const auto &decl : prog->getDeclarations())
     {
-        labeledFns.push_back(labelFunctionDeclaration(fnDcl));
+        labeledDecls.push_back(labelDeclaration(decl));
     }
 
-    return std::make_shared<AST::Program>(labeledFns);
+    return std::make_shared<AST::Program>(labeledDecls);
 }
