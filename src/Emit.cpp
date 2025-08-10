@@ -7,103 +7,139 @@
 #include "Emit.h"
 #include "Assembly.h"
 
-std::string Emit::emitReg(std::shared_ptr<Assembly::Reg> reg, OperandSize size)
+std::string Emit::showReg(const std::shared_ptr<Assembly::Reg> &reg)
 {
-    switch (size)
+    switch (reg->getName())
     {
-    case OperandSize::Byte1:
-    {
-        switch (reg->getName())
-        {
-        case Assembly::RegName::AX:
-            return "%al";
-        case Assembly::RegName::DX:
-            return "%dl";
-        case Assembly::RegName::CX:
-            return "%cl";
-        case Assembly::RegName::R10:
-            return "%r10b";
-        case Assembly::RegName::R11:
-            return "%r11b";
-        default:
-            throw std::runtime_error("Internal Error: Unknown register!");
-        }
-    }
+    case Assembly::RegName::AX:
+        return "%eax";
+    case Assembly::RegName::DX:
+        return "%edx";
+    case Assembly::RegName::CX:
+        return "%ecx";
+    case Assembly::RegName::DI:
+        return "%edi";
+    case Assembly::RegName::SI:
+        return "%esi";
+    case Assembly::RegName::R8:
+        return "%r8d";
+    case Assembly::RegName::R9:
+        return "%r9d";
+    case Assembly::RegName::R10:
+        return "%r10d";
+    case Assembly::RegName::R11:
+        return "%r11d";
     default:
-    {
-        switch (reg->getName())
-        {
-        case Assembly::RegName::AX:
-            return "%eax";
-        case Assembly::RegName::DX:
-            return "%edx";
-        case Assembly::RegName::CX:
-            return "%ecx";
-        case Assembly::RegName::R10:
-            return "%r10d";
-        case Assembly::RegName::R11:
-            return "%r11d";
-        default:
-            throw std::runtime_error("Internal Error: Unknown register!");
-        }
-    }
+        throw std::runtime_error("Internal Error: Unknown register!");
     }
 }
 
-std::string Emit::emitImm(std::shared_ptr<Assembly::Imm> imm)
+std::string Emit::showOperand(const std::shared_ptr<Assembly::Operand> &operand)
 {
-    return std::format("${}", imm->getValue());
+    if (auto reg = std::dynamic_pointer_cast<Assembly::Reg>(operand))
+    {
+        return showReg(reg);
+    }
+
+    if (auto imm = std::dynamic_pointer_cast<Assembly::Imm>(operand))
+    {
+        return std::format("${}", std::to_string(imm->getValue()));
+    }
+
+    if (auto stack = std::dynamic_pointer_cast<Assembly::Stack>(operand))
+    {
+        return std::format("{}(%rbp)", stack->getOffset());
+    }
+
+    // Printing pseudo is only for debugging
+    if (auto pseudo = std::dynamic_pointer_cast<Assembly::Pseudo>(operand))
+    {
+        return pseudo->getName();
+    }
+
+    throw std::runtime_error("Internal Error: Unknown operand!");
 }
 
-std::string Emit::emitStack(std::shared_ptr<Assembly::Stack> stack)
+std::string Emit::showByteReg(const std::shared_ptr<Assembly::Reg> &reg)
 {
-    return std::format("{}(%rbp)", stack->getOffset());
-}
-
-std::string Emit::emitPseudo(std::shared_ptr<Assembly::Pseudo> pseudo)
-{
-    return pseudo->getName();
-}
-
-std::string Emit::showOperand(std::shared_ptr<Assembly::Operand> operand)
-{
-    switch (operand->getType())
+    switch (reg->getName())
     {
-    case Assembly::NodeType::Reg:
-    {
-        return emitReg(std::dynamic_pointer_cast<Assembly::Reg>(operand), OperandSize::Byte4);
-    }
-    case Assembly::NodeType::Imm:
-    {
-        return emitImm(std::dynamic_pointer_cast<Assembly::Imm>(operand));
-    }
-    case Assembly::NodeType::Stack:
-    {
-        return emitStack(std::dynamic_pointer_cast<Assembly::Stack>(operand));
-    }
-    case Assembly::NodeType::Pseudo:
-    {
-        return emitPseudo(std::dynamic_pointer_cast<Assembly::Pseudo>(operand)); // For debugging only
-    }
+    case Assembly::RegName::AX:
+        return "%al";
+    case Assembly::RegName::DX:
+        return "%dl";
+    case Assembly::RegName::CX:
+        return "%cl";
+    case Assembly::RegName::DI:
+        return "%dil";
+    case Assembly::RegName::SI:
+        return "%sil";
+    case Assembly::RegName::R8:
+        return "%r8b";
+    case Assembly::RegName::R9:
+        return "%r9b";
+    case Assembly::RegName::R10:
+        return "%r10b";
+    case Assembly::RegName::R11:
+        return "%r11b";
     default:
-    {
-        throw std::runtime_error("Unknown operand type");
-    }
+        throw std::runtime_error("Internal Error: Unknown register!");
     }
 }
 
-std::string Emit::showByteOperand(std::shared_ptr<Assembly::Operand> operand)
+std::string Emit::showByteOperand(const std::shared_ptr<Assembly::Operand> &operand)
 {
-    switch (operand->getType())
+    if (auto reg = std::dynamic_pointer_cast<Assembly::Reg>(operand))
     {
-    case Assembly::NodeType::Reg:
-    {
-        return emitReg(std::dynamic_pointer_cast<Assembly::Reg>(operand), OperandSize::Byte1);
+        return showByteReg(reg);
     }
+
+    return showOperand(operand);
+}
+
+std::string Emit::showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg)
+{
+    switch (reg->getName())
+    {
+    case Assembly::RegName::AX:
+        return "%rax";
+    case Assembly::RegName::DX:
+        return "%rdx";
+    case Assembly::RegName::CX:
+        return "%rcx";
+    case Assembly::RegName::DI:
+        return "%rdi";
+    case Assembly::RegName::SI:
+        return "%rsi";
+    case Assembly::RegName::R8:
+        return "%r8";
+    case Assembly::RegName::R9:
+        return "%r9";
+    case Assembly::RegName::R10:
+        return "%r10";
+    case Assembly::RegName::R11:
+        return "%r11";
     default:
-        return showOperand(operand);
+        throw std::runtime_error("Internal Error: Unknown register!");
     }
 }
+
+std::string Emit::showQuadwordOperand(const std::shared_ptr<Assembly::Operand> &operand)
+{
+    if (auto reg = std::dynamic_pointer_cast<Assembly::Reg>(operand))
+    {
+        return showQuadwordReg(reg);
+    }
+
+    return showOperand(operand);
+}
+
+std::string Emit::showFunName(const std::shared_ptr<Assembly::Call> &fnCall)
+{
+    return std::format("{}@PLT", fnCall->getFnName());
+}
+
+// Move here
 
 std::string Emit::showLabel(const std::string &name)
 {
@@ -238,7 +274,22 @@ std::string Emit::emitLabel(std::shared_ptr<Assembly::Label> label)
 
 std::string Emit::emitAllocateStack(std::shared_ptr<Assembly::AllocateStack> allocateStack)
 {
-    return std::format("\tsubq\t{}, %rsp\n", allocateStack->getOffset());
+    return std::format("\tsubq\t${}, %rsp\n", allocateStack->getOffset());
+}
+
+std::string Emit::emitDeallocateStack(std::shared_ptr<Assembly::DeallocateStack> deallocateStack)
+{
+    return std::format("\taddq\t${}, %rsp\n", deallocateStack->getOffset());
+}
+
+std::string Emit::emitPush(std::shared_ptr<Assembly::Push> push)
+{
+    return std::format("\tpushq\t{}\n", showQuadwordOperand(push->getOperand()));
+}
+
+std::string Emit::emitCall(std::shared_ptr<Assembly::Call> call)
+{
+    return std::format("\tcall\t{}\n", showFunName(call));
 }
 
 std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
@@ -289,6 +340,18 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     {
         return emitAllocateStack(std::dynamic_pointer_cast<Assembly::AllocateStack>(inst));
     }
+    case Assembly::NodeType::DeallocateStack:
+    {
+        return emitDeallocateStack(std::dynamic_pointer_cast<Assembly::DeallocateStack>(inst));
+    }
+    case Assembly::NodeType::Push:
+    {
+        return emitPush(std::dynamic_pointer_cast<Assembly::Push>(inst));
+    }
+    case Assembly::NodeType::Call:
+    {
+        return emitCall(std::dynamic_pointer_cast<Assembly::Call>(inst));
+    }
     case Assembly::NodeType::Ret:
     {
         return emitRet(std::dynamic_pointer_cast<Assembly::Ret>(inst));
@@ -312,10 +375,16 @@ std::string Emit::emitFunction(std::shared_ptr<Assembly::Function> fun)
 
 std::string Emit::emitProgram(std::shared_ptr<Assembly::Program> prog)
 {
-    std::string result = emitFunction(prog->getFunction());
-    result += emitStackNote();
+    std::string content{""};
 
-    return result;
+    for (const auto &fn : prog->getFunctions())
+    {
+        content += emitFunction(fn) + "\n";
+    }
+
+    content += emitStackNote();
+
+    return content;
 }
 
 void Emit::emit(std::shared_ptr<Assembly::Program> prog, const std::string &output)

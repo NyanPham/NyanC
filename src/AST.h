@@ -8,12 +8,13 @@
 #include <map>
 
 /*
-program = Program(function_definition)
-function_definition = Function(identifier name, block body)
+program = Program(function_declarations*)
+declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
+variable_declaration = (identifier name, exp? init)
+function_declaration = (identifier name, identifier* params, block? body)
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
-declaration = Declaration(identifier name, exp? init)
-for_init = InitDecl(declaration) | InitExp(exp?)
+for_init = InitDecl(variable_declaration) | InitExp(exp?)
 statement = Return(exp)
     | Expression(exp)
     | If(exp condition, statement then, statement? else)
@@ -38,6 +39,7 @@ exp = Constant(int)
     | PostfixIncr(exp)
     | PostfixDecr(exp)
     | Conditional(exp condition, exp then, exp else)
+    | FunctionCall(identifier, exp* args)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -72,21 +74,23 @@ namespace AST
     class Null;
     class LabeledStatement;
     class Goto;
+    class FunctionCall;
     class ForInit;
     class InitDecl;
     class InitExp;
     class Expression;
     class Statement;
     class Declaration;
+    class FunctionDeclaration;
+    class VariableDeclaration;
     class BlockItem;
-    class FunctionDefinition;
     class Program;
 
     enum class NodeType
     {
         Program,
-        FunctionDefinition,
-        Declaration,
+        VariableDeclaration,
+        FunctionDeclaration,
         Return,
         ExpressionStmt,
         If,
@@ -111,6 +115,7 @@ namespace AST
         PostfixIncr,
         PostfixDecr,
         Conditional,
+        FunctionCall,
         InitDecl,
         InitExp,
     };
@@ -191,13 +196,20 @@ namespace AST
     class Declaration : public BlockItem
     {
     public:
-        Declaration(std::string name, std::optional<std::shared_ptr<Expression>> init)
-            : BlockItem(NodeType::Declaration), _name{std::move(name)}, _init{std::move(init)}
+        Declaration(NodeType type) : BlockItem(type) {}
+        virtual ~Declaration() = default;
+    };
+
+    class VariableDeclaration : public Declaration
+    {
+    public:
+        VariableDeclaration(std::string name, std::optional<std::shared_ptr<Expression>> init)
+            : Declaration(NodeType::VariableDeclaration), _name{std::move(name)}, _init{std::move(init)}
         {
         }
 
         const std::string &getName() const { return _name; }
-        const std::optional<std::shared_ptr<Expression>> &getInit() const { return _init; }
+        const std::optional<std::shared_ptr<Expression>> &getOptInit() const { return _init; }
 
     private:
         std::string _name;
@@ -333,6 +345,22 @@ namespace AST
         std::shared_ptr<Expression> _else;
     };
 
+    class FunctionCall : public Expression
+    {
+    public:
+        FunctionCall(const std::string &fnName, std::vector<std::shared_ptr<Expression>> args)
+            : Expression(NodeType::FunctionCall), _fnName{fnName}, _args{args}
+        {
+        }
+
+        const std::string &getName() const { return _fnName; }
+        const std::vector<std::shared_ptr<Expression>> &getArgs() const { return _args; }
+
+    private:
+        std::string _fnName;
+        std::vector<std::shared_ptr<Expression>> _args;
+    };
+
     class Return : public Statement
     {
     public:
@@ -364,7 +392,7 @@ namespace AST
 
         auto getCondition() const { return _condition; }
         auto getThenClause() const { return _thenClause; }
-        auto getElseClause() const { return _elseClause; }
+        auto getOptElseClause() const { return _elseClause; }
 
     private:
         std::shared_ptr<AST::Expression> _condition;
@@ -454,8 +482,8 @@ namespace AST
         bool hasPost() { return _post.has_value(); }
 
         auto &getInit() const { return _init; }
-        auto &getCondition() const { return _condition; }
-        auto &getPost() const { return _post; }
+        auto &getOptCondition() const { return _condition; }
+        auto &getOptPost() const { return _post; }
         auto &getBody() const { return _body; }
         auto &getId() const { return _id; }
 
@@ -479,7 +507,7 @@ namespace AST
 
         const auto &getControl() const { return _control; }
         const auto &getBody() const { return _body; }
-        const std::optional<CaseMap>& getCases() const { return _cases; }
+        const std::optional<CaseMap> &getOptCases() const { return _cases; }
         const auto &getId() const { return _id; }
 
     private:
@@ -566,7 +594,7 @@ namespace AST
     class InitDecl : public ForInit
     {
     public:
-        InitDecl(std::shared_ptr<Declaration> decl)
+        InitDecl(std::shared_ptr<VariableDeclaration> decl)
             : ForInit(NodeType::InitDecl), _decl{std::move(decl)}
         {
         }
@@ -574,7 +602,7 @@ namespace AST
         auto getDecl() const { return _decl; }
 
     private:
-        std::shared_ptr<Declaration> _decl;
+        std::shared_ptr<VariableDeclaration> _decl;
     };
 
     class InitExp : public ForInit
@@ -585,36 +613,38 @@ namespace AST
         {
         }
 
-        bool hasExp() const { return _exp.has_value(); }
         auto getOptExp() const { return _exp; }
-        auto getExp() const { return _exp.value(); }
 
     private:
         std::optional<std::shared_ptr<Expression>> _exp;
     };
 
-    class FunctionDefinition : public Node
+    class FunctionDeclaration : public Declaration
     {
     public:
-        FunctionDefinition(const std::string &name, Block body)
-            : Node(NodeType::FunctionDefinition), _name{name}, _body{std::move(body)} {}
+        FunctionDeclaration(const std::string &name, std::vector<std::string> params, std::optional<Block> body)
+            : Declaration(NodeType::FunctionDeclaration), _name{name}, _params{params}, _body{body} {}
+
         const std::string &getName() const { return _name; }
-        const Block &getBody() const { return _body; }
+        const std::vector<std::string> &getParams() const { return _params; }
+        const std::optional<Block> &getOptBody() const { return _body; }
 
     private:
         std::string _name;
-        Block _body;
+        std::vector<std::string> _params;
+        std::optional<Block> _body;
     };
 
     class Program : public Node
     {
     public:
-        Program(std::shared_ptr<FunctionDefinition> funDef)
-            : Node(NodeType::Program), _funDef{funDef} {}
-        std::shared_ptr<FunctionDefinition> getFunctionDefinition() const { return _funDef; }
+        Program(std::vector<std::shared_ptr<FunctionDeclaration>> fnDecls)
+            : Node(NodeType::Program), _fnDecls{fnDecls} {}
+
+        const std::vector<std::shared_ptr<FunctionDeclaration>> &getFunctionDeclarations() const { return _fnDecls; }
 
     private:
-        std::shared_ptr<FunctionDefinition> _funDef;
+        std::vector<std::shared_ptr<FunctionDeclaration>> _fnDecls;
     };
 }
 

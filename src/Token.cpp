@@ -59,6 +59,8 @@ std::string tokenTypeToString(TokenType type)
         return "CLOSE_BRACE";
     case TokenType::SEMICOLON:
         return "SEMICOLON";
+    case TokenType::COMMA:
+        return "COMMA";
     case TokenType::HYPHEN:
         return "HYPHEN";
     case TokenType::DOUBLE_HYPHEN:

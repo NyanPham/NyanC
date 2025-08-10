@@ -136,11 +136,27 @@ ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_pt
             state1,
         };
     }
+    case Assembly::NodeType::Push:
+    {
+        auto push = std::dynamic_pointer_cast<Assembly::Push>(inst);
+
+        auto [newOperand, state1] = replaceOperand(push->getOperand(), state);
+
+        auto newPush = std::make_shared<Assembly::Push>(newOperand);
+
+        return {
+            newPush,
+            state1,
+        };
+    }
     case Assembly::NodeType::Ret:
     case Assembly::NodeType::Cdq:
     case Assembly::NodeType::Label:
     case Assembly::NodeType::JmpCC:
     case Assembly::NodeType::Jmp:
+    case Assembly::NodeType::AllocateStack:
+    case Assembly::NodeType::DeallocateStack:
+    case Assembly::NodeType::Call:
     {
         return {
             inst,
@@ -152,7 +168,7 @@ ReplaceInstPair ReplacePseudos::replacePseudosInInstruction(const std::shared_pt
     }
 }
 
-ReplaceFunctionPair ReplacePseudos::replacePseudosInFunction(const std::shared_ptr<Assembly::Function> &func)
+std::shared_ptr<Assembly::Function> ReplacePseudos::replacePseudosInFunction(const std::shared_ptr<Assembly::Function> &func)
 {
     auto currState{createInitState()};
     std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{};
@@ -164,18 +180,20 @@ ReplaceFunctionPair ReplacePseudos::replacePseudosInFunction(const std::shared_p
         fixedInstructions.push_back(newInst);
     }
 
-    return {
-        std::make_shared<Assembly::Function>(func->getName(), fixedInstructions),
-        currState.currOffset,
-    };
+    _symbolTable.setStackFrameSize(func->getName(), currState.currOffset);
+
+    return std::make_shared<Assembly::Function>(func->getName(), fixedInstructions);
 }
 
-ReplaceProgramPair ReplacePseudos::replacePseudos(const std::shared_ptr<Assembly::Program> &prog)
+std::shared_ptr<Assembly::Program> ReplacePseudos::replacePseudos(const std::shared_ptr<Assembly::Program> &prog)
 {
-    auto [fixedFun, lastStackSlot] = replacePseudosInFunction(prog->getFunction());
+    std::vector<std::shared_ptr<Assembly::Function>> fixedFns{};
 
-    return {
-        std::make_shared<Assembly::Program>(fixedFun),
-        lastStackSlot,
-    };
+    for (auto &fn : prog->getFunctions())
+    {
+        auto fixedFn = replacePseudosInFunction(fn);
+        fixedFns.push_back(fixedFn);
+    }
+
+    return std::make_shared<Assembly::Program>(fixedFns);
 }

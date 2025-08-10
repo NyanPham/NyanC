@@ -6,15 +6,17 @@
 #include "Lexer.h"
 #include "Parser.h"
 #include "UniqueIds.h"
-#include "semantic_analysis/VarResolution.h"
+#include "Symbols.h"
+#include "semantic_analysis/IdentifierResolution.h"
 #include "semantic_analysis/ValidateLabels.h"
 #include "semantic_analysis/LoopLabeling.h"
 #include "semantic_analysis/CollectSwitchCases.h"
+#include "semantic_analysis/TypeChecker.h"
 #include "TackyGen.h"
-#include "Emit.h"
 #include "backend/CodeGen.h"
 #include "backend/ReplacePseudos.h"
 #include "backend/InstructionFixup.h"
+#include "Emit.h"
 #include "utils/ASTPrettyPrint.h"
 #include "utils/TackyPrettyPrint.h"
 #include "utils/CodeGenPrettyPrint.h"
@@ -27,243 +29,330 @@ std::string Compiler::preprocess(const std::string &src)
     return output;
 }
 
-int Compiler::compile(Stage stage, const std::string &src, bool debugging)
+int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, bool debugging)
 {
     try
     {
-        std::string preprocessedFile = preprocess(src);
-        std::ifstream file(preprocessedFile);
+        std::vector<std::string> preprocessedFiles;
 
-        if (!file.is_open())
+        for (const auto &src : srcFiles)
         {
-            std::cerr << "Error: Could not open file " << preprocessedFile << std::endl;
-            return -1;
-        }
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        file.close();
-
-        // Clean up the preprocessed file after reading it.
-        if (std::remove(preprocessedFile.c_str()) != 0)
-        {
-            std::cerr << "Warning: Unable to remove temporary file " << preprocessedFile << std::endl;
+            std::string preprocessedFile = preprocess(src);
+            preprocessedFiles.push_back(preprocessedFile);
         }
 
-        auto input = buffer.str();
-        ASTPrettyPrint astPrettyPrint;
-        TackyPrettyPrint tackyPrettyPrint;
-        CodeGenPrettyPrint codeGenPrettyPrint;
-
-        switch (stage)
+        // Process each file based on the stage
+        for (const auto &file : preprocessedFiles)
         {
-        case Stage::Lexing:
-        {
-            auto lexer = Lexer();
-            lexer.setInput(input);
-            lexer.defineTokenDefs();
-
-            std::vector<Token> tokens = lexer.tokens();
-
-            if (debugging)
+            std::ifstream inputFile(file);
+            if (!inputFile.is_open())
             {
-                for (Token token : tokens)
+                std::cerr << "Error: Could not open file " << file << std::endl;
+                return -1;
+            }
+
+            std::stringstream buffer;
+            buffer << inputFile.rdbuf();
+            inputFile.close();
+
+            if (std::remove(file.c_str()) != 0)
+            {
+                std::cerr << "Warning: Unable to remove temporary file " << file << std::endl;
+            }
+
+            auto input = buffer.str();
+            ASTPrettyPrint astPrettyPrint;
+            TackyPrettyPrint tackyPrettyPrint;
+            CodeGenPrettyPrint codeGenPrettyPrint;
+
+            switch (stage)
+            {
+            case Stage::Lexing:
+            {
+                auto lexer = Lexer();
+                lexer.setInput(input);
+                lexer.defineTokenDefs();
+
+                std::vector<Token> tokens = lexer.tokens();
+
+                if (debugging)
                 {
-                    std::cout << token.toString() << '\n';
+                    for (Token token : tokens)
+                    {
+                        std::cout << token.toString() << '\n';
+                    }
                 }
+
+                break;
             }
 
-            return 0;
-        }
-
-        case Stage::Parsing:
-        {
-            auto parser = Parser();
-            auto program = parser.parse(input);
-
-            if (debugging)
-                astPrettyPrint.print(*program);
-
-            return 0;
-        }
-
-        case Stage::Validate:
-        {
-            auto parser = Parser();
-            auto ast = parser.parse(input);
-
-            auto varResolution = VarResolution();
-            auto transformedAst = varResolution.resolve(ast);
-
-            auto validateLabels = ValidateLabels();
-            validateLabels.validateLabels(transformedAst);
-
-            auto loopLabeling = LoopLabeling();
-            auto labeledAst = loopLabeling.labelLoops(transformedAst);
-
-            auto collectSwitchCases = CollectSwitchCases();
-            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
-
-            if (debugging)
+            case Stage::Parsing:
             {
-                // std::cout << "AST:" << '\n';
-                // astPrettyPrint.print(*ast);
+                auto parser = Parser();
+                auto program = parser.parse(input);
 
-                // std::cout << "Var Resolved:" << '\n';
-                // astPrettyPrint.print(*transformedAst);
+                if (debugging)
+                    astPrettyPrint.print(*program);
 
-                // std::cout << "LoopLabeled:" << '\n';
-                // astPrettyPrint.print(*labeledAst);
-
-                // std::cout << "Cases Collected:" << '\n';
-                astPrettyPrint.print(*casesCollectedAst);
+                break;
             }
 
-            return 0;
-        }
-
-        case Stage::Tacky:
-        {
-            auto parser = Parser();
-            auto ast = parser.parse(input);
-
-            auto varResolution = VarResolution();
-            auto transformedAst = varResolution.resolve(ast);
-
-            auto validateLabels = ValidateLabels();
-            validateLabels.validateLabels(transformedAst);
-
-            auto loopLabeling = LoopLabeling();
-            auto labeledAst = loopLabeling.labelLoops(transformedAst);
-
-            auto collectSwitchCases = CollectSwitchCases();
-            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
-
-            auto tackyGen = std::make_shared<TackyGen>();
-            auto tacky = tackyGen->gen(casesCollectedAst);
-
-            if (debugging)
-                tackyPrettyPrint.print(*tacky);
-
-            return 0;
-        }
-
-        case Stage::CodeGen:
-        {
-            auto parser = Parser();
-            auto ast = parser.parse(input);
-
-            auto varResolution = VarResolution();
-            auto transformedAst = varResolution.resolve(ast);
-
-            auto validateLabels = ValidateLabels();
-            validateLabels.validateLabels(transformedAst);
-
-            auto loopLabeling = LoopLabeling();
-            auto labeledAst = loopLabeling.labelLoops(transformedAst);
-
-            auto collectSwitchCases = CollectSwitchCases();
-            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
-
-            auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(casesCollectedAst);
-
-            auto codeGen = CodeGen();
-            auto asmProg = codeGen.gen(tacky);
-
-            auto replacePseudos = ReplacePseudos();
-            auto [replacedAsm, lastStackSlot] = replacePseudos.replacePseudos(asmProg);
-
-            auto instructionFixup = InstructionFixup();
-            auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm, lastStackSlot);
-
-            if (debugging)
+            case Stage::Validate:
             {
-                std::cout << "======= RAW ASSEMBLY =======" << '\n';
-                codeGenPrettyPrint.print(*asmProg);
-                std::cout << '\n';
+                auto parser = Parser();
+                auto ast = parser.parse(input);
 
-                std::cout << "======= OPERANDS REPLACED ASSEMBLY =======" << '\n';
-                codeGenPrettyPrint.print(*replacedAsm);
-                std::cout << '\n';
+                auto IdResover = IdentifierResolution();
+                auto transformedAst = IdResover.resolve(ast);
 
-                std::cout << "======= INSTRUCTIONS FIXEDUP ASSEMBLY =======" << '\n';
-                codeGenPrettyPrint.print(*fixedupAsm);
-                std::cout << '\n';
+                auto validateLabels = ValidateLabels();
+                auto validatedASt = validateLabels.validateLabels(transformedAst);
+
+                auto loopLabeler = LoopLabeling();
+                auto labeledAst = loopLabeler.labelLoops(transformedAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
+
+                auto typeChecker = TypeChecker();
+                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+
+                if (debugging)
+                {
+                    std::cout << "AST:" << '\n';
+                    astPrettyPrint.print(*ast);
+
+                    std::cout << "ID Resolved:" << '\n';
+                    astPrettyPrint.print(*transformedAst);
+
+                    std::cout << "Validated labels:" << '\n';
+                    astPrettyPrint.print(*validatedASt);
+
+                    std::cout << "LoopLabeled:" << '\n';
+                    astPrettyPrint.print(*labeledAst);
+
+                    std::cout << "Cases Collected:" << '\n';
+                    astPrettyPrint.print(*casesCollectedAst);
+
+                    std::cout << "TypeChecked:" << '\n';
+                    astPrettyPrint.print(*typeCheckedAst);
+                }
+
+                break;
             }
 
-            return 0;
+            case Stage::Tacky:
+            {
+                auto parser = Parser();
+                auto ast = parser.parse(input);
+
+                auto IdResover = IdentifierResolution();
+                auto transformedAst = IdResover.resolve(ast);
+
+                auto validateLabels = ValidateLabels();
+                auto validatedASt = validateLabels.validateLabels(transformedAst);
+
+                auto loopLabeler = LoopLabeling();
+                auto labeledAst = loopLabeler.labelLoops(transformedAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
+
+                auto typeChecker = TypeChecker();
+                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+                auto symbolTable = typeChecker.getSymbolTable();
+
+                auto tackyGen = TackyGen(symbolTable);
+                auto tacky = tackyGen.gen(typeCheckedAst);
+
+                if (debugging)
+                    tackyPrettyPrint.print(*tacky);
+
+                break;
+            }
+
+            case Stage::CodeGen:
+            {
+                auto parser = Parser();
+                auto ast = parser.parse(input);
+
+                auto IdResover = IdentifierResolution();
+                auto transformedAst = IdResover.resolve(ast);
+
+                auto validateLabels = ValidateLabels();
+                auto validatedASt = validateLabels.validateLabels(transformedAst);
+
+                auto loopLabeler = LoopLabeling();
+                auto labeledAst = loopLabeler.labelLoops(transformedAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
+
+                auto typeChecker = TypeChecker();
+                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+                auto symbolTable = typeChecker.getSymbolTable();
+
+                auto tackyGen = TackyGen(symbolTable);
+                auto tacky = tackyGen.gen(typeCheckedAst);
+
+                auto codeGen = CodeGen(symbolTable);
+                auto asmProg = codeGen.gen(tacky);
+
+                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+
+                auto instructionFixup = InstructionFixup(symbolTable);
+                auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
+
+                if (debugging)
+                {
+                    std::cout << "======= RAW ASSEMBLY =======" << '\n';
+                    codeGenPrettyPrint.print(*asmProg);
+                    std::cout << '\n';
+
+                    std::cout << "======= OPERANDS REPLACED ASSEMBLY =======" << '\n';
+                    codeGenPrettyPrint.print(*replacedAsm);
+                    std::cout << '\n';
+
+                    std::cout << "======= INSTRUCTIONS FIXEDUP ASSEMBLY =======" << '\n';
+                    codeGenPrettyPrint.print(*fixedupAsm);
+                    std::cout << '\n';
+                }
+
+                break;
+            }
+
+            case Stage::Emit:
+            {
+                auto parser = Parser();
+                auto ast = parser.parse(input);
+
+                auto IdResover = IdentifierResolution();
+                auto transformedAst = IdResover.resolve(ast);
+
+                auto validateLabels = ValidateLabels();
+                auto validatedASt = validateLabels.validateLabels(transformedAst);
+
+                auto loopLabeler = LoopLabeling();
+                auto labeledAst = loopLabeler.labelLoops(transformedAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
+
+                auto typeChecker = TypeChecker();
+                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+                auto symbolTable = typeChecker.getSymbolTable();
+
+                auto tackyGen = TackyGen(symbolTable);
+                auto tacky = tackyGen.gen(typeCheckedAst);
+
+                auto codeGen = CodeGen(symbolTable);
+                auto asmProg = codeGen.gen(tacky);
+
+                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+
+                auto instructionFixup = InstructionFixup(symbolTable);
+                auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
+
+                Emit emitter = Emit();
+
+                std::string asmFile = settings.replaceExtension(file, ".s");
+                emitter.emit(fixedupAsm, asmFile);
+
+                break;
+            }
+
+            case Stage::Object:
+            {
+                auto parser = Parser();
+                auto ast = parser.parse(input);
+
+                auto IdResover = IdentifierResolution();
+                auto transformedAst = IdResover.resolve(ast);
+
+                auto validateLabels = ValidateLabels();
+                auto validatedASt = validateLabels.validateLabels(transformedAst);
+
+                auto loopLabeler = LoopLabeling();
+                auto labeledAst = loopLabeler.labelLoops(transformedAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
+
+                auto typeChecker = TypeChecker();
+                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+                auto symbolTable = typeChecker.getSymbolTable();
+
+                auto tackyGen = TackyGen(symbolTable);
+                auto tacky = tackyGen.gen(typeCheckedAst);
+
+                auto codeGen = CodeGen(symbolTable);
+                auto asmProg = codeGen.gen(tacky);
+
+                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+
+                auto instructionFixup = InstructionFixup(symbolTable);
+                auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
+
+                Emit emitter = Emit();
+
+                std::string asmFile = settings.replaceExtension(file, ".s");
+                emitter.emit(fixedupAsm, asmFile);
+
+                break;
+            }
+
+            default:
+            {
+                auto parser = Parser();
+                auto ast = parser.parse(input);
+
+                auto IdResover = IdentifierResolution();
+                auto transformedAst = IdResover.resolve(ast);
+
+                auto validateLabels = ValidateLabels();
+                auto validatedASt = validateLabels.validateLabels(transformedAst);
+
+                auto loopLabeler = LoopLabeling();
+                auto labeledAst = loopLabeler.labelLoops(transformedAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
+
+                auto typeChecker = TypeChecker();
+                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+                auto symbolTable = typeChecker.getSymbolTable();
+
+                auto tackyGen = TackyGen(symbolTable);
+                auto tacky = tackyGen.gen(typeCheckedAst);
+
+                auto codeGen = CodeGen(symbolTable);
+                auto asmProg = codeGen.gen(tacky);
+
+                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+
+                auto instructionFixup = InstructionFixup(symbolTable);
+                auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
+
+                Emit emitter = Emit();
+
+                std::string asmFile = settings.replaceExtension(file, ".s");
+                emitter.emit(fixedupAsm, asmFile);
+
+                break;
+            }
+            }
         }
 
-        case Stage::Emit:
+        if (stage == Stage::Executable || stage == Stage::Object)
         {
-            auto parser = Parser();
-            auto ast = parser.parse(input);
-
-            auto varResolution = VarResolution();
-            auto transformedAst = varResolution.resolve(ast);
-
-            auto validateLabels = ValidateLabels();
-            validateLabels.validateLabels(transformedAst);
-
-            auto loopLabeling = LoopLabeling();
-            auto labeledAst = loopLabeling.labelLoops(transformedAst);
-
-            auto collectSwitchCases = CollectSwitchCases();
-            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
-
-            auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(casesCollectedAst);
-
-            auto codeGen = CodeGen();
-            auto asmProg = codeGen.gen(tacky);
-
-            auto replacePseudos = ReplacePseudos();
-            auto [replacedAsm, lastStackSlot] = replacePseudos.replacePseudos(asmProg);
-
-            auto instructionFixup = InstructionFixup();
-            auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm, lastStackSlot);
-
-            Emit emitter = Emit();
-
-            std::string asmFile = settings.replaceExtension(src, ".s");
-            emitter.emit(fixedupAsm, asmFile);
-
-            return 0;
+            assembleAndLink(srcFiles, stage == Stage::Executable, !debugging);
         }
 
-        default:
-        {
-            auto parser = Parser();
-            auto ast = parser.parse(input);
-
-            auto varResolution = VarResolution();
-            auto transformedAst = varResolution.resolve(ast);
-
-            auto validateLabels = ValidateLabels();
-            validateLabels.validateLabels(transformedAst);
-
-            auto loopLabeling = LoopLabeling();
-            auto labeledAst = loopLabeling.labelLoops(transformedAst);
-
-            auto collectSwitchCases = CollectSwitchCases();
-            auto casesCollectedAst = collectSwitchCases.analyzeSwitches(labeledAst);
-
-            auto tackyGen = TackyGen();
-            auto tacky = tackyGen.gen(casesCollectedAst);
-
-            CodeGen codeGen = CodeGen();
-            auto asmProg = codeGen.gen(tacky);
-
-            Emit emitter = Emit();
-
-            std::string asmFile = settings.replaceExtension(src, ".s");
-            emitter.emit(asmProg, asmFile);
-
-            assembleAndLink(src, false);
-
-            return 0;
-        }
-        }
+        return 0;
     }
     catch (const std::exception &e)
     {
@@ -277,13 +366,41 @@ int Compiler::compile(Stage stage, const std::string &src, bool debugging)
     }
 }
 
-void Compiler::assembleAndLink(const std::string &src, bool cleanUp)
+void Compiler::assembleAndLink(const std::vector<std::string> &srcFiles, bool link, bool cleanUp)
 {
-    std::string asmFile = settings.replaceExtension(src, ".s");
-    std::string objFile = settings.replaceExtension(src, ".o");
-    settings.runCommand("gcc", {asmFile, "-o", objFile});
-    if (cleanUp)
+    std::vector<std::string> objFiles;
+
+    for (const auto &src : srcFiles)
     {
-        settings.runCommand("rm", {asmFile});
+        std::string asmFile = settings.replaceExtension(src, ".s");
+        std::string objFile = settings.replaceExtension(src, ".o");
+        objFiles.push_back(objFile);
+
+        // Assemble each source file into an object file
+        settings.runCommand("gcc", {asmFile, "-c", "-o", objFile});
+
+        if (cleanUp)
+        {
+            settings.runCommand("rm", {asmFile});
+        }
+    }
+
+    if (link)
+    {
+        // Link all object files into a single executable
+        std::string outputFile = settings.removeExtension(srcFiles[0]); // Use the first file's name for the executable
+        std::vector<std::string> gccArgs = objFiles;
+        gccArgs.push_back("-o");
+        gccArgs.push_back(outputFile);
+
+        settings.runCommand("gcc", gccArgs);
+
+        if (cleanUp)
+        {
+            for (const auto &objFile : objFiles)
+            {
+                settings.runCommand("rm", {objFile});
+            }
+        }
     }
 }

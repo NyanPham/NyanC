@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "Assembly.h"
+#include "Symbols.h"
 
 struct ReplacementState
 {
@@ -16,19 +17,20 @@ struct ReplacementState
 
 using ReplaceOperandPair = std::pair<std::shared_ptr<Assembly::Operand>, ReplacementState>;
 using ReplaceInstPair = std::pair<std::shared_ptr<Assembly::Instruction>, ReplacementState>;
-using ReplaceFunctionPair = std::pair<std::shared_ptr<Assembly::Function>, int>;
-using ReplaceProgramPair = std::pair<std::shared_ptr<Assembly::Program>, int>;
 
 class ReplacePseudos
 {
 public:
-    ReplacePseudos() = default;
+    ReplacePseudos(Symbols::SymbolTable &symbolTable) : _symbolTable{symbolTable} {};
 
     ReplacementState createInitState();
     ReplaceOperandPair replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state);
     ReplaceInstPair replacePseudosInInstruction(const std::shared_ptr<Assembly::Instruction> &inst, ReplacementState &state);
-    ReplaceFunctionPair replacePseudosInFunction(const std::shared_ptr<Assembly::Function> &func);
-    ReplaceProgramPair replacePseudos(const std::shared_ptr<Assembly::Program> &prog);
+    std::shared_ptr<Assembly::Function> replacePseudosInFunction(const std::shared_ptr<Assembly::Function> &func);
+    std::shared_ptr<Assembly::Program> replacePseudos(const std::shared_ptr<Assembly::Program> &prog);
+
+private:
+    Symbols::SymbolTable &_symbolTable;
 };
 
 #endif

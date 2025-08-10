@@ -2,6 +2,7 @@
 #define COMPILER_H
 
 #include <string>
+#include <vector>
 #include "Settings.h"
 
 enum class Stage
@@ -12,6 +13,7 @@ enum class Stage
     Tacky,
     CodeGen,
     Emit,
+    Object,
     Executable,
 };
 
@@ -21,8 +23,8 @@ public:
     Compiler() {}
 
     std::string preprocess(const std::string &src);
-    int compile(Stage stage, const std::string &src, bool debugging = false);
-    void assembleAndLink(const std::string &src, bool cleanUp = true);
+    int compile(Stage stage, const std::vector<std::string> &srcFiles, bool debugging = false);
+    void assembleAndLink(const std::vector<std::string> &srcFiles, bool link = true, bool cleanUp = true);
 
 private:
     Settings settings;

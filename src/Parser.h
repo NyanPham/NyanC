@@ -27,7 +27,7 @@ public:
     std::shared_ptr<AST::Constant> parseConst();
     std::string parseIdentifier();
 
-       std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
+    std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
     std::shared_ptr<AST::Switch> parseSwitchStatement();
     std::shared_ptr<AST::Case> parseCaseStatement();
     std::shared_ptr<AST::Default> parseDefaultStatement();
@@ -46,7 +46,14 @@ public:
     std::shared_ptr<AST::Statement> parseStatement();
     std::shared_ptr<AST::Declaration> parseDeclaration();
     std::shared_ptr<AST::BlockItem> parseBlockItem();
-    std::shared_ptr<AST::FunctionDefinition> parseFunctionDefinition();
+    std::vector<std::shared_ptr<AST::Expression>> parseOptionalArgList();
+    std::vector<std::shared_ptr<AST::Expression>> parseArgList();
+    std::vector<std::string> parseParamList();
+    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name);
+    std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name);
+    std::shared_ptr<AST::VariableDeclaration> parseVariableDeclaration();
+    std::shared_ptr<AST::FunctionDeclaration> parseFunctionDeclaration();
+    std::vector<std::shared_ptr<AST::FunctionDeclaration>> parseFunctionDeclarationList();
     std::shared_ptr<AST::Program> parseProgram();
     std::shared_ptr<AST::Program> parse(const std::string &input);
 

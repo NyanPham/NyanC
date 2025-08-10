@@ -16,12 +16,13 @@ class Emit
 public:
     Emit() {}
 
-    std::string emitReg(std::shared_ptr<Assembly::Reg> reg, OperandSize size);
-    std::string emitImm(std::shared_ptr<Assembly::Imm> imm);
-    std::string emitStack(std::shared_ptr<Assembly::Stack> stack);
-    std::string emitPseudo(std::shared_ptr<Assembly::Pseudo> pseudo);
-    std::string showOperand(std::shared_ptr<Assembly::Operand> operand);
-    std::string showByteOperand(std::shared_ptr<Assembly::Operand> operand);
+    std::string showReg(const std::shared_ptr<Assembly::Reg> &reg);
+    std::string showOperand(const std::shared_ptr<Assembly::Operand> &operand);
+    std::string showByteReg(const std::shared_ptr<Assembly::Reg> &reg);
+    std::string showByteOperand(const std::shared_ptr<Assembly::Operand> &operand);
+    std::string showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg);
+    std::string showQuadwordOperand(const std::shared_ptr<Assembly::Operand> &operand);
+    std::string showFunName(const std::shared_ptr<Assembly::Call> &fnCall);
     std::string showUnaryOp(Assembly::UnaryOp op);
     std::string showBinaryOp(Assembly::BinaryOp op);
     std::string showLabel(const std::string &name);
@@ -38,6 +39,9 @@ public:
     std::string emitSetCC(std::shared_ptr<Assembly::SetCC> setCC);
     std::string emitLabel(std::shared_ptr<Assembly::Label> label);
     std::string emitAllocateStack(std::shared_ptr<Assembly::AllocateStack> allocateStack);
+    std::string emitDeallocateStack(std::shared_ptr<Assembly::DeallocateStack> deallocateStack);
+    std::string emitPush(std::shared_ptr<Assembly::Push> push);
+    std::string emitCall(std::shared_ptr<Assembly::Call> call);
     std::string emitRet(std::shared_ptr<Assembly::Ret> ret);
     std::string emitInst(std::shared_ptr<Assembly::Instruction> inst);
     std::string emitFunction(std::shared_ptr<Assembly::Function> fun);

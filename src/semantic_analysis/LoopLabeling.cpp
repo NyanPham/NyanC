@@ -54,8 +54,8 @@ LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::o
 
         return std::make_shared<AST::For>(
             forStmt->getInit(),
-            forStmt->getCondition(),
-            forStmt->getPost(),
+            forStmt->getOptCondition(),
+            forStmt->getOptPost(),
             labelStatement(forStmt->getBody(), newId, newId),
             newId);
     }
@@ -70,7 +70,7 @@ LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::o
         return std::make_shared<AST::If>(
             ifStmt->getCondition(),
             labelStatement(ifStmt->getThenClause(), currBreakId, currContinueId),
-            ifStmt->getElseClause().has_value() ? std::make_optional(labelStatement(ifStmt->getElseClause().value(), currBreakId, currContinueId)) : std::nullopt);
+            ifStmt->getOptElseClause().has_value() ? std::make_optional(labelStatement(ifStmt->getOptElseClause().value(), currBreakId, currContinueId)) : std::nullopt);
     }
     case AST::NodeType::LabeledStatement:
     {
@@ -87,7 +87,7 @@ LoopLabeling::labelStatement(const std::shared_ptr<AST::Statement> &stmt, std::o
         return std::make_shared<AST::Switch>(
             switchStmt->getControl(),
             labelStatement(switchStmt->getBody(), newBreakId, currContinueId),
-            switchStmt->getCases(),
+            switchStmt->getOptCases(),
             newBreakId);
     }
     case AST::NodeType::Case:
@@ -122,7 +122,8 @@ LoopLabeling::labelBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, s
 {
     switch (blockItem->getType())
     {
-    case AST::NodeType::Declaration:
+    case AST::NodeType::FunctionDeclaration:
+    case AST::NodeType::VariableDeclaration:
         return blockItem;
     default:
         return labelStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem), currBreakId, currContinueId);
@@ -143,14 +144,25 @@ LoopLabeling::labelBlock(const AST::Block &block, std::optional<std::string> cur
     return labeledBlock;
 }
 
-std::shared_ptr<AST::FunctionDefinition>
-LoopLabeling::labelFunctionDef(const std::shared_ptr<AST::FunctionDefinition> &funDef)
+std::shared_ptr<AST::FunctionDeclaration>
+LoopLabeling::labelFunctionDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl)
 {
-    return std::make_shared<AST::FunctionDefinition>(funDef->getName(), labelBlock(funDef->getBody(), std::nullopt, std::nullopt));
+    if (!fnDecl->getOptBody().has_value())
+        return fnDecl;
+
+    return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), labelBlock(fnDecl->getOptBody().value(), std::nullopt, std::nullopt));
 }
 
 std::shared_ptr<AST::Program>
 LoopLabeling::labelLoops(const std::shared_ptr<AST::Program> &prog)
 {
-    return std::make_shared<AST::Program>(labelFunctionDef(prog->getFunctionDefinition()));
+    std::vector<std::shared_ptr<AST::FunctionDeclaration>> labeledFns;
+    labeledFns.reserve(prog->getFunctionDeclarations().size());
+
+    for (const auto &fnDcl : prog->getFunctionDeclarations())
+    {
+        labeledFns.push_back(labelFunctionDeclaration(fnDcl));
+    }
+
+    return std::make_shared<AST::Program>(labeledFns);
 }

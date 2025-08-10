@@ -4,6 +4,7 @@
 
 #include "Assembly.h"
 #include "InstructionFixup.h"
+#include "Rounding.h"
 
 std::vector<std::shared_ptr<Assembly::Instruction>>
 InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> &inst)
@@ -152,10 +153,13 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
 }
 
 std::shared_ptr<Assembly::Function>
-InstructionFixup::fixupFunction(const std::shared_ptr<Assembly::Function> &fun, int lastStackSlot)
+InstructionFixup::fixupFunction(const std::shared_ptr<Assembly::Function> &fun)
 {
+    auto stackBytes = -_symbolTable.get(fun->getName()).stackFrameSize;
+
     std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{
-        std::make_shared<Assembly::AllocateStack>(-lastStackSlot)};
+        std::make_shared<Assembly::AllocateStack>(Rounding::roundAwayFromZero(16, stackBytes)),
+    };
 
     for (auto &inst : fun->getInstructions())
     {
@@ -167,7 +171,14 @@ InstructionFixup::fixupFunction(const std::shared_ptr<Assembly::Function> &fun, 
 }
 
 std::shared_ptr<Assembly::Program>
-InstructionFixup::fixupProgram(const std::shared_ptr<Assembly::Program> &prog, int lastStackSlot)
+InstructionFixup::fixupProgram(const std::shared_ptr<Assembly::Program> &prog)
 {
-    return std::make_shared<Assembly::Program>(fixupFunction(prog->getFunction(), lastStackSlot));
+    std::vector<std::shared_ptr<Assembly::Function>> fixedFns{};
+
+    for (auto &fn : prog->getFunctions())
+    {
+        fixedFns.push_back(fixupFunction(fn));
+    }
+
+    return std::make_shared<Assembly::Program>(fixedFns);
 }

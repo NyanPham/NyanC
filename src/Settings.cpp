@@ -21,6 +21,11 @@ void Settings::validateExtension(const std::string &filename)
     }
 }
 
+std::string Settings::removeExtension(const std::string &filename)
+{
+    return filename.substr(0, filename.find_last_of("."));
+}
+
 std::string Settings::replaceExtension(const std::string &filename, const std::string &newExt)
 {
     std::string base = filename.substr(0, filename.find_last_of("."));

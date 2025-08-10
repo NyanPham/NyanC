@@ -31,6 +31,7 @@ enum class TokenType
     OPEN_BRACE,
     CLOSE_BRACE,
     SEMICOLON,
+    COMMA,
 
     // Operators
     HYPHEN,

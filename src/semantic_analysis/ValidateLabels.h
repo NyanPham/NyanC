@@ -13,10 +13,10 @@ class ValidateLabels
 public:
     ValidateLabels() = default;
 
-    void collectLabelsFromStatement(std::set<std::string> &definedLabels, std::set<std::string> &usedLabels, const std::shared_ptr<AST::Statement> &stmt);
-    void collectLabelsFromBlockItem(std::set<std::string> &definedLabels, std::set<std::string> &usedLabels, const std::shared_ptr<AST::BlockItem> &blockItem);
-    void validateLabelsInFun(const std::shared_ptr<AST::FunctionDefinition> &funDef);
-    void validateLabels(const std::shared_ptr<AST::Program> &prog);
+    std::shared_ptr<AST::Statement> collectLabelsFromStatement(std::set<std::string> &definedLabels, std::set<std::string> &usedLabels, const std::shared_ptr<AST::Statement> &stmt, std::function<std::string(const std::string &)> transformLabel);
+    std::shared_ptr<AST::BlockItem> collectLabelsFromBlockItem(std::set<std::string> &definedLabels, std::set<std::string> &usedLabels, const std::shared_ptr<AST::BlockItem> &blockItem, std::function<std::string(const std::string &)> transformLabel);
+    std::shared_ptr<AST::FunctionDeclaration> validateLabelsInFun(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl);
+    std::shared_ptr<AST::Program> validateLabels(const std::shared_ptr<AST::Program> &prog);
 };
 
 #endif

@@ -56,6 +56,9 @@ private:
         case TACKY::NodeType::Label:
             visitLabel(static_cast<const TACKY::Label &>(node), indent);
             break;
+        case TACKY::NodeType::FunCall:
+            visitFunCall(static_cast<const TACKY::FunCall &>(node), indent);
+            break;
         case TACKY::NodeType::Constant:
             visitConstant(static_cast<const TACKY::Constant &>(node), indent);
             break;
@@ -72,9 +75,14 @@ private:
     {
         std::cout << getIndent() << "Program(\n";
         increaseIndent();
-        visitFunction(*program.getFunction());
+
+        for (const auto &fnDef : program.getFunctions())
+        {
+            visitFunction(*fnDef);
+        }
+
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitFunction(const TACKY::Function &func)
@@ -82,6 +90,13 @@ private:
         std::cout << getIndent() << "Function(\n";
         increaseIndent();
         std::cout << getIndent() << "name=\"" << func.getName() << "\",\n";
+        std::cout << getIndent() << "params=[\n";
+
+        for (const auto &param : func.getParams())
+            std::cout << getIndent() << "\t\"" << param << "\",\n";
+
+        std::cout << getIndent() << "],\n";
+
         std::cout << getIndent() << "instructions=\n";
         increaseIndent();
         for (const auto &instr : func.getInstructions())
@@ -90,7 +105,7 @@ private:
         }
         decreaseIndent();
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitReturn(const TACKY::Return &ret, bool indent = true)
@@ -101,7 +116,7 @@ private:
         increaseIndent();
         visit(*ret.getValue());
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitUnary(const TACKY::Unary &unary, bool indent = true)
@@ -117,7 +132,7 @@ private:
         std::cout << getIndent() << "dst=";
         visit(*unary.getDst(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitBinary(const TACKY::Binary &binary, bool indent = true)
@@ -192,7 +207,7 @@ private:
         std::cout << getIndent() << "dst=";
         visit(*binary.getDst(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitCopy(const TACKY::Copy &copy, bool indent = true)
@@ -206,7 +221,7 @@ private:
         std::cout << getIndent() << "dst=";
         visit(*copy.getDst(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitJump(const TACKY::Jump &jump, bool indent = true)
@@ -226,7 +241,7 @@ private:
         visit(*jumpIfZero.getCond(), false);
         std::cout << getIndent() << "target=" << jumpIfZero.getTarget() << "\n";
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitJumpIfNotZero(const TACKY::JumpIfNotZero &jumpIfNotZero, bool indent = true)
@@ -239,7 +254,7 @@ private:
         visit(*jumpIfNotZero.getCond(), false);
         std::cout << getIndent() << "target=" << jumpIfNotZero.getTarget() << "\n";
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitLabel(const TACKY::Label &label, bool indent = true)
@@ -247,6 +262,30 @@ private:
         if (indent)
             std::cout << getIndent();
         std::cout << "Label(name=" << label.getName() << ")\n";
+    }
+
+    void visitFunCall(const TACKY::FunCall &fnCall, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "FunCall(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=" << fnCall.getFnName() << "\n";
+        std::cout << getIndent() << "args=[\n";
+        increaseIndent();
+        for (const auto &arg : fnCall.getArgs())
+        {
+            visit(*arg, true);
+        }
+        decreaseIndent();
+        std::cout << getIndent() << "],\n";
+
+        std::cout << getIndent() << "dst=";
+        visit(*fnCall.getDst(), false);
+
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
     }
 
     void visitConstant(const TACKY::Constant &constant, bool indent = true)

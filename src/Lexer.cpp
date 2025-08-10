@@ -135,6 +135,10 @@ void Lexer::defineTokenDefs()
          {
              return Token(TokenType::SEMICOLON, str, pos);
          }},
+        {std::regex(","), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::COMMA, str, pos);
+         }},
         {std::regex("-"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::HYPHEN, str, pos);

@@ -134,30 +134,30 @@ TackyGen::emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop)
     auto forInitInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
     if (auto initDecl = std::dynamic_pointer_cast<AST::InitDecl>(forLoop->getInit()))
     {
-        auto innerInsts = emitTackyForDeclaration(initDecl->getDecl());
+        auto innerInsts = emitVarDeclaration(initDecl->getDecl());
         forInitInsts.insert(forInitInsts.end(), innerInsts.begin(), innerInsts.end());
     }
     else if (auto initExp = std::dynamic_pointer_cast<AST::InitExp>(forLoop->getInit()))
     {
-        if (initExp->hasExp())
+        if (initExp->getOptExp().has_value())
         {
-            auto [innerInsts, _] = emitTackyForExp(initExp->getExp());
+            auto [innerInsts, _] = emitTackyForExp(initExp->getOptExp().value());
             forInitInsts.insert(forInitInsts.end(), innerInsts.begin(), innerInsts.end());
         }
     }
 
     auto testCondInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
-    if (forLoop->hasCondition())
+    if (forLoop->getOptCondition().has_value())
     {
-        auto [innerInsts, c] = emitTackyForExp(forLoop->getCondition().value());
+        auto [innerInsts, c] = emitTackyForExp(forLoop->getOptCondition().value());
         testCondInsts.insert(testCondInsts.end(), innerInsts.begin(), innerInsts.end());
         testCondInsts.push_back(std::make_shared<TACKY::JumpIfZero>(c, brkLabel));
     }
 
     auto postInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
-    if (forLoop->hasPost())
+    if (forLoop->getOptPost().has_value())
     {
-        auto [innerInsts, _] = emitTackyForExp(forLoop->getPost().value());
+        auto [innerInsts, _] = emitTackyForExp(forLoop->getOptPost().value());
         postInsts.insert(postInsts.end(), innerInsts.begin(), innerInsts.end());
     }
 
@@ -171,6 +171,31 @@ TackyGen::emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop)
     insts.push_back(std::make_shared<TACKY::Label>(brkLabel));
 
     return insts;
+}
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
+TackyGen::emitFunCall(const std::shared_ptr<AST::FunctionCall> &fnCall)
+{
+    auto dstName = UniqueIds::makeTemporary();
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+
+    std::vector<std::shared_ptr<TACKY::Instruction>> argInsts{};
+    std::vector<std::shared_ptr<TACKY::Val>> argVal{};
+
+    for (const auto &arg : fnCall->getArgs())
+    {
+        auto [insts, v] = emitTackyForExp(arg);
+        argInsts.insert(argInsts.end(), insts.begin(), insts.end());
+        argVal.push_back(v);
+    }
+
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    insts.insert(insts.end(), argInsts.begin(), argInsts.end());
+    insts.push_back(std::make_shared<TACKY::FunCall>(fnCall->getName(), argVal, dst));
+
+    return {
+        insts,
+        dst,
+    };
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>>
@@ -459,6 +484,10 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
     {
         return emitConditionalExp(std::dynamic_pointer_cast<AST::Conditional>(exp));
     }
+    case AST::NodeType::FunctionCall:
+    {
+        return emitFunCall(std::dynamic_pointer_cast<AST::FunctionCall>(exp));
+    }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");
     }
@@ -469,7 +498,7 @@ TackyGen::emitTackyForIfStatement(const std::shared_ptr<AST::If> &ifStmt)
 {
     std::vector<std::shared_ptr<TACKY::Instruction>> insts{};
 
-    if (!ifStmt->getElseClause().has_value())
+    if (!ifStmt->getOptElseClause().has_value())
     {
         auto endLabel = UniqueIds::makeLabel("if_end");
 
@@ -488,7 +517,7 @@ TackyGen::emitTackyForIfStatement(const std::shared_ptr<AST::If> &ifStmt)
 
         auto [evalCond, c] = emitTackyForExp(ifStmt->getCondition());
         auto evalThen = emitTackyForStatement(ifStmt->getThenClause());
-        auto evalElse = emitTackyForStatement(ifStmt->getElseClause().value());
+        auto evalElse = emitTackyForStatement(ifStmt->getOptElseClause().value());
 
         insts.insert(insts.end(), evalCond.begin(), evalCond.end());
         insts.push_back(std::make_shared<TACKY::JumpIfZero>(c, elseLabel));
@@ -509,12 +538,12 @@ TackyGen::emitTackyForSwitch(const std::shared_ptr<AST::Switch> &switchStmt)
     auto [evalControl, c] = emitTackyForExp(switchStmt->getControl());
     auto cmpResult = std::make_shared<TACKY::Var>(UniqueIds::makeTemporary());
 
-    if (!switchStmt->getCases().has_value())
+    if (!switchStmt->getOptCases().has_value())
     {
         throw std::runtime_error("Switch case map is not defined!");
     }
 
-    auto cases = switchStmt->getCases().value();
+    auto cases = switchStmt->getOptCases().value();
 
     std::vector<std::shared_ptr<TACKY::Instruction>> jumpToCases{};
 
@@ -670,15 +699,23 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
 }
 
 std::vector<std::shared_ptr<TACKY::Instruction>>
-TackyGen::emitTackyForDeclaration(const std::shared_ptr<AST::Declaration> &decl)
+TackyGen::emitLocalDeclaration(const std::shared_ptr<AST::Declaration> &decl)
 {
+    if (decl->getType() == AST::NodeType::VariableDeclaration)
+        return emitVarDeclaration(std::dynamic_pointer_cast<AST::VariableDeclaration>(decl));
+    else
+        return {};
+}
 
-    if (decl->getInit().has_value())
+std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl)
+{
+    if (varDecl->getOptInit().has_value())
     {
         auto [evalAssignment, v] = emitTackyForExp(
             std::make_shared<AST::Assignment>(
-                std::make_shared<AST::Var>(decl->getName()),
-                decl->getInit().value()));
+                std::make_shared<AST::Var>(varDecl->getName()),
+                varDecl->getOptInit().value()));
 
         return evalAssignment;
     }
@@ -691,34 +728,49 @@ TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem
 {
     switch (blockItem->getType())
     {
-    case AST::NodeType::Declaration:
+    case AST::NodeType::FunctionDeclaration:
+    case AST::NodeType::VariableDeclaration:
     {
-        return emitTackyForDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem));
+        return emitLocalDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem));
     }
     default:
         return emitTackyForStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem));
     }
 }
 
-std::shared_ptr<TACKY::Function>
-TackyGen::emitTackyForFunction(const std::shared_ptr<AST::FunctionDefinition> &funDef)
+std::optional<std::shared_ptr<TACKY::Function>>
+TackyGen::emitFunctionDecalaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl)
 {
     auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
 
-    for (auto &blockItem : funDef->getBody())
+    if (fnDecl->getOptBody().has_value())
     {
-        auto innerInsts = emitTackyForBlockItem(blockItem);
-        insts.insert(insts.end(), innerInsts.begin(), innerInsts.end());
+        for (auto &blockItem : fnDecl->getOptBody().value())
+        {
+            auto innerInsts = emitTackyForBlockItem(blockItem);
+            insts.insert(insts.end(), innerInsts.begin(), innerInsts.end());
+        }
+
+        auto extraReturn = std::make_shared<TACKY::Return>(std::make_shared<TACKY::Constant>(0));
+        insts.push_back(extraReturn);
+
+        return std::make_optional(std::make_shared<TACKY::Function>(fnDecl->getName(), fnDecl->getParams(), insts));
     }
 
-    auto extraReturn = std::make_shared<TACKY::Return>(std::make_shared<TACKY::Constant>(0));
-    insts.push_back(extraReturn);
-
-    return std::make_shared<TACKY::Function>(funDef->getName(), insts);
+    return std::nullopt;
 }
 
 std::shared_ptr<TACKY::Program>
 TackyGen::gen(const std::shared_ptr<AST::Program> &prog)
 {
-    return std::make_shared<TACKY::Program>(emitTackyForFunction(prog->getFunctionDefinition()));
+    auto tackyFnDefs = std::vector<std::shared_ptr<TACKY::Function>>{};
+
+    for (const auto &fnDecl : prog->getFunctionDeclarations())
+    {
+        auto newFn = emitFunctionDecalaration(fnDecl);
+        if (newFn.has_value())
+            tackyFnDefs.push_back(newFn.value());
+    }
+
+    return std::make_shared<TACKY::Program>(tackyFnDefs);
 }

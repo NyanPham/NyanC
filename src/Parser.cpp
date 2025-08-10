@@ -11,12 +11,14 @@
 /*
 EBNF for a subset of C:
 
-<program> ::= <function>
-<function> ::= "int" <identifier> "(" "void" ")" <block>
+<program> ::= { <function-declaration> }
+<declaration> ::= <variable-declaration> | <function-declaration>
+<variable-declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
+<function-declaration> ::= "int" <identifier> "(" <param-list> ")" (<block> | ";")
+<param-list> :: = "void" | "int" <identifier> { "," "int" <identifier> }
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
-<declaration> ::= "int" <identifier> [ "=" <exp> ] ";"
-<for-init> ::= <declaration> | [ <exp> ] ";"
+<for-init> ::= <variable-declaration> | [ <exp> ] ";"
 <statement> ::= "return" <exp> ";"
             | <exp> ";"
             | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
@@ -35,7 +37,8 @@ EBNF for a subset of C:
 <exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
 <factor> ::=  <unop> <factor> | <postfix-exp>
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
-<primary-exp> ::= <int> | <identifier> | "(" <exp> ")"
+<primary-exp> ::= <int> | <identifier> | "(" <exp> ")" | <identifier> "(" [ <argument-list> ] ")"
+<argument-list> ::= <exp> { "," <exp> }
 <unop> ::= "-" | "~" | "!" | "++" | "--"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
         | "&&" | "||"
@@ -466,7 +469,7 @@ std::shared_ptr<AST::ForInit> Parser::parseForInit()
 
     if (nextToken->getType() == TokenType::KEYWORD_INT)
     {
-        return std::make_shared<AST::InitDecl>(parseDeclaration());
+        return std::make_shared<AST::InitDecl>(parseVariableDeclaration());
     }
     else
     {
@@ -564,13 +567,24 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
 
     case TokenType::IDENTIFIER:
     {
-        takeToken();
-        if (std::holds_alternative<std::string>(nextToken->getValue()))
+        auto id{parseIdentifier()};
+
+        // Look at the next token to figure out whether this is a variable or a function call
+        auto nextToken = peekToken();
+        if (!nextToken.has_value())
         {
-            return std::make_shared<AST::Var>(std::get<std::string>(nextToken->getValue()));
+            raiseError("a delimiter for Var/FunctionCall", "empty token");
         }
 
-        raiseError("an identifier", "non-string value");
+        if (nextToken->getType() == TokenType::OPEN_PAREN)
+        {
+            auto args{parseOptionalArgList()};
+            return std::make_shared<AST::FunctionCall>(id, args);
+        }
+        else
+        {
+            return std::make_shared<AST::Var>(id);
+        }
     }
 
     case TokenType::OPEN_PAREN:
@@ -782,38 +796,172 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
     }
 }
 
-std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
+std::vector<std::shared_ptr<AST::Expression>> Parser::parseOptionalArgList()
+{
+    expect(TokenType::OPEN_PAREN);
+
+    std::vector<std::shared_ptr<AST::Expression>> args{
+        peekToken().has_value() && peekToken()->getType() == TokenType::CLOSE_PAREN
+            ? std::vector<std::shared_ptr<AST::Expression>>()
+            : parseArgList()};
+
+    expect(TokenType::CLOSE_PAREN);
+    return args;
+}
+
+std::vector<std::shared_ptr<AST::Expression>> Parser::parseArgList()
+{
+    std::vector<std::shared_ptr<AST::Expression>> args{};
+    auto nextToken{peekToken()};
+
+    while (nextToken.has_value())
+    {
+        auto arg{parseExp(0)};
+        args.push_back(arg);
+
+        nextToken = peekToken();
+        if (nextToken.has_value() && nextToken->getType() == TokenType::COMMA)
+        {
+            takeToken();
+            nextToken = peekToken();
+        }
+        else
+            break;
+    }
+
+    return args;
+}
+
+std::vector<std::string> Parser::parseParamList()
 {
     expect(TokenType::KEYWORD_INT);
-    auto varName{parseIdentifier()};
+    auto nextParam{parseIdentifier()};
 
-    std::optional<Token> token{takeToken()};
+    auto args{std::vector<std::string>{nextParam}};
 
-    if (!token.has_value())
+    auto nextToken{peekToken()};
+
+    while (nextToken.has_value())
     {
-        raiseError("a semicolon or initializer", "empty token");
+        if (nextToken->getType() == TokenType::COMMA)
+        {
+            takeToken();
+            expect(TokenType::KEYWORD_INT);
+            nextParam = parseIdentifier();
+            args.push_back(nextParam);
+            nextToken = peekToken();
+        }
+        else
+            break;
     }
 
-    switch (token->getType())
+    return args;
+}
+
+std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclaration(const std::string &name)
+{
+    expect(TokenType::OPEN_PAREN);
+    std::vector<std::string> params{};
+
+    if (!peekToken().has_value())
     {
+        throw std::runtime_error("Unexpected end of file while parsing function declaration");
+    }
+
+    if (peekToken()->getType() == TokenType::KEYWORD_VOID)
+    {
+        takeToken();
+    }
+    else if (peekToken()->getType() != TokenType::CLOSE_PAREN)
+    {
+        params = parseParamList();
+    }
+
+    expect(TokenType::CLOSE_PAREN);
+    auto nextToken{peekToken()};
+
+    if (!nextToken.has_value())
+        raiseError("a function body or semicolon", "empty token");
+
+    std::optional<AST::Block> body{std::nullopt};
+
+    switch (nextToken->getType())
+    {
+    case TokenType::OPEN_BRACE:
+    {
+        body = std::make_optional(parseBlock());
+        break;
+    }
     case TokenType::SEMICOLON:
     {
-        std::optional<std::shared_ptr<AST::Expression>> init = std::nullopt;
-        return std::make_shared<AST::Declaration>(varName, init);
-    }
-    case TokenType::EQUAL_SIGN:
-    {
-        auto rhs = parseExp(0);
-        std::optional<std::shared_ptr<AST::Expression>> init = std::make_optional(rhs);
-        expect(TokenType::SEMICOLON);
-
-        return std::make_shared<AST::Declaration>(varName, init);
+        body = std::nullopt;
+        takeToken();
+        break;
     }
     default:
-        raiseError("An initializer or semicolon", tokenTypeToString(token->getType()));
+        raiseError("a function body or semicolon", "invalid token");
+    }
+
+    return std::make_shared<AST::FunctionDeclaration>(name, params, body);
+}
+
+std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclaration(const std::string &name)
+{
+    auto nextToken{takeToken()};
+    if (!nextToken.has_value())
+        raiseError("a semicolon or initializer", "empty token");
+
+    switch (nextToken->getType())
+    {
+    case TokenType::SEMICOLON:
+        return std::make_shared<AST::VariableDeclaration>(name, std::nullopt);
+    case TokenType::EQUAL_SIGN:
+    {
+        auto init = parseExp(0);
+        expect(TokenType::SEMICOLON);
+
+        return std::make_shared<AST::VariableDeclaration>(name, std::make_optional(init));
+    }
+    default:
+        raiseError("an initializer or semicolon", tokenTypeToString(nextToken->getType()));
     }
 
     return nullptr;
+}
+
+std::shared_ptr<AST::VariableDeclaration> Parser::parseVariableDeclaration()
+{
+    auto decl{parseDeclaration()};
+    if (decl->getType() == AST::NodeType::VariableDeclaration)
+    {
+        return std::dynamic_pointer_cast<AST::VariableDeclaration>(decl);
+    }
+    else
+        throw std::runtime_error("Expected variable declaration but found function declaration");
+}
+
+std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
+{
+    auto decl{parseDeclaration()};
+    if (decl->getType() == AST::NodeType::FunctionDeclaration)
+    {
+        return std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl);
+    }
+    else
+        throw std::runtime_error("Expected function declaration but found variable declaration");
+}
+
+std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
+{
+    expect(TokenType::KEYWORD_INT);
+    auto name{parseIdentifier()};
+
+    auto nextToken{peekToken()};
+
+    if (nextToken.has_value() && nextToken->getType() == TokenType::OPEN_PAREN)
+        return finishParsingFunctionDeclaration(name);
+    else
+        return finishParsingVariableDeclaration(name);
 }
 
 std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()
@@ -830,29 +978,39 @@ std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()
     }
 }
 
-std::shared_ptr<AST::FunctionDefinition> Parser::parseFunctionDefinition()
+std::vector<std::shared_ptr<AST::FunctionDeclaration>> Parser::parseFunctionDeclarationList()
 {
-    expect(TokenType::KEYWORD_INT);
-    std::string name{parseIdentifier()};
-    expect(TokenType::OPEN_PAREN);
-    expect(TokenType::KEYWORD_VOID);
-    expect(TokenType::CLOSE_PAREN);
-    AST::Block body{parseBlock()};
+    std::vector<std::shared_ptr<AST::FunctionDeclaration>> fnList{};
+    auto nextToken{peekToken()};
 
-    return std::make_shared<AST::FunctionDefinition>(name, body);
+    while (nextToken.has_value())
+    {
+        auto nextDecl{parseDeclaration()};
+
+        if (nextDecl->getType() == AST::NodeType::FunctionDeclaration)
+        {
+            fnList.push_back(std::dynamic_pointer_cast<AST::FunctionDeclaration>(nextDecl));
+        }
+        else
+        {
+            raiseError("a function declaration at top level", "a variable declaration");
+        }
+
+        nextToken = peekToken();
+    }
+
+    return fnList;
 }
 
 std::shared_ptr<AST::Program> Parser::parseProgram()
 {
-    std::shared_ptr<AST::FunctionDefinition> funDef{parseFunctionDefinition()};
+    std::vector<std::shared_ptr<AST::FunctionDeclaration>> fnDecls{parseFunctionDeclarationList()};
     std::optional<Token> nextToken{peekToken()};
 
     if (nextToken.has_value())
-    {
         raiseError("end of input", tokenTypeToString(nextToken->getType()));
-    }
 
-    return std::make_shared<AST::Program>(funDef);
+    return std::make_shared<AST::Program>(fnDecls);
 }
 
 std::shared_ptr<AST::Program> Parser::parse(const std::string &input)

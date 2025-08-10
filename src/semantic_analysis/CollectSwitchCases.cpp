@@ -106,7 +106,7 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
         auto [caseMap1, newThenClause] = analyzeStatement(ifStmt->getThenClause(), optCaseMap);
 
         std::optional<AST::CaseMap> caseMap2 = caseMap1;
-        std::optional<std::shared_ptr<AST::Statement>> newElseClause = ifStmt->getElseClause();
+        std::optional<std::shared_ptr<AST::Statement>> newElseClause = ifStmt->getOptElseClause();
 
         if (newElseClause.has_value())
         {
@@ -155,7 +155,7 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
 
         return {
             newCaseMap,
-            std::make_shared<AST::For>(forStmt->getInit(), forStmt->getCondition(), forStmt->getPost(), newBody, forStmt->getId()),
+            std::make_shared<AST::For>(forStmt->getInit(), forStmt->getOptCondition(), forStmt->getOptPost(), newBody, forStmt->getId()),
         };
     }
     case AST::NodeType::LabeledStatement:
@@ -188,7 +188,8 @@ CollectSwitchCases::analyzeBlockItem(const std::shared_ptr<AST::BlockItem> &blkI
 {
     switch (blkItem->getType())
     {
-    case AST::NodeType::Declaration:
+    case AST::NodeType::FunctionDeclaration:
+    case AST::NodeType::VariableDeclaration:
         return {
             optCaseMap,
             blkItem,
@@ -224,16 +225,30 @@ CollectSwitchCases::analyzeBlock(const AST::Block &blk, std::optional<AST::CaseM
     };
 }
 
-std::shared_ptr<AST::FunctionDefinition>
-CollectSwitchCases::analyzeFunctionDef(const std::shared_ptr<AST::FunctionDefinition> &funDef)
+std::shared_ptr<AST::FunctionDeclaration>
+CollectSwitchCases::analyzeFunctionDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl)
 {
-    auto [_, blk] = analyzeBlock(funDef->getBody(), std::nullopt);
-
-    return std::make_shared<AST::FunctionDefinition>(funDef->getName(), blk);
+    if (fnDecl->getOptBody().has_value())
+    {
+        auto [_, blk] = analyzeBlock(fnDecl->getOptBody().value(), std::nullopt);
+        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), blk);
+    }
+    else
+    {
+        return fnDecl;
+    }
 }
 
 std::shared_ptr<AST::Program>
 CollectSwitchCases::analyzeSwitches(const std::shared_ptr<AST::Program> &prog)
 {
-    return std::make_shared<AST::Program>(analyzeFunctionDef(prog->getFunctionDefinition()));
+    std::vector<std::shared_ptr<AST::FunctionDeclaration>> analyzedFns;
+    analyzedFns.reserve(prog->getFunctionDeclarations().size());
+
+    for (const auto &fnDecl : prog->getFunctionDeclarations())
+    {
+        analyzedFns.push_back(analyzeFunctionDeclaration(fnDecl));
+    }
+
+    return std::make_shared<AST::Program>(analyzedFns);
 }

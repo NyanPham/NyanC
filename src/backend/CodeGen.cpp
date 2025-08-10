@@ -2,10 +2,42 @@
 #include <memory>
 #include <vector>
 #include <stdexcept>
+#include <algorithm>
 
 #include "CodeGen.h"
 #include "TACKY.h"
 #include "Assembly.h"
+
+std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::passParams(const std::vector<std::string> &params)
+{
+    std::vector<std::string> regParams(
+        params.begin(),
+        params.begin() + std::min<size_t>(params.size(), 6));
+
+    std::vector<std::string> stackParams(
+        params.begin() + std::min<size_t>(params.size(), 6),
+        params.end());
+
+    std::vector<std::shared_ptr<Assembly::Instruction>> insts{};
+
+    // pass params in regsiters
+    for (int i = 0; i < regParams.size(); i++)
+    {
+        auto r = PARAM_PASSING_REGS[i];
+        auto asmParam = std::make_shared<Assembly::Pseudo>(regParams[i]);
+        insts.push_back(std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Reg>(r), asmParam));
+    }
+
+    // pass params on the stack
+    for (int i = 0; i < stackParams.size(); i++)
+    {
+        auto stack = std::make_shared<Assembly::Stack>(16 + 8 * i);
+        auto asmParam = std::make_shared<Assembly::Pseudo>(stackParams[i]);
+        insts.push_back(std::make_shared<Assembly::Mov>(stack, asmParam));
+    }
+
+    return insts;
+}
 
 std::shared_ptr<Assembly::Operand> CodeGen::convertVal(const std::shared_ptr<TACKY::Val> &val)
 {
@@ -100,6 +132,65 @@ Assembly::CondCode CodeGen::convertCondCode(const TACKY::BinaryOp op)
     default:
         throw std::runtime_error("Internal Error: Unknown binary to cond_code!");
     }
+}
+
+std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall)
+{
+    std::vector<std::shared_ptr<TACKY::Val>> regArgs(
+        fnCall->getArgs().begin(),
+        fnCall->getArgs().begin() + std::min<size_t>(fnCall->getArgs().size(), 6));
+
+    std::vector<std::shared_ptr<TACKY::Val>> stackArgs(
+        fnCall->getArgs().begin() + std::min<size_t>(fnCall->getArgs().size(), 6),
+        fnCall->getArgs().end());
+
+    std::vector<std::shared_ptr<Assembly::Instruction>> insts{};
+
+    // adjust stack alignment
+    int stackPadding = stackArgs.size() % 2 == 0 ? 0 : 8;
+    if (stackPadding != 0)
+        insts.push_back(std::make_shared<Assembly::AllocateStack>(stackPadding));
+
+    // pass arguments in registers
+    for (int i{0}; i < regArgs.size(); i++)
+    {
+        auto r = PARAM_PASSING_REGS[i];
+        auto asmArg = convertVal(regArgs[i]);
+        insts.push_back(std::make_shared<Assembly::Mov>(asmArg, std::make_shared<Assembly::Reg>(r)));
+    }
+
+    // pass arguments on the stack
+    std::reverse(stackArgs.begin(), stackArgs.end());
+    for (const auto &tackyArg : stackArgs)
+    {
+        auto asmArg = convertVal(tackyArg);
+        if (asmArg->getType() == Assembly::NodeType::Reg || asmArg->getType() == Assembly::NodeType::Imm)
+        {
+            insts.push_back(std::make_shared<Assembly::Push>(asmArg));
+        }
+        else
+        {
+            // Copy into a register before pushing
+            insts.push_back(std::make_shared<Assembly::Mov>(asmArg, std::make_shared<Assembly::Reg>(Assembly::RegName::AX)));
+            insts.push_back(std::make_shared<Assembly::Push>(std::make_shared<Assembly::Reg>(Assembly::RegName::AX)));
+        }
+    }
+
+    // emit call function
+    insts.push_back(std::make_shared<Assembly::Call>(fnCall->getFnName()));
+
+    // adjust stack pointer
+    auto bytesToRemove = 8 * (stackArgs.size()) + stackPadding;
+    if (bytesToRemove != 0)
+        insts.push_back(std::make_shared<Assembly::DeallocateStack>(bytesToRemove));
+
+    // retrieve return value
+    auto asmDst = convertVal(fnCall->getDst());
+    insts.push_back(std::make_shared<Assembly::Mov>(
+        std::make_shared<Assembly::Reg>(Assembly::RegName::AX),
+        asmDst));
+
+    return insts;
 }
 
 std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
@@ -266,26 +357,40 @@ std::vector<std::shared_ptr<Assembly::Instruction>> CodeGen::convertInstruction(
             std::make_shared<Assembly::Label>(std::dynamic_pointer_cast<TACKY::Label>(inst)->getName()),
         };
     }
+    case TACKY::NodeType::FunCall:
+    {
+        return convertFunCall(std::dynamic_pointer_cast<TACKY::FunCall>(inst));
+    }
     default:
         throw std::runtime_error("Internal Error: Invalid TACKY instruction");
     }
 }
 
-std::shared_ptr<Assembly::Function> CodeGen::convertFunction(const std::shared_ptr<TACKY::Function> &fun)
+std::shared_ptr<Assembly::Function> CodeGen::convertFunction(const std::shared_ptr<TACKY::Function> &fn)
 {
-    std::vector<std::shared_ptr<Assembly::Instruction>> instructions{};
+    std::vector<std::shared_ptr<Assembly::Instruction>> insts{};
 
-    for (auto &inst : fun->getInstructions())
+    auto paramInsts = passParams(fn->getParams());
+    insts.insert(insts.end(), paramInsts.begin(), paramInsts.end());
+
+    for (auto &inst : fn->getInstructions())
     {
-        auto asmInstructions = convertInstruction(inst);
-        instructions.insert(instructions.end(), asmInstructions.begin(), asmInstructions.end());
+        auto asmInsts = convertInstruction(inst);
+        insts.insert(insts.end(), asmInsts.begin(), asmInsts.end());
     }
 
-    return std::make_shared<Assembly::Function>(fun->getName(), instructions);
+    return std::make_shared<Assembly::Function>(fn->getName(), insts);
 }
 
 std::shared_ptr<Assembly::Program> CodeGen::gen(std::shared_ptr<TACKY::Program> prog)
 {
-    auto asmFunction = convertFunction(prog->getFunction());
-    return std::make_shared<Assembly::Program>(asmFunction);
+    std::vector<std::shared_ptr<Assembly::Function>> convertedFns{};
+
+    for (const auto &fn : prog->getFunctions())
+    {
+        auto asmFnDef = convertFunction(fn);
+        convertedFns.push_back(asmFnDef);
+    }
+
+    return std::make_shared<Assembly::Program>(convertedFns);
 }

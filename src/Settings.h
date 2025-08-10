@@ -17,6 +17,7 @@ public:
 
     void getCurrentPlatform();
     void validateExtension(const std::string &filename);
+    std::string removeExtension(const std::string &filename);
     std::string replaceExtension(const std::string &filename, const std::string &newExt);
     void runCommand(const std::string &cmd, const std::vector<std::string> &args);
     bool getIsDebug() const;
@@ -27,4 +28,4 @@ private:
     bool isDebug;
 };
 
-#endif // SETTINGS_H
+#endif

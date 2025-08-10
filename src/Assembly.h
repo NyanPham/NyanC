@@ -6,7 +6,7 @@
 #include <vector>
 
 /*
-program = Program(function_definition)
+program = Program(function_definition*)
 function_definition = Function(identifier name, instruction* instructions)
 instruction = Mov(operand src, operand dst)
     | Unary(unary_operator, operand dst)
@@ -19,12 +19,15 @@ instruction = Mov(operand src, operand dst)
     | SetCC(cond_code, operand)
     | Label(identifier)
     | AllocateStack(int)
+    | DeallocateStack(int)
+    | Push(operand)
+    | Call(identifier)
     | Ret
 unary_operator = Neg | Not
 binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int)
 cond_code = E | NE | L | LE | G | GE
-reg = AX | CX | DX | R10 | R11
+reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11
 */
 
 namespace Assembly
@@ -47,6 +50,9 @@ namespace Assembly
     class SetCC;
     class Label;
     class AllocateStack;
+    class DeallocateStack;
+    class Push;
+    class Call;
     class Ret;
     class Function;
     class Program;
@@ -67,6 +73,9 @@ namespace Assembly
         SetCC,
         Label,
         AllocateStack,
+        DeallocateStack,
+        Push,
+        Call,
         Imm,
         Reg,
         Pseudo,
@@ -78,6 +87,10 @@ namespace Assembly
         AX,
         DX,
         CX,
+        DI,
+        SI,
+        R8,
+        R9,
         R10,
         R11,
     };
@@ -315,6 +328,36 @@ namespace Assembly
         int _offset;
     };
 
+    class DeallocateStack : public Instruction
+    {
+    public:
+        DeallocateStack(int offset) : Instruction(NodeType::DeallocateStack), _offset{offset} {}
+        int getOffset() const { return _offset; }
+
+    private:
+        int _offset;
+    };
+
+    class Push : public Instruction
+    {
+    public:
+        Push(const std::shared_ptr<Operand> &operand) : Instruction(NodeType::Push), _operand{operand} {}
+        const std::shared_ptr<Operand> &getOperand() const { return _operand; }
+
+    private:
+        std::shared_ptr<Operand> _operand;
+    };
+
+    class Call : public Instruction
+    {
+    public:
+        Call(const std::string &fnName) : Instruction(NodeType::Call), _fnName{fnName} {}
+        const std::string &getFnName() const { return _fnName; }
+
+    private:
+        std::string _fnName;
+    };
+
     class Ret : public Instruction
     {
     public:
@@ -340,12 +383,12 @@ namespace Assembly
     class Program : public Node
     {
     public:
-        Program(std::shared_ptr<Function> fun) : Node(NodeType::Program), _fun{fun} {}
+        Program(const std::vector<std::shared_ptr<Function>> &fns) : Node(NodeType::Program), _fns{fns} {}
 
-        std::shared_ptr<Function> getFunction() const { return _fun; }
+        const std::vector<std::shared_ptr<Function>> &getFunctions() const { return _fns; }
 
     private:
-        std::shared_ptr<Function> _fun;
+        std::vector<std::shared_ptr<Function>> _fns;
     };
 }
 

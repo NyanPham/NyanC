@@ -6,8 +6,8 @@
 #include <vector>
 
 /*
-program = Program(function_definition)
-function_definition = Function(identifier name, Instruction* instructions)
+program = Program(function_definition*)
+function_definition = Function(identifier name, identifier* params, Instruction* instructions)
 instruction = Return(val)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
@@ -16,6 +16,7 @@ instruction = Return(val)
     | JumpIfZero(val condition, identifier target)
     | JumpIfNotZero(val condition, identifier target)
     | Label(identifier)
+    | FunCall(identifier fn_name, val* args, val dst)
 val = Constant(int) | Var(identifier)
 unary_operator = Complement | Negate | Not
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
@@ -39,6 +40,7 @@ namespace TACKY
     class JumpIfZero;
     class JumpIfNotZero;
     class Label;
+    class FunCall;
     class Val;
     class Constant;
     class Var;
@@ -55,6 +57,7 @@ namespace TACKY
         JumpIfZero,
         JumpIfNotZero,
         Label,
+        FunCall,
         Constant,
         Var,
     };
@@ -240,6 +243,22 @@ namespace TACKY
         std::string _name;
     };
 
+    class FunCall : public Instruction
+    {
+    public:
+        FunCall(std::string fnName, std::vector<std::shared_ptr<TACKY::Val>> args, std::shared_ptr<TACKY::Val> dst)
+            : Instruction(NodeType::FunCall), _fnName{fnName}, _args{args}, _dst{dst} {}
+
+        const std::string &getFnName() const { return _fnName; }
+        const std::vector<std::shared_ptr<TACKY::Val>> &getArgs() const { return _args; }
+        const std::shared_ptr<TACKY::Val> &getDst() const { return _dst; }
+
+    private:
+        std::string _fnName;
+        std::vector<std::shared_ptr<TACKY::Val>> _args;
+        std::shared_ptr<TACKY::Val> _dst;
+    };
+
     class Return : public Instruction
     {
     public:
@@ -253,27 +272,29 @@ namespace TACKY
     class Function : public Node
     {
     public:
-        Function(const std::string &name, std::vector<std::shared_ptr<Instruction>> instructions)
-            : Node(NodeType::Function), _name{std::move(name)}, _instructions{std::move(instructions)}
+        Function(const std::string &name, const std::vector<std::string> &params, std::vector<std::shared_ptr<Instruction>> instructions)
+            : Node(NodeType::Function), _name{std::move(name)}, _params{params}, _instructions{std::move(instructions)}
         {
         }
 
         const std::string &getName() const { return _name; }
+        const std::vector<std::string> &getParams() const { return _params; }
         const std::vector<std::shared_ptr<Instruction>> &getInstructions() const { return _instructions; }
 
     private:
         std::string _name;
+        std::vector<std::string> _params;
         std::vector<std::shared_ptr<Instruction>> _instructions;
     };
 
     class Program : public Node
     {
     public:
-        Program(std::shared_ptr<Function> function) : Node(NodeType::Program), _function{std::move(function)} {}
-        const std::shared_ptr<Function> &getFunction() const { return _function; }
+        Program(std::vector<std::shared_ptr<Function>> functions) : Node(NodeType::Program), _functions{std::move(functions)} {}
+        const std::vector<std::shared_ptr<Function>> &getFunctions() const { return _functions; }
 
     private:
-        std::shared_ptr<Function> _function;
+        std::vector<std::shared_ptr<Function>> _functions;
     };
 };
 

@@ -30,6 +30,10 @@ Stage parseStage(const std::string &stageStr)
     {
         return Stage::Emit;
     }
+    else if (stageStr == "--object")
+    {
+        return Stage::Object;
+    }
     else
     {
         return Stage::Executable;
@@ -40,19 +44,42 @@ int main(int argc, char *argv[])
 {
     if (argc < 3)
     {
-        std::cerr << "Usage: " << argv[0] << " <source_file>" << " --<stage>\n";
+        std::cerr << "Usage: " << argv[0] << " <source_file1> <source_file2> ... --<stage> [--debug]\n";
         return 1;
     }
 
-    std::string srcFile{argv[1]};
-    Stage stage{parseStage(argv[2])};
+    std::vector<std::string> srcFiles;
+    bool debugging = false;
+    std::string stageStr;
 
-    bool debugging = argv[3] && std::string(argv[3]) == "--debug";
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::string(argv[i]) == "--debug")
+        {
+            debugging = true;
+        }
+        else if (argv[i][0] == '-' && argv[i][1] == '-')
+        {
+            stageStr = argv[i];
+        }
+        else
+        {
+            srcFiles.push_back(argv[i]);
+        }
+    }
+
+    if (stageStr.empty())
+    {
+        std::cerr << "Error: No stage flag provided (e.g., --lex, --parse, --validate, etc.)\n";
+        return 1;
+    }
+
+    Stage stage = parseStage(stageStr);
 
     Settings settings;
     Compiler compiler;
 
-    int status = compiler.compile(stage, srcFile, debugging);
+    int status = compiler.compile(stage, srcFiles, debugging);
 
     if (status != 0)
     {

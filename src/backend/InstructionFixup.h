@@ -6,15 +6,19 @@
 #include <vector>
 
 #include "Assembly.h"
+#include "Symbols.h"
 
 class InstructionFixup
 {
 public:
-    InstructionFixup() = default;
+    InstructionFixup(Symbols::SymbolTable &symbolTable) : _symbolTable{symbolTable} {};
 
     std::vector<std::shared_ptr<Assembly::Instruction>> fixupInstruction(const std::shared_ptr<Assembly::Instruction> &inst);
-    std::shared_ptr<Assembly::Function> fixupFunction(const std::shared_ptr<Assembly::Function> &fun, int lastStackSlot);
-    std::shared_ptr<Assembly::Program> fixupProgram(const std::shared_ptr<Assembly::Program> &prog, int lastStackSlot);
+    std::shared_ptr<Assembly::Function> fixupFunction(const std::shared_ptr<Assembly::Function> &fun);
+    std::shared_ptr<Assembly::Program> fixupProgram(const std::shared_ptr<Assembly::Program> &prog);
+
+private:
+    Symbols::SymbolTable &_symbolTable;
 };
 
 #endif

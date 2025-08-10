@@ -69,6 +69,15 @@ private:
         case Assembly::NodeType::AllocateStack:
             visitAllocateStack(static_cast<const Assembly::AllocateStack &>(node), indent);
             break;
+        case Assembly::NodeType::DeallocateStack:
+            visitDeallocateStack(static_cast<const Assembly::DeallocateStack &>(node), indent);
+            break;
+        case Assembly::NodeType::Push:
+            visitPush(static_cast<const Assembly::Push &>(node), indent);
+            break;
+        case Assembly::NodeType::Call:
+            visitCall(static_cast<const Assembly::Call &>(node), indent);
+            break;
         case Assembly::NodeType::Imm:
             visitImm(static_cast<const Assembly::Imm &>(node), indent);
             break;
@@ -91,9 +100,12 @@ private:
     {
         std::cout << getIndent() << "Program(\n";
         increaseIndent();
-        visitFunction(*program.getFunction());
+
+        for (const auto &fnDef : program.getFunctions())
+            visitFunction(*fnDef);
+
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitFunction(const Assembly::Function &func)
@@ -109,7 +121,7 @@ private:
         }
         decreaseIndent();
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitRet(const Assembly::Ret &ret)
@@ -124,7 +136,7 @@ private:
         printMember("src", *mov.getSrc());
         printMember("dst", *mov.getDst());
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitUnary(const Assembly::Unary &unary, bool indent = true)
@@ -135,7 +147,7 @@ private:
         std::cout << getIndent() << "operand=";
         visit(*unary.getOperand(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitBinary(const Assembly::Binary &binary, bool indent = true)
@@ -176,7 +188,7 @@ private:
         std::cout << getIndent() << "dst=";
         visit(*binary.getDst(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitCmp(const Assembly::Cmp &cmp, bool indent = true)
@@ -188,7 +200,7 @@ private:
         std::cout << getIndent() << "dst=";
         visit(*cmp.getDst(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitIdiv(const Assembly::Idiv &idiv, bool indent = true)
@@ -198,7 +210,7 @@ private:
         std::cout << getIndent() << "operand=";
         visit(*idiv.getOperand(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitCdq(const Assembly::Cdq &cdq)
@@ -223,7 +235,7 @@ private:
         std::cout << getIndent() << "condCode=" << showCondCode(jmpCC.getCondCode()) << ",\n";
         std::cout << getIndent() << "target=" << jmpCC.getTarget() << '\n';
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitSetCC(const Assembly::SetCC &setCC, bool indent = true)
@@ -237,7 +249,7 @@ private:
         std::cout << getIndent() << "operand=";
         visit(*setCC.getOperand(), false);
         decreaseIndent();
-        std::cout << getIndent() << ")\n";
+        std::cout << getIndent() << "),\n";
     }
 
     void visitLabel(const Assembly::Label &label, bool indent = true)
@@ -250,6 +262,31 @@ private:
     void visitAllocateStack(const Assembly::AllocateStack &alloc, bool indent = true)
     {
         std::cout << getIndent() << "AllocateStack(" << alloc.getOffset() << ")\n";
+    }
+
+    void visitDeallocateStack(const Assembly::DeallocateStack &dealloc, bool indent = true)
+    {
+        std::cout << getIndent() << "DeallocateStack(" << dealloc.getOffset() << ")\n";
+    }
+
+    void visitPush(const Assembly::Push &push, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Push(\n";
+        increaseIndent();
+        std::cout << getIndent() << "operand=";
+        visit(*push.getOperand(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitCall(const Assembly::Call &call, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Call(fnName=" << call.getFnName() << ")\n";
     }
 
     void visitImm(const Assembly::Imm &imm, bool indent = true)
@@ -314,10 +351,18 @@ private:
         {
         case Assembly::RegName::AX:
             return "AX";
-        case Assembly::RegName::DX:
-            return "DX";
         case Assembly::RegName::CX:
             return "CX";
+        case Assembly::RegName::DX:
+            return "DX";
+        case Assembly::RegName::DI:
+            return "DI";
+        case Assembly::RegName::SI:
+            return "SI";
+        case Assembly::RegName::R8:
+            return "R8";
+        case Assembly::RegName::R9:
+            return "R9";
         case Assembly::RegName::R10:
             return "R10";
         case Assembly::RegName::R11:
