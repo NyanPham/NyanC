@@ -2,28 +2,31 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <cstdint>
 
 #include "AST.h"
 #include "CollectSwitchCases.h"
 #include "UniqueIds.h"
+#include "Const.h"
+#include "ConstConvert.h"
 
-std::tuple<std::optional<AST::CaseMap>, std::shared_ptr<AST::Statement>, std::string>
-CollectSwitchCases::analyzeCaseOrDefault(std::optional<int> key, std::optional<AST::CaseMap> optCaseMap, const std::string &lbl, const std::shared_ptr<AST::Statement> &innerStmt)
+std::tuple<OptSwitchCtx, std::shared_ptr<AST::Statement>, std::string>
+CollectSwitchCases::analyzeCaseOrDefault(std::optional<std::shared_ptr<Constants::Const>> key, OptSwitchCtx optSwitchCtx, const std::string &lbl, const std::shared_ptr<AST::Statement> &innerStmt)
 {
     // Make sure we're in a switch statement
-    if (!optCaseMap.has_value())
-    {
+    if (!optSwitchCtx.has_value())
         throw std::runtime_error("Found case statement outside of switch");
-    }
 
-    auto caseMap = optCaseMap.value();
+    auto [switchType, caseMap] = optSwitchCtx.value();
+
+    auto convertedKey = key.has_value() ? std::make_optional(ConstConvert::convert(switchType, key.value())) : std::nullopt;
 
     // Check for duplicates
-    if (caseMap.find(key) != caseMap.end())
+    if (caseMap.find(convertedKey) != caseMap.end())
     {
-        if (key.has_value())
+        if (convertedKey.has_value())
         {
-            throw std::runtime_error("Duplicate case in switch statement: " + std::to_string(key.value()));
+            throw std::runtime_error("Duplicate case in switch statement");
         }
         else
         {
@@ -33,36 +36,31 @@ CollectSwitchCases::analyzeCaseOrDefault(std::optional<int> key, std::optional<A
 
     // Generate new ID - lbl should be "case" or "default"
     auto caseId = UniqueIds::makeLabel(lbl);
+    caseMap.insert_or_assign(convertedKey, caseId);
 
-    AST::CaseMap newCaseMap{};
-    for (const auto &entry : caseMap)
-    {
-        newCaseMap[entry.first] = entry.second;
-    }
-
-    newCaseMap[key] = caseId;
+    OptSwitchCtx updatedCtx = std::make_optional(std::make_pair(switchType, caseMap));
 
     // Analyze inner statement
-    auto [finalMap, newInnerStatement] = analyzeStatement(innerStmt, std::make_optional(newCaseMap));
+    auto [finalCtx, newInnerStatement] = analyzeStatement(innerStmt, updatedCtx);
 
     return {
-        finalMap,
+        finalCtx,
         newInnerStatement,
         caseId,
     };
 }
 
-std::pair<std::optional<AST::CaseMap>, std::shared_ptr<AST::Statement>>
-CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt, std::optional<AST::CaseMap> optCaseMap)
+std::pair<OptSwitchCtx, std::shared_ptr<AST::Statement>>
+CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt, OptSwitchCtx optSwitchCtx)
 {
     switch (stmt->getType())
     {
     case AST::NodeType::Default:
     {
         auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
-        auto [newMap, newStmt, defaultId] = analyzeCaseOrDefault(std::nullopt, optCaseMap, "default", defaultStmt->getBody());
+        auto [newCtx, newStmt, defaultId] = analyzeCaseOrDefault(std::nullopt, optSwitchCtx, "default", defaultStmt->getBody());
         return {
-            newMap,
+            newCtx,
             std::make_shared<AST::Default>(newStmt, defaultId),
         };
     }
@@ -74,10 +72,18 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
         if (caseStmt->getValue()->getType() != AST::NodeType::Constant)
             throw std::runtime_error("Non-constant value in case statement");
 
-        auto key = std::dynamic_pointer_cast<AST::Constant>(caseStmt->getValue())->getValue();
-        auto [newMap, newStmt, caseId] = analyzeCaseOrDefault(std::make_optional(key), optCaseMap, "case", caseStmt->getBody());
+        auto constNode = std::dynamic_pointer_cast<AST::Constant>(caseStmt->getValue())->getConst();
+
+        // if (auto constInt = Constants::getConstInt(*constNode))
+        //     key = constInt->val;
+        // else if (auto constLong = Constants::getConstLong(*constNode))
+        //     key = constLong->val;
+        // else
+        //     throw std::runtime_error("Internal error: Bad Constant type");
+
+        auto [newCtx, newStmt, caseId] = analyzeCaseOrDefault(std::make_optional(constNode), optSwitchCtx, "case", caseStmt->getBody());
         return {
-            newMap,
+            newCtx,
             std::make_shared<AST::Case>(caseStmt->getValue(), newStmt, caseId),
         };
     }
@@ -86,16 +92,20 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
         auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
 
         // Use fresh map when traversing the switch body
-        auto [newMap, newBody] = analyzeStatement(switchStmt->getBody(), std::make_optional<AST::CaseMap>());
+        auto switchType = switchStmt->getControl()->getDataType();
+        if (!switchType.has_value())
+            throw std::runtime_error("Internal error: Ensure the pass TypeChecking is executed before CollectSwitchCases!");
+
+        auto [newCtx, newBody] = analyzeStatement(switchStmt->getBody(), OptSwitchCtx(std::make_pair(switchType.value(), AST::CaseMap{})));
 
         // Annotate the switch with new case map
         // Do not pass the new case map to the caller
         return {
-            optCaseMap,
+            optSwitchCtx,
             std::make_shared<AST::Switch>(
                 switchStmt->getControl(),
                 newBody,
-                newMap,
+                std::make_optional(newCtx->second),
                 switchStmt->getId()),
         };
     }
@@ -103,35 +113,35 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
     case AST::NodeType::If:
     {
         auto ifStmt = std::dynamic_pointer_cast<AST::If>(stmt);
-        auto [caseMap1, newThenClause] = analyzeStatement(ifStmt->getThenClause(), optCaseMap);
+        auto [optSwichCtx1, newThenClause] = analyzeStatement(ifStmt->getThenClause(), optSwitchCtx);
 
-        std::optional<AST::CaseMap> caseMap2 = caseMap1;
+        OptSwitchCtx optSwitchCtx2 = optSwichCtx1;
         std::optional<std::shared_ptr<AST::Statement>> newElseClause = ifStmt->getOptElseClause();
 
         if (newElseClause.has_value())
         {
-            auto [caseMap, newStmt] = analyzeStatement(newElseClause.value(), caseMap1);
-            caseMap2 = caseMap;
+            auto [newCtx, newStmt] = analyzeStatement(newElseClause.value(), optSwitchCtx2);
+            optSwitchCtx2 = newCtx;
             newElseClause = newStmt;
         }
 
         return {
-            caseMap2,
+            optSwitchCtx2,
             std::make_shared<AST::If>(ifStmt->getCondition(), newThenClause, newElseClause),
         };
     }
     case AST::NodeType::Compound:
     {
-        auto [newCaseMap, newBlock] = analyzeBlock(std::dynamic_pointer_cast<AST::Compound>(stmt)->getBlock(), optCaseMap);
+        auto [newCtx, newBlock] = analyzeBlock(std::dynamic_pointer_cast<AST::Compound>(stmt)->getBlock(), optSwitchCtx);
         return {
-            newCaseMap,
+            newCtx,
             std::make_shared<AST::Compound>(newBlock),
         };
     }
     case AST::NodeType::While:
     {
         auto whileStmt = std::dynamic_pointer_cast<AST::While>(stmt);
-        auto [newCaseMap, newBody] = analyzeStatement(whileStmt->getBody(), optCaseMap);
+        auto [newCaseMap, newBody] = analyzeStatement(whileStmt->getBody(), optSwitchCtx);
 
         return {
             newCaseMap,
@@ -141,30 +151,30 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
     case AST::NodeType::DoWhile:
     {
         auto doWhileStmt = std::dynamic_pointer_cast<AST::DoWhile>(stmt);
-        auto [newCaseMap, newBody] = analyzeStatement(doWhileStmt->getBody(), optCaseMap);
+        auto [newCtx, newBody] = analyzeStatement(doWhileStmt->getBody(), optSwitchCtx);
 
         return {
-            newCaseMap,
+            newCtx,
             std::make_shared<AST::DoWhile>(newBody, doWhileStmt->getCondition(), doWhileStmt->getId()),
         };
     }
     case AST::NodeType::For:
     {
         auto forStmt = std::dynamic_pointer_cast<AST::For>(stmt);
-        auto [newCaseMap, newBody] = analyzeStatement(forStmt->getBody(), optCaseMap);
+        auto [newCtx, newBody] = analyzeStatement(forStmt->getBody(), optSwitchCtx);
 
         return {
-            newCaseMap,
+            newCtx,
             std::make_shared<AST::For>(forStmt->getInit(), forStmt->getOptCondition(), forStmt->getOptPost(), newBody, forStmt->getId()),
         };
     }
     case AST::NodeType::LabeledStatement:
     {
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
-        auto [newCaseMap, newStmt] = analyzeStatement(labeledStmt->getStatement(), optCaseMap);
+        auto [newCtx, newStmt] = analyzeStatement(labeledStmt->getStatement(), optSwitchCtx);
 
         return {
-            newCaseMap,
+            newCtx,
             std::make_shared<AST::LabeledStatement>(labeledStmt->getLabel(), newStmt),
         };
     }
@@ -175,7 +185,7 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
     case AST::NodeType::Continue:
     case AST::NodeType::Goto:
         return {
-            optCaseMap,
+            optSwitchCtx,
             stmt,
         };
     default:
@@ -183,44 +193,44 @@ CollectSwitchCases::analyzeStatement(const std::shared_ptr<AST::Statement> &stmt
     }
 }
 
-std::pair<std::optional<AST::CaseMap>, std::shared_ptr<AST::BlockItem>>
-CollectSwitchCases::analyzeBlockItem(const std::shared_ptr<AST::BlockItem> &blkItem, std::optional<AST::CaseMap> optCaseMap)
+std::pair<OptSwitchCtx, std::shared_ptr<AST::BlockItem>>
+CollectSwitchCases::analyzeBlockItem(const std::shared_ptr<AST::BlockItem> &blkItem, OptSwitchCtx optSwitchCtx)
 {
     switch (blkItem->getType())
     {
     case AST::NodeType::FunctionDeclaration:
     case AST::NodeType::VariableDeclaration:
         return {
-            optCaseMap,
+            optSwitchCtx,
             blkItem,
         };
     default:
     {
-        auto [newCaseMap, newStmt] = analyzeStatement(std::dynamic_pointer_cast<AST::Statement>(blkItem), optCaseMap);
+        auto [newCtx, newStmt] = analyzeStatement(std::dynamic_pointer_cast<AST::Statement>(blkItem), optSwitchCtx);
 
         return {
-            newCaseMap,
+            newCtx,
             newStmt,
         };
     }
     }
 }
 
-std::pair<std::optional<AST::CaseMap>, AST::Block>
-CollectSwitchCases::analyzeBlock(const AST::Block &blk, std::optional<AST::CaseMap> optCaseMap)
+std::pair<OptSwitchCtx, AST::Block>
+CollectSwitchCases::analyzeBlock(const AST::Block &blk, OptSwitchCtx optSwitchCtx)
 {
-    auto newCaseMap = optCaseMap;
+    auto newOptSwitchCtx = optSwitchCtx;
     AST::Block newBlock;
 
     for (const auto &item : blk)
     {
-        auto [updatedCaseMap, newBlockItem] = analyzeBlockItem(item, newCaseMap);
-        newCaseMap = updatedCaseMap;
+        auto [updatedCtx, newBlockItem] = analyzeBlockItem(item, newOptSwitchCtx);
+        newOptSwitchCtx = updatedCtx;
         newBlock.push_back(newBlockItem);
     }
 
     return {
-        newCaseMap,
+        newOptSwitchCtx,
         newBlock,
     };
 }
@@ -231,7 +241,7 @@ CollectSwitchCases::analyzeFunctionDeclaration(const std::shared_ptr<AST::Functi
     if (fnDecl->getOptBody().has_value())
     {
         auto [_, blk] = analyzeBlock(fnDecl->getOptBody().value(), std::nullopt);
-        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), blk, fnDecl->getOptStorageClass());
+        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), blk, fnDecl->getFunType(), fnDecl->getOptStorageClass());
     }
     else
     {

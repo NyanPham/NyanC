@@ -158,7 +158,12 @@ ValidateLabels::validateLabelsInFun(const std::shared_ptr<AST::FunctionDeclarati
 
             throw std::runtime_error(errMsg);
         }
-        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), std::make_optional(renamedBlock), fnDecl->getOptStorageClass());
+        return std::make_shared<AST::FunctionDeclaration>(
+            fnDecl->getName(),
+            fnDecl->getParams(),
+            std::make_optional(renamedBlock),
+            fnDecl->getFunType(),
+            fnDecl->getOptStorageClass());
     }
     else
     {

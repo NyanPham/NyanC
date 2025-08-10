@@ -6,19 +6,19 @@
 #include <vector>
 
 #include "Assembly.h"
-#include "Symbols.h"
+#include "AssemblySymbols.h"
 
 class InstructionFixup
 {
 public:
-    InstructionFixup(Symbols::SymbolTable &symbolTable) : _symbolTable{symbolTable} {};
+    InstructionFixup(AssemblySymbols::AsmSymbolTable &asmSymbolTable) : _asmSymbolTable{asmSymbolTable} {};
 
     std::vector<std::shared_ptr<Assembly::Instruction>> fixupInstruction(const std::shared_ptr<Assembly::Instruction> &inst);
     std::shared_ptr<Assembly::TopLevel> fixupTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLevel);
     std::shared_ptr<Assembly::Program> fixupProgram(const std::shared_ptr<Assembly::Program> &prog);
 
 private:
-    Symbols::SymbolTable &_symbolTable;
+    AssemblySymbols::AsmSymbolTable &_asmSymbolTable;
 };
 
 #endif

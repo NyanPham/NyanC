@@ -21,6 +21,7 @@
 #include "utils/SymbolTablePrint.h"
 #include "utils/TackyPrettyPrint.h"
 #include "utils/CodeGenPrettyPrint.h"
+#include "utils/AssemblySymbolTablePrint.h"
 
 std::string Compiler::preprocess(const std::string &src)
 {
@@ -66,6 +67,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
             SymbolTablePrint symbolTablePrint;
             TackyPrettyPrint tackyPrettyPrint;
             CodeGenPrettyPrint codeGenPrettyPrint;
+            AssemblySymbolTablePrint asmSymbolTablePrint;
 
             switch (stage)
             {
@@ -113,11 +115,11 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto loopLabeler = LoopLabeling();
                 auto labeledAst = loopLabeler.labelLoops(transformedAst);
 
-                auto switchCasesCollector = CollectSwitchCases();
-                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
-
                 auto typeChecker = TypeChecker();
-                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
+                auto typeCheckedAst = typeChecker.typeCheck(labeledAst);
+
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
                 if (debugging)
                 {
@@ -133,12 +135,12 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                     std::cout << "LoopLabeled:" << '\n';
                     astPrettyPrint.print(*labeledAst);
 
-                    std::cout << "Cases Collected:" << '\n';
-                    astPrettyPrint.print(*casesCollectedAst);
-
                     symbolTablePrint.print(typeChecker.getSymbolTable());
                     std::cout << "TypeChecked:" << '\n';
                     astPrettyPrint.print(*typeCheckedAst);
+
+                    std::cout << "Cases Collected:" << '\n';
+                    astPrettyPrint.print(*casesCollectedAst);
                 }
 
                 break;
@@ -158,19 +160,18 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto loopLabeler = LoopLabeling();
                 auto labeledAst = loopLabeler.labelLoops(transformedAst);
 
-                auto switchCasesCollector = CollectSwitchCases();
-                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
-
                 auto typeChecker = TypeChecker();
-                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
-                auto symbolTable = typeChecker.getSymbolTable();
+                auto typeCheckedAst = typeChecker.typeCheck(labeledAst);
 
-                auto tackyGen = TackyGen(symbolTable);
-                auto tacky = tackyGen.gen(typeCheckedAst);
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
+
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tacky = tackyGen.gen(casesCollectedAst);
 
                 if (debugging)
                 {
-                    symbolTablePrint.print(symbolTable);
+                    symbolTablePrint.print(typeChecker.getSymbolTable());
                     std::cout << "TACKY:" << '\n';
                     tackyPrettyPrint.print(*tacky);
                 }
@@ -192,31 +193,32 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto loopLabeler = LoopLabeling();
                 auto labeledAst = loopLabeler.labelLoops(transformedAst);
 
-                auto switchCasesCollector = CollectSwitchCases();
-                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
-
                 auto typeChecker = TypeChecker();
-                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
-                auto symbolTable = typeChecker.getSymbolTable();
+                auto typeCheckedAst = typeChecker.typeCheck(labeledAst);
 
-                auto tackyGen = TackyGen(symbolTable);
-                auto tacky = tackyGen.gen(typeCheckedAst);
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto codeGen = CodeGen(symbolTable);
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tacky = tackyGen.gen(casesCollectedAst);
+
+                auto codeGen = CodeGen(typeChecker.getSymbolTable());
                 auto asmProg = codeGen.gen(tacky);
 
-                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
                 auto replacedAsm = replacePseudos.replacePseudos(asmProg);
 
-                auto instructionFixup = InstructionFixup(symbolTable);
+                auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
 
                 if (debugging)
                 {
-                    symbolTablePrint.print(symbolTable);
+                    symbolTablePrint.print(typeChecker.getSymbolTable());
                     std::cout << "======= RAW ASSEMBLY =======" << '\n';
                     codeGenPrettyPrint.print(*asmProg);
                     std::cout << '\n';
+
+                    asmSymbolTablePrint.print(codeGen.getAsmSymbolTable());
 
                     std::cout << "======= OPERANDS REPLACED ASSEMBLY =======" << '\n';
                     codeGenPrettyPrint.print(*replacedAsm);
@@ -244,26 +246,25 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto loopLabeler = LoopLabeling();
                 auto labeledAst = loopLabeler.labelLoops(transformedAst);
 
-                auto switchCasesCollector = CollectSwitchCases();
-                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
-
                 auto typeChecker = TypeChecker();
-                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
-                auto symbolTable = typeChecker.getSymbolTable();
+                auto typeCheckedAst = typeChecker.typeCheck(labeledAst);
 
-                auto tackyGen = TackyGen(symbolTable);
-                auto tacky = tackyGen.gen(typeCheckedAst);
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto codeGen = CodeGen(symbolTable);
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tacky = tackyGen.gen(casesCollectedAst);
+
+                auto codeGen = CodeGen(typeChecker.getSymbolTable());
                 auto asmProg = codeGen.gen(tacky);
 
-                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
                 auto replacedAsm = replacePseudos.replacePseudos(asmProg);
 
-                auto instructionFixup = InstructionFixup(symbolTable);
+                auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
 
-                Emit emitter = Emit();
+                Emit emitter = Emit(codeGen.getAsmSymbolTable());
 
                 std::string asmFile = settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
@@ -285,26 +286,25 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto loopLabeler = LoopLabeling();
                 auto labeledAst = loopLabeler.labelLoops(transformedAst);
 
-                auto switchCasesCollector = CollectSwitchCases();
-                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
-
                 auto typeChecker = TypeChecker();
-                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
-                auto symbolTable = typeChecker.getSymbolTable();
+                auto typeCheckedAst = typeChecker.typeCheck(labeledAst);
 
-                auto tackyGen = TackyGen(symbolTable);
-                auto tacky = tackyGen.gen(typeCheckedAst);
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto codeGen = CodeGen(symbolTable);
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tacky = tackyGen.gen(casesCollectedAst);
+
+                auto codeGen = CodeGen(typeChecker.getSymbolTable());
                 auto asmProg = codeGen.gen(tacky);
 
-                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
                 auto replacedAsm = replacePseudos.replacePseudos(asmProg);
 
-                auto instructionFixup = InstructionFixup(symbolTable);
+                auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
 
-                Emit emitter = Emit();
+                Emit emitter = Emit(codeGen.getAsmSymbolTable());
 
                 std::string asmFile = settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
@@ -327,26 +327,25 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto loopLabeler = LoopLabeling();
                 auto labeledAst = loopLabeler.labelLoops(transformedAst);
 
-                auto switchCasesCollector = CollectSwitchCases();
-                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(labeledAst);
-
                 auto typeChecker = TypeChecker();
-                auto typeCheckedAst = typeChecker.typeCheck(casesCollectedAst);
-                auto symbolTable = typeChecker.getSymbolTable();
+                auto typeCheckedAst = typeChecker.typeCheck(labeledAst);
 
-                auto tackyGen = TackyGen(symbolTable);
-                auto tacky = tackyGen.gen(typeCheckedAst);
+                auto switchCasesCollector = CollectSwitchCases();
+                auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto codeGen = CodeGen(symbolTable);
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tacky = tackyGen.gen(casesCollectedAst);
+
+                auto codeGen = CodeGen(typeChecker.getSymbolTable());
                 auto asmProg = codeGen.gen(tacky);
 
-                auto replacePseudos = ReplacePseudos(symbolTable);
+                auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
                 auto replacedAsm = replacePseudos.replacePseudos(asmProg);
 
-                auto instructionFixup = InstructionFixup(symbolTable);
+                auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
 
-                Emit emitter = Emit();
+                Emit emitter = Emit(codeGen.getAsmSymbolTable());
 
                 std::string asmFile = settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);

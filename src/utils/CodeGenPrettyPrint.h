@@ -42,6 +42,9 @@ private:
         case Assembly::NodeType::Mov:
             visitMov(static_cast<const Assembly::Mov &>(node), indent);
             break;
+        case Assembly::NodeType::Movsx:
+            visitMovsx(static_cast<const Assembly::Movsx &>(node), indent);
+            break;
         case Assembly::NodeType::Unary:
             visitUnary(static_cast<const Assembly::Unary &>(node), indent);
             break;
@@ -68,12 +71,6 @@ private:
             break;
         case Assembly::NodeType::Label:
             visitLabel(static_cast<const Assembly::Label &>(node), indent);
-            break;
-        case Assembly::NodeType::AllocateStack:
-            visitAllocateStack(static_cast<const Assembly::AllocateStack &>(node), indent);
-            break;
-        case Assembly::NodeType::DeallocateStack:
-            visitDeallocateStack(static_cast<const Assembly::DeallocateStack &>(node), indent);
             break;
         case Assembly::NodeType::Push:
             visitPush(static_cast<const Assembly::Push &>(node), indent);
@@ -146,7 +143,8 @@ private:
         increaseIndent();
         std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
         std::cout << getIndent() << "global=\"" << staticVar.isGlobal() << "\",\n";
-        std::cout << getIndent() << "init=\"" << std::to_string(staticVar.getInit()) << "\",\n";
+        std::cout << getIndent() << "alignment=" << std::to_string(staticVar.getAlignment()) << "\",\n";
+        std::cout << getIndent() << "init=\"" << Initializers::toString(staticVar.getInit()) << "\",\n";
 
         decreaseIndent();
         std::cout << getIndent() << "),\n";
@@ -161,8 +159,19 @@ private:
     {
         std::cout << getIndent() << "Mov(\n";
         increaseIndent();
+        printAsmType(*mov.getAsmType());
         printMember("src", *mov.getSrc());
         printMember("dst", *mov.getDst());
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitMovsx(const Assembly::Movsx &movsx, bool indent = true)
+    {
+        std::cout << getIndent() << "Movsx(\n";
+        increaseIndent();
+        printMember("src", *movsx.getSrc());
+        printMember("dst", *movsx.getDst());
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -171,6 +180,7 @@ private:
     {
         std::cout << getIndent() << "Unary(\n";
         increaseIndent();
+        printAsmType(*unary.getAsmType());
         std::cout << getIndent() << "op=" << (unary.getOp() == Assembly::UnaryOp::Not ? "Not" : "Neg") << ",\n";
         std::cout << getIndent() << "operand=";
         visit(*unary.getOperand(), false);
@@ -211,6 +221,7 @@ private:
             break;
         }
         std::cout << ",\n";
+        printAsmType(*binary.getAsmType());
         std::cout << getIndent() << "src=";
         visit(*binary.getSrc(), false);
         std::cout << getIndent() << "dst=";
@@ -223,6 +234,7 @@ private:
     {
         std::cout << getIndent() << "Cmp(\n";
         increaseIndent();
+        printAsmType(*cmp.getAsmType());
         std::cout << getIndent() << "src=";
         visit(*cmp.getSrc(), false);
         std::cout << getIndent() << "dst=";
@@ -235,6 +247,7 @@ private:
     {
         std::cout << getIndent() << "Idiv(\n";
         increaseIndent();
+        printAsmType(*idiv.getAsmType());
         std::cout << getIndent() << "operand=";
         visit(*idiv.getOperand(), false);
         decreaseIndent();
@@ -243,7 +256,9 @@ private:
 
     void visitCdq(const Assembly::Cdq &cdq)
     {
-        std::cout << getIndent() << "Cdq()\n";
+        std::cout << getIndent() << "Cdq(";
+        printAsmType(*cdq.getAsmType());
+        std::cout << getIndent() << "),\n";
     }
 
     void visitJmp(const Assembly::Jmp &jmp, bool indent = true)
@@ -285,16 +300,6 @@ private:
         if (indent)
             std::cout << getIndent();
         std::cout << "Label(name=" << label.getName() << ")\n";
-    }
-
-    void visitAllocateStack(const Assembly::AllocateStack &alloc, bool indent = true)
-    {
-        std::cout << getIndent() << "AllocateStack(" << alloc.getOffset() << ")\n";
-    }
-
-    void visitDeallocateStack(const Assembly::DeallocateStack &dealloc, bool indent = true)
-    {
-        std::cout << getIndent() << "DeallocateStack(" << dealloc.getOffset() << ")\n";
     }
 
     void visitPush(const Assembly::Push &push, bool indent = true)
@@ -359,6 +364,11 @@ private:
         visit(value, false);
     }
 
+    void printAsmType(const Assembly::AsmType &type)
+    {
+        std::cout << getIndent() << "asmType=" << Assembly::asmTypeToString(type) << '\n';
+    }
+
     std::string showCondCode(Assembly::CondCode condCode)
     {
         switch (condCode)
@@ -402,6 +412,8 @@ private:
             return "R10";
         case Assembly::RegName::R11:
             return "R11";
+        case Assembly::RegName::SP:
+            return "RSP";
         default:
             return "Unknown";
         }

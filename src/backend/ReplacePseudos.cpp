@@ -5,6 +5,7 @@
 
 #include "Assembly.h"
 #include "ReplacePseudos.h"
+#include "../Rounding.h"
 
 ReplacementState
 ReplacePseudos::createInitState()
@@ -20,7 +21,7 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
 {
     if (auto pseudo = std::dynamic_pointer_cast<Assembly::Pseudo>(operand))
     {
-        if (_symbolTable.isStatic(pseudo->getName()))
+        if (_asmSymbolTable.isStatic(pseudo->getName()))
         {
             return {
                 std::make_shared<Assembly::Data>(pseudo->getName()),
@@ -32,7 +33,10 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
             auto it = state.offsetMap.find(pseudo->getName());
             if (it == state.offsetMap.end())
             {
-                int newOffset = state.currOffset - 4;
+                auto size = _asmSymbolTable.getSize(pseudo->getName());
+                auto alignment = _asmSymbolTable.getAlignment(pseudo->getName());
+
+                int newOffset = Rounding::roundAwayFromZero(alignment, state.currOffset - size);
                 state.offsetMap[pseudo->getName()] = newOffset;
 
                 ReplacementState newState = {
@@ -72,10 +76,24 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
         auto [newSrc, state1] = replaceOperand(mov->getSrc(), state);
         auto [newDst, state2] = replaceOperand(mov->getDst(), state1);
 
-        auto newMov = std::make_shared<Assembly::Mov>(newSrc, newDst);
+        auto newMov = std::make_shared<Assembly::Mov>(mov->getAsmType(), newSrc, newDst);
 
         return {
             newMov,
+            state2,
+        };
+    }
+    case Assembly::NodeType::Movsx:
+    {
+        auto movsx = std::dynamic_pointer_cast<Assembly::Movsx>(inst);
+
+        auto [newSrc, state1] = replaceOperand(movsx->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(movsx->getDst(), state1);
+
+        auto newMovsx = std::make_shared<Assembly::Movsx>(newSrc, newDst);
+
+        return {
+            newMovsx,
             state2,
         };
     }
@@ -85,7 +103,7 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
 
         auto [newDst, state1] = replaceOperand(unary->getOperand(), state);
 
-        auto newUnary = std::make_shared<Assembly::Unary>(unary->getOp(), newDst);
+        auto newUnary = std::make_shared<Assembly::Unary>(unary->getOp(), unary->getAsmType(), newDst);
 
         return {
             newUnary,
@@ -99,7 +117,7 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
         auto [newSrc, state1] = replaceOperand(binary->getSrc(), state);
         auto [newDst, state2] = replaceOperand(binary->getDst(), state1);
 
-        auto newBinary = std::make_shared<Assembly::Binary>(binary->getOp(), newSrc, newDst);
+        auto newBinary = std::make_shared<Assembly::Binary>(binary->getOp(), binary->getAsmType(), newSrc, newDst);
 
         return {
             newBinary,
@@ -113,7 +131,7 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
         auto [newSrc, state1] = replaceOperand(cmp->getSrc(), state);
         auto [newDst, state2] = replaceOperand(cmp->getDst(), state1);
 
-        auto newCmp = std::make_shared<Assembly::Cmp>(newSrc, newDst);
+        auto newCmp = std::make_shared<Assembly::Cmp>(cmp->getAsmType(), newSrc, newDst);
 
         return {
             newCmp,
@@ -126,7 +144,7 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
 
         auto [newOperand, state1] = replaceOperand(idiv->getOperand(), state);
 
-        auto newIdiv = std::make_shared<Assembly::Idiv>(newOperand);
+        auto newIdiv = std::make_shared<Assembly::Idiv>(idiv->getAsmType(), newOperand);
 
         return {
             newIdiv,
@@ -164,8 +182,6 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
     case Assembly::NodeType::Label:
     case Assembly::NodeType::JmpCC:
     case Assembly::NodeType::Jmp:
-    case Assembly::NodeType::AllocateStack:
-    case Assembly::NodeType::DeallocateStack:
     case Assembly::NodeType::Call:
     {
         return {
@@ -192,7 +208,7 @@ ReplacePseudos::replacePseudosInTopLevel(const std::shared_ptr<Assembly::TopLeve
             currState = newState;
             fixedInstructions.push_back(newInst);
         }
-        _symbolTable.setStackFrameSize(func->getName(), currState.currOffset);
+        _asmSymbolTable.setBytesRequired(func->getName(), currState.currOffset);
 
         return std::make_shared<Assembly::Function>(func->getName(), func->isGlobal(), fixedInstructions);
     }

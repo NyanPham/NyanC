@@ -3,14 +3,17 @@
 
 #include <string>
 #include <variant>
+#include <cstdint>
 
 enum class TokenType
 {
     IDENTIFIER,
-    CONSTANT,
+    CONST_INT,
+    CONST_LONG,
 
     // Keywords
     KEYWORD_INT,
+    KEYWORD_LONG,
     KEYWORD_VOID,
     KEYWORD_RETURN,
     KEYWORD_IF,
@@ -73,7 +76,7 @@ enum class TokenType
     COLON,
 };
 
-using TokenValue = std::variant<std::string, int, long>;
+using TokenValue = std::variant<std::string, uint64_t>;
 
 class Token
 {

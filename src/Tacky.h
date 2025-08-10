@@ -5,11 +5,17 @@
 #include <memory>
 #include <vector>
 
+#include "Types.h"
+#include "Const.h"
+#include "Initializers.h"
+
 /*
 program = Program(top_level*)
 top_level = Function(identifier name, bool global, identifier* params, Instruction* instructions)
-    | StaticVariable(identifier name, bool global, int init)
+    | StaticVariable(identifier name, bool global, Types.t t, Initializers.static_init init)
 instruction = Return(val)
+    | SignExtend(val src, val dst)
+    | Truncate(val src, val dst)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
     | Copy(val src, val dst)
@@ -18,7 +24,7 @@ instruction = Return(val)
     | JumpIfNotZero(val condition, identifier target)
     | Label(identifier)
     | FunCall(identifier fn_name, val* args, val dst)
-val = Constant(int) | Var(identifier)
+val = Constant(const) | Var(identifier)
 unary_operator = Complement | Negate | Not
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -35,6 +41,8 @@ namespace TACKY
     class StaticVariable;
     class Instruction;
     class Return;
+    class SignExtend;
+    class Truncate;
     class Unary;
     class Binary;
     class Copy;
@@ -53,6 +61,8 @@ namespace TACKY
         Function,
         StaticVariable,
         Return,
+        SignExtend,
+        Truncate,
         Unary,
         Binary,
         Copy,
@@ -129,14 +139,14 @@ namespace TACKY
     class Constant : public Val
     {
     public:
-        Constant(int value)
+        Constant(const std::shared_ptr<Constants::Const> &value)
             : Val(NodeType::Constant), _value{value}
         {
         }
-        int getValue() const { return _value; }
+        auto &getConst() const { return _value; }
 
     private:
-        int _value;
+        std::shared_ptr<Constants::Const> _value;
     };
 
     class Var : public Val
@@ -279,22 +289,50 @@ namespace TACKY
         std::shared_ptr<Val> _value;
     };
 
+    class SignExtend : public Instruction
+    {
+    public:
+        SignExtend(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::SignExtend), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class Truncate : public Instruction
+    {
+    public:
+        Truncate(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::Truncate), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
     class StaticVariable : public TopLevel
     {
     public:
-        StaticVariable(const std::string &name, bool global, int init)
-            : TopLevel(NodeType::StaticVariable), _name{std::move(name)}, _global{global}, _init{init}
+        StaticVariable(const std::string &name, bool global, const Types::DataType &t, const Initializers::StaticInit &init)
+            : TopLevel(NodeType::StaticVariable), _name{std::move(name)}, _global{global}, _dataType{t}, _init{init}
         {
         }
 
         const std::string &getName() const { return _name; }
         bool isGlobal() const { return _global; }
-        const int &getInit() const { return _init; }
+        auto &getDataType() const { return _dataType; }
+        auto &getInit() const { return _init; }
 
     private:
         std::string _name;
         bool _global;
-        int _init;
+        Types::DataType _dataType;
+        Initializers::StaticInit _init;
     };
 
     class Function : public TopLevel

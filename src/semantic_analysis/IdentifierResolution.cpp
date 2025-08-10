@@ -16,6 +16,7 @@ IdMap IdentifierResolution::copyIdentifierMap(const IdMap &idMap)
         newIdMap[entry.first] = {
             entry.second.uniqueName,
             false,
+            entry.second.hasLinkage,
         };
     }
 
@@ -67,7 +68,10 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             throw std::runtime_error("Invalid lvalue!");
         }
 
-        return std::make_shared<AST::Assignment>(resolveExp(assignment->getLeftExp(), idMap), resolveExp(assignment->getRightExp(), idMap));
+        return std::make_shared<AST::Assignment>(
+            resolveExp(assignment->getLeftExp(), idMap),
+            resolveExp(assignment->getRightExp(), idMap),
+            assignment->getDataType());
     }
     case AST::NodeType::CompoundAssignment:
     {
@@ -78,7 +82,11 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             throw std::runtime_error("Invalid lvalue!");
         }
 
-        return std::make_shared<AST::CompoundAssignment>(compoundAssignment->getOp(), resolveExp(compoundAssignment->getLeftExp(), idMap), resolveExp(compoundAssignment->getRightExp(), idMap));
+        return std::make_shared<AST::CompoundAssignment>(
+            compoundAssignment->getOp(),
+            resolveExp(compoundAssignment->getLeftExp(), idMap),
+            resolveExp(compoundAssignment->getRightExp(), idMap),
+            compoundAssignment->getDataType());
     }
     case AST::NodeType::PostfixIncr:
     {
@@ -89,7 +97,9 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             throw std::runtime_error("Invalid lvalue!");
         }
 
-        return std::make_shared<AST::PostfixIncr>(resolveExp(postfixIncr->getExp(), idMap));
+        return std::make_shared<AST::PostfixIncr>(
+            resolveExp(postfixIncr->getExp(), idMap),
+            postfixIncr->getDataType());
     }
     case AST::NodeType::PostfixDecr:
     {
@@ -100,7 +110,9 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             throw std::runtime_error("Invalid lvalue!");
         }
 
-        return std::make_shared<AST::PostfixDecr>(resolveExp(postfixDecr->getExp(), idMap));
+        return std::make_shared<AST::PostfixDecr>(
+            resolveExp(postfixDecr->getExp(), idMap),
+            postfixDecr->getDataType());
     }
     case AST::NodeType::Var:
     {
@@ -109,12 +121,23 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
         auto it = idMap.find(var->getName());
         if (it != idMap.end())
         {
-            return std::make_shared<AST::Var>(it->second.uniqueName);
+            return std::make_shared<AST::Var>(
+                it->second.uniqueName,
+                var->getDataType());
         }
         else
         {
             throw std::runtime_error("Undeclared variable: " + var->getName());
         }
+    }
+    case AST::NodeType::Cast:
+    {
+        auto cast = std::dynamic_pointer_cast<AST::Cast>(exp);
+
+        return std::make_shared<AST::Cast>(
+            cast->getTargetType(),
+            resolveExp(cast->getExp(), idMap),
+            cast->getDataType());
     }
     case AST::NodeType::Unary:
     {
@@ -125,12 +148,19 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             throw std::runtime_error("Operand of ++/-- must be an lvalue!");
         }
 
-        return std::make_shared<AST::Unary>(unary->getOp(), resolveExp(unary->getExp(), idMap));
+        return std::make_shared<AST::Unary>(
+            unary->getOp(),
+            resolveExp(unary->getExp(), idMap),
+            unary->getDataType());
     }
     case AST::NodeType::Binary:
     {
         auto binary = std::dynamic_pointer_cast<AST::Binary>(exp);
-        return std::make_shared<AST::Binary>(binary->getOp(), resolveExp(binary->getExp1(), idMap), resolveExp(binary->getExp2(), idMap));
+        return std::make_shared<AST::Binary>(
+            binary->getOp(),
+            resolveExp(binary->getExp1(), idMap),
+            resolveExp(binary->getExp2(), idMap),
+            binary->getDataType());
     }
     case AST::NodeType::Constant:
     {
@@ -139,7 +169,11 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::Conditional:
     {
         auto conditional = std::dynamic_pointer_cast<AST::Conditional>(exp);
-        return std::make_shared<AST::Conditional>(resolveExp(conditional->getCondition(), idMap), resolveExp(conditional->getThen(), idMap), resolveExp(conditional->getElse(), idMap));
+        return std::make_shared<AST::Conditional>(
+            resolveExp(conditional->getCondition(), idMap),
+            resolveExp(conditional->getThen(), idMap),
+            resolveExp(conditional->getElse(), idMap),
+            conditional->getDataType());
     }
     case AST::NodeType::FunctionCall:
     {
@@ -156,7 +190,10 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
                 newArgs.push_back(resolveExp(arg, idMap));
             }
 
-            return std::make_shared<AST::FunctionCall>(newFnName, newArgs);
+            return std::make_shared<AST::FunctionCall>(
+                newFnName,
+                newArgs,
+                fnCall->getDataType());
         }
         else
         {
@@ -303,7 +340,7 @@ IdentifierResolution::resolveLocalVarDeclaration(const std::shared_ptr<AST::Vari
     auto uniqueName = resolveLocalVarHelper(varDecl->getName(), varDecl->getOptStorageClass(), idMap);
     std::optional<std::shared_ptr<AST::Expression>> resolvedInit = resolveOptionalExp(varDecl->getOptInit(), idMap);
 
-    return std::make_shared<AST::VariableDeclaration>(uniqueName, resolvedInit, varDecl->getOptStorageClass());
+    return std::make_shared<AST::VariableDeclaration>(uniqueName, resolvedInit, varDecl->getVarType(), varDecl->getOptStorageClass());
 }
 
 std::shared_ptr<AST::BlockItem>
@@ -404,7 +441,7 @@ IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionD
         resolvedBody = std::make_optional(resolveBlock(fnDecl->getOptBody().value(), innerMap));
     }
 
-    return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), resolvedParams, resolvedBody, fnDecl->getOptStorageClass());
+    return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), resolvedParams, resolvedBody, fnDecl->getFunType(), fnDecl->getOptStorageClass());
 }
 
 std::shared_ptr<AST::Declaration>

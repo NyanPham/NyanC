@@ -8,7 +8,7 @@ namespace Rounding
 {
 
     // Rounds x up to the nearest multiple of n.
-    int roundAwayFromZero(int n, int x)
+    inline int roundAwayFromZero(int n, int x)
     {
         if (x % n == 0) // x is already a multiple of n
             return x;

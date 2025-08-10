@@ -8,6 +8,7 @@
 #include "Lexer.h"
 #include "Parser.h"
 #include "AST.h"
+#include "Types.h"
 
 /*
 EBNF for a subset of C:
@@ -16,8 +17,9 @@ EBNF for a subset of C:
 <declaration> ::= <variable-declaration> | <function-declaration>
 <variable-declaration> ::= { <specifier> }+ <identifier> [ "=" <exp> ] ";"
 <function-declaration> ::= { <specifier> }+ <identifier> "(" <param-list> ")" (<block> | ";")
-<param-list> :: = "void" | "int" <identifier> { "," "int" <identifier> }
-<specifier> ::= "int" | "static" | "extern"
+<param-list> ::= "void" | { <type-specifier> }+ <identifier> { "," { <type-specifier> }+  <identifier> }
+<type-specifier> ::= "int" | "long"
+<specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
 <for-init> ::= <variable-declaration> | [ <exp> ] ";"
@@ -39,7 +41,7 @@ EBNF for a subset of C:
 <exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
 <factor> ::=  <unop> <factor> | <postfix-exp>
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
-<primary-exp> ::= <int> | <identifier> | "(" <exp> ")" | <identifier> "(" [ <argument-list> ] ")"
+<primary-exp> ::= <const> | <identifier> | "(" <exp> ")" | <identifier> "(" [ <argument-list> ] ")" | "(" { <type-specifier> }+ ")" <factor>
 <argument-list> ::= <exp> { "," <exp> }
 <unop> ::= "-" | "~" | "!" | "++" | "--"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
@@ -48,8 +50,10 @@ EBNF for a subset of C:
         | ">" | ">="
         | "&" | "^" | "|" | "<<" | ">>"
         | "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-<int> ::= ? An integer token ?
+<const> ::= <int> | <long>
 <identifier> ::= ? An identifier token ?
+<int> ::= ? An integer token ?
+<long> ::= ? An int or long token ?
 */
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
@@ -365,21 +369,37 @@ AST::BinaryOp Parser::parseBinop()
     }
 }
 
-std::shared_ptr<AST::Constant> Parser::parseConst()
+std::shared_ptr<AST::Constant> Parser::parseConstant()
 {
+    constexpr int64_t MAX_INT64 = static_cast<int64_t>((uint64_t(1) << 63) - 1);
+    constexpr int32_t MAX_INT32 = (static_cast<uint32_t>(1) << 31) - 1;
+
+    std::set<TokenType> constNodeTypes = {
+        TokenType::CONST_INT,
+        TokenType::CONST_LONG,
+    };
+
     std::optional<Token> token{takeToken()};
 
     if (token.has_value())
     {
-        if (token->getType() != TokenType::CONSTANT)
+        if (!constNodeTypes.count(token->getType()))
         {
             raiseError("a constant", tokenTypeToString(token->getType()));
         }
 
-        if (std::holds_alternative<int>(token->getValue()))
+        if (std::holds_alternative<uint64_t>(token->getValue()))
         {
-            int value{std::get<int>(token->getValue())};
-            return std::make_shared<AST::Constant>(value);
+            uint64_t value{std::get<uint64_t>(token->getValue())};
+            if (value > MAX_INT64)
+                throw std::runtime_error("Constant too large to fit in an int or long: " + std::to_string(value));
+
+            if (token->getType() == TokenType::CONST_INT && value <= MAX_INT32)
+                return std::make_shared<AST::Constant>(
+                    std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(value))));
+            else
+                return std::make_shared<AST::Constant>(
+                    std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
         }
 
         raiseError("an integer", "non-integer value");
@@ -412,6 +432,21 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
+std::vector<Token> Parser::parseTypeSpecifierList()
+{
+    std::vector<Token> typeSpecifiers{};
+    auto nextToken{peekToken()};
+
+    while (nextToken.has_value() && _typeSpecifierTypes.count(nextToken->getType()))
+    {
+        auto spec{takeToken()};
+        typeSpecifiers.push_back(spec.value());
+        nextToken = peekToken();
+    }
+
+    return typeSpecifiers;
+}
+
 std::vector<Token> Parser::parseSpecifierList()
 {
     std::vector<Token> specifiers{};
@@ -440,6 +475,39 @@ AST::StorageClass Parser::parseStorageClass(const Token &spec)
     }
 }
 
+Types::DataType Parser::parseType(const std::vector<Token> &typeList)
+{
+    switch (typeList.size())
+    {
+    case 1:
+    {
+        switch (typeList[0].getType())
+        {
+        case TokenType::KEYWORD_INT:
+            return Types::IntType{};
+        case TokenType::KEYWORD_LONG:
+            return Types::LongType{};
+        default:
+            throw std::runtime_error("Internal error: invalid type specifier");
+        }
+    }
+    case 2:
+    {
+        if (
+            (typeList[0].getType() == TokenType::KEYWORD_INT &&
+             typeList[1].getType() == TokenType::KEYWORD_LONG) ||
+            (typeList[0].getType() == TokenType::KEYWORD_LONG &&
+             typeList[1].getType() == TokenType::KEYWORD_INT))
+        {
+            return Types::LongType{};
+        }
+        throw std::runtime_error("Internal error: invalid type specifier");
+    }
+    default:
+        throw std::runtime_error("Internal error: invalid type specifier");
+    }
+}
+
 std::pair<Types::DataType, std::optional<AST::StorageClass>> Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
 {
     std::vector<Token> types{};
@@ -447,16 +515,13 @@ std::pair<Types::DataType, std::optional<AST::StorageClass>> Parser::parseTypeAn
 
     for (const auto &spec : specifierList)
     {
-        if (spec.getType() == TokenType::KEYWORD_INT)
+        if (_typeSpecifierTypes.count(spec.getType()))
             types.push_back(spec);
         else
             storageClasses.push_back(spec);
     }
 
-    if (types.size() != 1)
-        throw std::runtime_error("Invalid type specifier");
-
-    Types::DataType type{Types::IntType()};
+    Types::DataType type{parseType(types)};
     std::optional<AST::StorageClass> storageClass{};
 
     if (storageClasses.empty())
@@ -621,8 +686,12 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
 
     switch (nextToken->getType())
     {
-    case TokenType::CONSTANT:
-        return parseConst();
+    case TokenType::CONST_INT:
+    case TokenType::CONST_LONG:
+    {
+        auto c = parseConstant();
+        return c;
+    }
 
     case TokenType::IDENTIFIER:
     {
@@ -663,13 +732,14 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
 
 std::shared_ptr<AST::Expression> Parser::parseFactor()
 {
-    auto nextToken{peekToken()};
+    auto nextTokens{peekTokens(2)};
 
-    if (!nextToken.has_value())
+    if (!nextTokens[0].has_value())
     {
         raiseError("an expression", "empty token");
     }
-    switch (nextToken->getType())
+
+    switch (nextTokens[0]->getType())
     {
     case TokenType::HYPHEN:
     case TokenType::TILDE:
@@ -681,6 +751,20 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
         std::shared_ptr<AST::Expression> innerExp{parseFactor()};
 
         return std::make_shared<AST::Unary>(op, innerExp);
+    }
+    case TokenType::OPEN_PAREN:
+    {
+        if (nextTokens[1].has_value() && _typeSpecifierTypes.count(nextTokens[1]->getType()))
+        {
+            // It's a cast, consume the "(", then parse the type specifiers
+            takeToken();
+            auto typeSpecifiers{parseTypeSpecifierList()};
+            auto targetType{parseType(typeSpecifiers)};
+            expect(TokenType::CLOSE_PAREN);
+            auto innerExp{parseFactor()};
+
+            return std::make_shared<AST::Cast>(targetType, innerExp);
+        }
     }
     default:
         return parsePostfixExp();
@@ -891,36 +975,37 @@ std::vector<std::shared_ptr<AST::Expression>> Parser::parseArgList()
     return args;
 }
 
-std::vector<std::string> Parser::parseParamList()
+std::vector<std::pair<Types::DataType, std::string>> Parser::parseParamList()
 {
-    expect(TokenType::KEYWORD_INT);
+    auto specifiers{parseTypeSpecifierList()};
+    auto paramType{parseType(specifiers)};
     auto nextParam{parseIdentifier()};
 
-    auto args{std::vector<std::string>{nextParam}};
+    auto paramsWithTypes = (std::vector<std::pair<Types::DataType, std::string>>){{paramType, nextParam}};
 
     auto nextToken{peekToken()};
-
     while (nextToken.has_value())
     {
         if (nextToken->getType() == TokenType::COMMA)
         {
             takeToken();
-            expect(TokenType::KEYWORD_INT);
-            nextParam = parseIdentifier();
-            args.push_back(nextParam);
+            auto specifiers{parseTypeSpecifierList()};
+            auto paramType{parseType(specifiers)};
+            auto nextParam{parseIdentifier()};
+            paramsWithTypes.push_back({paramType, nextParam});
             nextToken = peekToken();
         }
         else
             break;
     }
 
-    return args;
+    return paramsWithTypes;
 }
 
-std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass)
+std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &retType, std::optional<AST::StorageClass> storageClass)
 {
     expect(TokenType::OPEN_PAREN);
-    std::vector<std::string> params{};
+    std::vector<std::pair<Types::DataType, std::string>> paramsWithTypes;
 
     if (!peekToken().has_value())
     {
@@ -930,10 +1015,20 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclarati
     if (peekToken()->getType() == TokenType::KEYWORD_VOID)
     {
         takeToken();
+        paramsWithTypes = {};
     }
     else if (peekToken()->getType() != TokenType::CLOSE_PAREN)
     {
-        params = parseParamList();
+        paramsWithTypes = parseParamList();
+    }
+
+    std::vector<std::shared_ptr<Types::DataType>> paramTypes;
+    std::vector<std::string> params;
+
+    for (const auto &paramPair : paramsWithTypes)
+    {
+        paramTypes.push_back(std::make_shared<Types::DataType>(paramPair.first));
+        params.push_back(paramPair.second);
     }
 
     expect(TokenType::CLOSE_PAREN);
@@ -961,10 +1056,11 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclarati
         raiseError("a function body or semicolon", "invalid token");
     }
 
-    return std::make_shared<AST::FunctionDeclaration>(name, params, body, storageClass);
+    auto funType = Types::makeFunType(paramTypes, std::make_shared<Types::DataType>(retType));
+    return std::make_shared<AST::FunctionDeclaration>(name, params, body, funType, storageClass);
 }
 
-std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass)
+std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclaration(const std::string &name, const Types::DataType &varType, std::optional<AST::StorageClass> storageClass)
 {
     auto nextToken{takeToken()};
     if (!nextToken.has_value())
@@ -973,13 +1069,13 @@ std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclarati
     switch (nextToken->getType())
     {
     case TokenType::SEMICOLON:
-        return std::make_shared<AST::VariableDeclaration>(name, std::nullopt, storageClass);
+        return std::make_shared<AST::VariableDeclaration>(name, std::nullopt, varType, storageClass);
     case TokenType::EQUAL_SIGN:
     {
         auto init = parseExp(0);
         expect(TokenType::SEMICOLON);
 
-        return std::make_shared<AST::VariableDeclaration>(name, std::make_optional(init), storageClass);
+        return std::make_shared<AST::VariableDeclaration>(name, std::make_optional(init), varType, storageClass);
     }
     default:
         raiseError("an initializer or semicolon", tokenTypeToString(nextToken->getType()));
@@ -1013,30 +1109,25 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
 std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
 {
     auto specifiers{parseSpecifierList()};
-    auto [_, storageClass] = parseTypeAndStorageClass(specifiers);
+    auto [type, storageClass] = parseTypeAndStorageClass(specifiers);
     auto name{parseIdentifier()};
 
     auto nextToken{peekToken()};
 
     if (nextToken.has_value() && nextToken->getType() == TokenType::OPEN_PAREN)
-        return finishParsingFunctionDeclaration(name, storageClass);
+        return finishParsingFunctionDeclaration(name, type, storageClass);
     else
-        return finishParsingVariableDeclaration(name, storageClass);
+        return finishParsingVariableDeclaration(name, type, storageClass);
 }
 
 std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()
 {
     auto nextToken{peekToken()};
 
-    switch (nextToken->getType())
-    {
-    case TokenType::KEYWORD_INT:
-    case TokenType::KEYWORD_STATIC:
-    case TokenType::KEYWORD_EXTERN:
+    if (_specifierTypes.count(nextToken->getType()))
         return parseDeclaration();
-    default:
+    else
         return parseStatement();
-    }
 }
 
 std::vector<std::shared_ptr<AST::Declaration>> Parser::parseDeclarationList()

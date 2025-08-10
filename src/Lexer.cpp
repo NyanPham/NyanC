@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iterator>
 #include <regex>
+#include <cstdint>
 
 #include "Lexer.h"
 #include "Token.h"
@@ -16,6 +17,7 @@ Token convertIdentifer(const std::string &str, long pos)
 {
     static const std::unordered_map<std::string, TokenType> keywords = {
         {"int", TokenType::KEYWORD_INT},
+        {"long", TokenType::KEYWORD_LONG},
         {"void", TokenType::KEYWORD_VOID},
         {"return", TokenType::KEYWORD_RETURN},
         {"if", TokenType::KEYWORD_IF},
@@ -42,12 +44,15 @@ Token convertIdentifer(const std::string &str, long pos)
     return Token(TokenType::IDENTIFIER, str, pos);
 }
 
-/**
- * For PART I, we only support integer constants and focus on the grammar of C
- */
-Token convertConstant(const std::string &str, long pos)
+Token convertInt(const std::string &str, long pos)
 {
-    return Token(TokenType::CONSTANT, std::stoi(str), pos);
+    return Token(TokenType::CONST_INT, std::stoull(str), pos);
+}
+
+Token convertLong(const std::string &str, long pos)
+{
+    auto num = std::stoull(str.substr(0, str.size() - 1));
+    return Token(TokenType::CONST_LONG, num, pos);
 }
 
 void Lexer::setInput(std::string input)
@@ -59,11 +64,16 @@ void Lexer::defineTokenDefs()
 {
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
-        {std::regex("[0-9]+\\b"), convertConstant},
-        // The following 16 keywords match will not be reached after identifier, but still kept here for references.
+        {std::regex("[0-9]+\\b"), convertInt},
+        {std::regex("[0-9]+[lL]\\b"), convertLong},
+        // The following 17 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
+         }},
+        {std::regex("long\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_LONG, str, pos);
          }},
         {std::regex("void\\b"), [](const std::string &str, long pos) -> Token
          {

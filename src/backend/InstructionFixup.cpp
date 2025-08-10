@@ -1,10 +1,31 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <limits>
 
 #include "Assembly.h"
 #include "InstructionFixup.h"
-#include "Rounding.h"
+#include "../Rounding.h"
+
+inline int64_t convertTo64Bit(int32_t value)
+{
+    return static_cast<int64_t>(value);
+}
+
+inline bool isLarge(const int64_t imm)
+{
+    int64_t int32Max = convertTo64Bit(std::numeric_limits<int32_t>::max());
+    int64_t int32Min = convertTo64Bit(std::numeric_limits<int32_t>::min());
+
+    return imm > int32Max || imm < int32Min;
+}
+
+bool isLargerThanUint(const int64_t imm)
+{
+    int64_t maxUnsigned32 = convertTo64Bit(static_cast<int64_t>(std::numeric_limits<uint32_t>::max()));
+    int64_t int32Min = convertTo64Bit(std::numeric_limits<int32_t>::min());
+    return imm > maxUnsigned32 || imm < int32Min;
+}
 
 bool isMemoryOperand(const std::shared_ptr<Assembly::Operand> &operand)
 {
@@ -16,6 +37,11 @@ bool isMemoryOperand(const std::shared_ptr<Assembly::Operand> &operand)
     default:
         return false;
     }
+}
+
+bool isImmOperand(const std::shared_ptr<Assembly::Operand> &operand)
+{
+    return operand->getType() == Assembly::NodeType::Imm;
 }
 
 std::vector<std::shared_ptr<Assembly::Instruction>>
@@ -33,8 +59,97 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
             auto RegR10{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
 
             return {
-                std::make_shared<Assembly::Mov>(mov->getSrc(), RegR10),
-                std::make_shared<Assembly::Mov>(RegR10, mov->getDst()),
+                std::make_shared<Assembly::Mov>(mov->getAsmType(), mov->getSrc(), RegR10),
+                std::make_shared<Assembly::Mov>(mov->getAsmType(), RegR10, mov->getDst()),
+            };
+        }
+        // Mov can't move a large constant to a memory address
+        else if (
+            Assembly::isAsmQuadword(*mov->getAsmType()) &&
+            isImmOperand(mov->getSrc()) &&
+            isMemoryOperand(mov->getDst()) &&
+            isLarge(std::dynamic_pointer_cast<Assembly::Imm>(mov->getSrc())->getValue()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    mov->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                    mov->getDst()),
+            };
+        }
+        // Moving a quadword-size constant with a longword operand size produces assembler warning
+        else if (
+            Assembly::isAsmLongword(*mov->getAsmType()) &&
+            isImmOperand(mov->getSrc()) &&
+            isLargerThanUint(std::dynamic_pointer_cast<Assembly::Imm>(mov->getSrc())->getValue()))
+        {
+            // reduce modulo 2^32 by zeroing out upper 32 bit
+            int64_t bitmask = convertTo64Bit(0xffffffff);
+            int64_t reduced = std::dynamic_pointer_cast<Assembly::Imm>(mov->getSrc())->getValue() & bitmask;
+
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
+                    std::make_shared<Assembly::Imm>(reduced),
+                    mov->getDst()),
+            };
+        }
+        else
+        {
+            return {
+                inst,
+            };
+        }
+    }
+    case Assembly::NodeType::Movsx:
+    {
+        auto movsx = std::dynamic_pointer_cast<Assembly::Movsx>(inst);
+        // Movsx cannot handle immediate src or memory dst
+
+        if (
+            isImmOperand(movsx->getSrc()) &&
+            isMemoryOperand(movsx->getDst()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
+                    std::make_shared<Assembly::Imm>(std::dynamic_pointer_cast<Assembly::Imm>(movsx->getSrc())->getValue()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Movsx>(
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
+                    movsx->getDst()),
+            };
+        }
+        else if (movsx->getSrc()->getType() == Assembly::NodeType::Imm)
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
+                    std::make_shared<Assembly::Imm>(std::dynamic_pointer_cast<Assembly::Imm>(movsx->getSrc())->getValue()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Movsx>(
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                    movsx->getDst()),
+            };
+        }
+        else if (isMemoryOperand(movsx->getDst()))
+        {
+            return {
+                std::make_shared<Assembly::Movsx>(
+                    movsx->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
+                    movsx->getDst()),
             };
         }
         else
@@ -49,13 +164,16 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         /* Idiv cannot operate on constant */
         auto idiv = std::dynamic_pointer_cast<Assembly::Idiv>(inst);
 
-        if (idiv->getOperand()->getType() == Assembly::NodeType::Imm)
+        if (isImmOperand(idiv->getOperand()))
         {
             return {
                 std::make_shared<Assembly::Mov>(
+                    idiv->getAsmType(),
                     std::dynamic_pointer_cast<Assembly::Imm>(idiv->getOperand()),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
-                std::make_shared<Assembly::Idiv>(std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Idiv>(
+                    idiv->getAsmType(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
             };
         }
         else
@@ -77,14 +195,33 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         case Assembly::BinaryOp::Or:
         case Assembly::BinaryOp::Xor:
         {
-            /* Add/Sub can't use memory addresses for both operands */
+            // Add/Sub/And/Or/Xor can't take large immediates as source operands
+            if (
+                Assembly::isAsmQuadword(*binary->getAsmType()) &&
+                isImmOperand(binary->getSrc()) &&
+                isLarge(std::dynamic_pointer_cast<Assembly::Imm>(binary->getSrc())->getValue()))
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        binary->getSrc(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                    std::make_shared<Assembly::Binary>(
+                        binary->getOp(),
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                        binary->getDst()),
+                };
+            }
+
+            // Add/Sub/And/Or/Xor can't use memory addresses for both operands */
             if (isMemoryOperand(binary->getSrc()) && isMemoryOperand(binary->getDst()))
             {
                 auto RegR10{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
 
                 return {
-                    std::make_shared<Assembly::Mov>(binary->getSrc(), RegR10),
-                    std::make_shared<Assembly::Binary>(binary->getOp(), RegR10, binary->getDst()),
+                    std::make_shared<Assembly::Mov>(binary->getAsmType(), binary->getSrc(), RegR10),
+                    std::make_shared<Assembly::Binary>(binary->getOp(), binary->getAsmType(), RegR10, binary->getDst()),
                 };
             }
             else
@@ -96,15 +233,73 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         }
         case Assembly::BinaryOp::Mult:
         {
-            /* Mult can't have destination as a memory address */
+            /*
+                Mult can't have destination as a memory address;
+                And its source cannot be a large operand.
+            */
+            if (
+                isMemoryOperand(binary->getDst()) &&
+                Assembly::isAsmQuadword(*binary->getAsmType()) &&
+                isImmOperand(binary->getSrc()) &&
+                isLarge(std::dynamic_pointer_cast<Assembly::Imm>(binary->getSrc())->getValue()))
+            {
+                // rewrite both operands
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        binary->getSrc(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        binary->getDst(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                    std::make_shared<Assembly::Binary>(
+                        Assembly::BinaryOp::Mult,
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
+                        binary->getDst()),
+                };
+            }
+
+            if (
+                Assembly::isAsmQuadword(*binary->getAsmType()) &&
+                isImmOperand(binary->getSrc()) &&
+                isLarge(std::dynamic_pointer_cast<Assembly::Imm>(binary->getSrc())->getValue()))
+            {
+                // just rewrite src
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        binary->getSrc(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                    std::make_shared<Assembly::Binary>(
+                        Assembly::BinaryOp::Mult,
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                        binary->getDst()),
+                };
+            }
+
             if (isMemoryOperand(binary->getDst()))
             {
-                auto RegR11{std::make_shared<Assembly::Reg>(Assembly::RegName::R11)};
-
                 return {
-                    std::make_shared<Assembly::Mov>(binary->getDst(), RegR11),
-                    std::make_shared<Assembly::Binary>(Assembly::BinaryOp::Mult, binary->getSrc(), RegR11),
-                    std::make_shared<Assembly::Mov>(RegR11, binary->getDst()),
+                    std::make_shared<Assembly::Mov>(
+                        binary->getAsmType(),
+                        binary->getDst(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                    std::make_shared<Assembly::Binary>(
+                        Assembly::BinaryOp::Mult,
+                        binary->getAsmType(),
+                        binary->getSrc(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                    std::make_shared<Assembly::Mov>(
+                        binary->getAsmType(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
+                        binary->getDst()),
                 };
             }
             else
@@ -117,7 +312,7 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         default:
         {
             return {
-                binary,
+                inst,
             };
         }
         }
@@ -126,25 +321,94 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     {
         auto cmp = std::dynamic_pointer_cast<Assembly::Cmp>(inst);
 
+        // Both operands of cmp can't be in memory
         if (isMemoryOperand(cmp->getSrc()) && isMemoryOperand(cmp->getDst()))
         {
-            // Both operands of cmp can't be in memory
-            auto r10Reg{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
-
             return {
-                std::make_shared<Assembly::Mov>(cmp->getSrc(), r10Reg),
-                std::make_shared<Assembly::Cmp>(r10Reg, cmp->getDst()),
+                std::make_shared<Assembly::Mov>(
+                    cmp->getAsmType(),
+                    cmp->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Cmp>(
+                    cmp->getAsmType(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                    cmp->getDst()),
             };
         }
-        else if (cmp->getDst()->getType() == Assembly::NodeType::Imm)
+        // First operand of Cmp can't be a large constant, second can't be a constant at all.
+        else if (
+            Assembly::isAsmQuadword(*cmp->getAsmType()) &&
+            isImmOperand(cmp->getSrc()) &&
+            isImmOperand(cmp->getDst()) &&
+            isLarge(std::dynamic_pointer_cast<Assembly::Imm>(cmp->getSrc())->getValue()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    cmp->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    cmp->getDst(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Cmp>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+            };
+        }
+        else if (
+            Assembly::isAsmQuadword(*cmp->getAsmType()) &&
+            isImmOperand(cmp->getSrc()) &&
+            isLarge(std::dynamic_pointer_cast<Assembly::Imm>(cmp->getSrc())->getValue()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    cmp->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Cmp>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
+                    cmp->getDst()),
+            };
+        }
+        else if (isImmOperand(cmp->getDst()))
         {
             // Destination of cmp cannot be an immediate
-            auto r11Reg{std::make_shared<Assembly::Reg>(Assembly::RegName::R11)};
             auto immVal = std::dynamic_pointer_cast<Assembly::Imm>(cmp->getDst())->getValue();
 
             return {
-                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::Imm>(immVal), r11Reg),
-                std::make_shared<Assembly::Cmp>(cmp->getSrc(), r11Reg)};
+                std::make_shared<Assembly::Mov>(
+                    cmp->getAsmType(),
+                    std::make_shared<Assembly::Imm>(immVal),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Cmp>(
+                    cmp->getAsmType(),
+                    cmp->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11))};
+        }
+        else
+        {
+            return {
+                inst,
+            };
+        }
+    }
+    case Assembly::NodeType::Push:
+    {
+        auto push = std::dynamic_pointer_cast<Assembly::Push>(inst);
+
+        if (isImmOperand(push->getOperand()) && isLarge(std::dynamic_pointer_cast<Assembly::Imm>(push->getOperand())->getValue()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    push->getOperand(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Push>(
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+            };
         }
         else
         {
@@ -156,7 +420,8 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     default:
     {
         return {
-            inst};
+            inst,
+        };
     }
     }
 }
@@ -166,10 +431,15 @@ InstructionFixup::fixupTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLe
 {
     if (auto fun = std::dynamic_pointer_cast<Assembly::Function>(topLevel))
     {
-        auto stackBytes = -_symbolTable.getStackFrameSize(fun->getName());
+        auto stackBytes = Rounding::roundAwayFromZero(16, -_asmSymbolTable.getBytesRequired(fun->getName()));
+        auto stackByteOperand = std::make_shared<Assembly::Imm>(static_cast<int64_t>(stackBytes));
 
         std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{
-            std::make_shared<Assembly::AllocateStack>(Rounding::roundAwayFromZero(16, stackBytes)),
+            std::make_shared<Assembly::Binary>(
+                Assembly::BinaryOp::Sub,
+                std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                stackByteOperand,
+                std::make_shared<Assembly::Reg>(Assembly::RegName::SP)),
         };
 
         for (auto &inst : fun->getInstructions())

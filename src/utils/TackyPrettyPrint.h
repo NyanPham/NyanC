@@ -68,6 +68,12 @@ private:
         case TACKY::NodeType::Var:
             visitVar(static_cast<const TACKY::Var &>(node), indent);
             break;
+        case TACKY::NodeType::SignExtend:
+            visitSignExtend(static_cast<const TACKY::SignExtend &>(node), indent);
+            break;
+        case TACKY::NodeType::Truncate:
+            visitTruncate(static_cast<const TACKY::Truncate &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -125,7 +131,8 @@ private:
         increaseIndent();
         std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
         std::cout << getIndent() << "global=" << staticVar.isGlobal() << ",\n";
-        std::cout << getIndent() << "init=" << std::to_string(staticVar.getInit()) << ",\n";
+        std::cout << getIndent() << "type=" << Types::dataTypeToString(staticVar.getDataType()) << ",\n";
+        std::cout << getIndent() << "init=" << Initializers::toString(staticVar.getInit()) << ",\n";
 
         decreaseIndent();
         std::cout << getIndent() << "),\n";
@@ -315,7 +322,8 @@ private:
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "Constant(" << constant.getValue() << ")\n";
+
+        std::cout << "Constant(" << Constants::toString(*(constant.getConst())) << "),\n";
     }
 
     void visitVar(const TACKY::Var &var, bool indent = true)
@@ -323,6 +331,34 @@ private:
         if (indent)
             std::cout << getIndent();
         std::cout << "Var(" << var.getName() << ")\n";
+    }
+
+    void visitSignExtend(const TACKY::SignExtend &signExtend, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "SignExtend(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*signExtend.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*signExtend.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitTruncate(const TACKY::Truncate &truncate, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Truncate(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*truncate.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*truncate.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
     }
 };
 

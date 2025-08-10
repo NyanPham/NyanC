@@ -8,12 +8,15 @@
 #include "TACKY.h"
 #include "Assembly.h"
 #include "Symbols.h"
+#include "AssemblySymbols.h"
 
 class CodeGen
 {
 public:
-    CodeGen(Symbols::SymbolTable &_symbolTable) : symbolTable(_symbolTable) {}
+    CodeGen(Symbols::SymbolTable &symbolTable) : _symbolTable(symbolTable) {}
 
+    std::shared_ptr<Assembly::AsmType> convertType(const Types::DataType &type);
+    std::shared_ptr<Assembly::AsmType> getAsmType(const std::shared_ptr<TACKY::Val> &operand);
     std::vector<std::shared_ptr<Assembly::Instruction>> passParams(const std::vector<std::string> &params);
 
     std::shared_ptr<Assembly::Operand> convertVal(const std::shared_ptr<TACKY::Val> &val);
@@ -23,10 +26,14 @@ public:
     std::vector<std::shared_ptr<Assembly::Instruction>> convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall);
     std::vector<std::shared_ptr<Assembly::Instruction>> convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst);
     std::shared_ptr<Assembly::TopLevel> convertTopLevel(const std::shared_ptr<TACKY::TopLevel> &topLevel);
+    void convertSymbol(const std::string &name, const Symbols::Symbol &symbol);
     std::shared_ptr<Assembly::Program> gen(std::shared_ptr<TACKY::Program> prog);
 
+    AssemblySymbols::AsmSymbolTable &getAsmSymbolTable() { return _asmSymbolTable; }
+
 private:
-    Symbols::SymbolTable &symbolTable;
+    Symbols::SymbolTable &_symbolTable;
+    AssemblySymbols::AsmSymbolTable _asmSymbolTable;
 
     const std::vector<Assembly::RegName> PARAM_PASSING_REGS{
         Assembly::RegName::DI,

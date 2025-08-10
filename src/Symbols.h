@@ -7,12 +7,13 @@
 #include <stdexcept>
 
 #include "Types.h"
+#include "Initializers.h"
 #include "./utils/VariantHelper.h"
 
 namespace Symbols
 {
     /*
-    type initial_value = Tentative | Initial(int) | NoInitializer
+    type initial_value = Tentative | Initial(static_init) | NoInitializer
     */
     struct Tentative
     {
@@ -24,13 +25,13 @@ namespace Symbols
 
     struct Initial
     {
-        int value;
+        Initializers::StaticInit staticInit;
 
-        Initial(int value) : value{value} {}
+        Initial(Initializers::StaticInit staticInit) : staticInit{staticInit} {}
 
         std::string toString() const
         {
-            return "Initial(" + std::to_string(value) + ")";
+            return "Initial(" + Initializers::toString(staticInit) + ")";
         }
     };
 
@@ -55,7 +56,7 @@ namespace Symbols
     }
 
     inline InitialValue makeTentative() { return Tentative{}; }
-    inline InitialValue makeInitial(int value) { return Initial{value}; }
+    inline InitialValue makeInitial(const Initializers::StaticInit &init) { return Initial{init}; }
     inline InitialValue makeNoInitializer() { return NoInitializer(); }
 
     inline std::optional<Tentative> getTentative(const InitialValue &initValue)
@@ -90,7 +91,7 @@ namespace Symbols
 
     /*
     type identifier_attrs =
-        | FunAttr(bool defined, bool global, int stack_frame_size)
+        | FunAttr(bool defined, bool global)
         | StaticAttr(initial_value init, bool global)
         | LocalAttr
     */
@@ -99,15 +100,14 @@ namespace Symbols
     {
         bool defined;
         bool global;
-        int stackFrameSize;
 
         FunAttr() = default;
-        FunAttr(bool defined, bool global, int stackFrameSize)
-            : defined{defined}, global{global}, stackFrameSize{stackFrameSize}
+        FunAttr(bool defined, bool global)
+            : defined{defined}, global{global}
         {
         }
 
-        std::string toString() const { return "FunAttr(defined=" + std::to_string(defined) + ", global=" + std::to_string(global) + ", stackFrameSize=" + std::to_string(stackFrameSize) + ")"; }
+        std::string toString() const { return "FunAttr(defined=" + std::to_string(defined) + ", global=" + std::to_string(global) + ")"; }
     };
 
     struct StaticAttr
@@ -138,7 +138,7 @@ namespace Symbols
                           { return t.toString(); }, attrs);
     }
 
-    inline IdentifierAttrs makeFunAttr(bool defined, bool global, int stackFrameSize) { return FunAttr{defined, global, stackFrameSize}; }
+    inline IdentifierAttrs makeFunAttr(bool defined, bool global) { return FunAttr{defined, global}; }
     inline IdentifierAttrs makeStaticAttr(InitialValue init, bool global) { return StaticAttr{init, global}; }
     inline IdentifierAttrs makeLocalAttr() { return LocalAttr{}; }
 
@@ -221,7 +221,7 @@ namespace Symbols
         {
             symbols[name] = Symbol{
                 .type = type,
-                .attrs = makeFunAttr(isDefined, global, 0),
+                .attrs = makeFunAttr(isDefined, global),
             };
         }
 
@@ -234,28 +234,11 @@ namespace Symbols
                 if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, LocalAttr>) {
                     return false;
                 } else if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, StaticAttr>) {
-                    return true;
+                    return attr.global;
                 } else if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, FunAttr>) {
-                    return true;
+                    return attr.global;
                 }
                 throw std::runtime_error("Unexpected attribute type"); }, attrs);
-        }
-
-        bool isStatic(const std::string &name)
-        {
-            if (!exists(name))
-                return false; // Is not in the symbol table, so the name is generated during later stage (TACKY), so it's false
-
-            auto attrs = get(name).attrs;
-
-            if (isLocalAttr(attrs))
-                return false;
-            else if (isStaticAttr(attrs))
-                return true;
-            else if (isFunAttr(attrs))
-                throw std::runtime_error("Functions don't have storage duration");
-            else
-                return false;
         }
 
         std::optional<Symbol> getOpt(const std::string &name) const
@@ -274,37 +257,6 @@ namespace Symbols
                 throw std::runtime_error("Symbol not found: " + name);
 
             return optSymbol.value();
-        }
-
-        void setStackFrameSize(const std::string &name, int newSize)
-        {
-            auto it = symbols.find(name);
-            if (it == symbols.end())
-            {
-                throw std::runtime_error("Symbol not found: " + name);
-            }
-
-            if (auto funAttrs = getFunAttr(it->second.attrs))
-            {
-                it->second.attrs = makeFunAttr(funAttrs->defined, funAttrs->global, newSize);
-            }
-            else
-            {
-                throw std::runtime_error("Internal error: not a function");
-            }
-        }
-
-        int getStackFrameSize(const std::string &name)
-        {
-            auto it = symbols.find(name);
-
-            if (it == symbols.end())
-                throw std::runtime_error("Symbol not found: " + name);
-
-            if (auto funAttrs = getFunAttr(it->second.attrs))
-                return funAttrs->stackFrameSize;
-            else
-                throw std::runtime_error("Internal error: not a function");
         }
 
         bool exists(const std::string &name) const

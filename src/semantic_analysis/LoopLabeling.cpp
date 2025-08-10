@@ -152,7 +152,12 @@ LoopLabeling::labelDeclaration(const std::shared_ptr<AST::Declaration> &decl)
         if (!fnDecl->getOptBody().has_value())
             return fnDecl;
 
-        return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), fnDecl->getParams(), labelBlock(fnDecl->getOptBody().value(), std::nullopt, std::nullopt), fnDecl->getOptStorageClass());
+        return std::make_shared<AST::FunctionDeclaration>(
+            fnDecl->getName(),
+            fnDecl->getParams(),
+            labelBlock(fnDecl->getOptBody().value(), std::nullopt, std::nullopt),
+            fnDecl->getFunType(),
+            fnDecl->getOptStorageClass());
     }
     else
     {

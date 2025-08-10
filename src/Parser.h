@@ -26,11 +26,13 @@ public:
     bool isAssignment(std::optional<Token> token);
     AST::UnaryOp parseUnop();
     AST::BinaryOp parseBinop();
-    std::shared_ptr<AST::Constant> parseConst();
+    std::shared_ptr<AST::Constant> parseConstant();
     std::string parseIdentifier();
 
+    std::vector<Token> parseTypeSpecifierList();
     std::vector<Token> parseSpecifierList();
     AST::StorageClass parseStorageClass(const Token &spec);
+    Types::DataType parseType(const std::vector<Token> &specs);
     std::pair<Types::DataType, std::optional<AST::StorageClass>> parseTypeAndStorageClass(const std::vector<Token> &specifierList);
 
     std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
@@ -54,9 +56,9 @@ public:
     std::shared_ptr<AST::BlockItem> parseBlockItem();
     std::vector<std::shared_ptr<AST::Expression>> parseOptionalArgList();
     std::vector<std::shared_ptr<AST::Expression>> parseArgList();
-    std::vector<std::string> parseParamList();
-    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass);
-    std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name, std::optional<AST::StorageClass> storageClass);
+    std::vector<std::pair<Types::DataType, std::string>> parseParamList();
+    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &retType, std::optional<AST::StorageClass> storageClass);
+    std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name, const Types::DataType &varType, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> parseVariableDeclaration();
     std::shared_ptr<AST::FunctionDeclaration> parseFunctionDeclaration();
     std::vector<std::shared_ptr<AST::Declaration>> parseDeclarationList();
@@ -74,8 +76,14 @@ private:
     std::optional<Token> _currToken;
     std::set<TokenType> _specifierTypes = {
         TokenType::KEYWORD_INT,
+        TokenType::KEYWORD_LONG,
         TokenType::KEYWORD_STATIC,
         TokenType::KEYWORD_EXTERN,
+    };
+
+    std::set<TokenType> _typeSpecifierTypes = {
+        TokenType::KEYWORD_INT,
+        TokenType::KEYWORD_LONG,
     };
 };
 

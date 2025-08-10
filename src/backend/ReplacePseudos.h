@@ -7,7 +7,7 @@
 #include <memory>
 
 #include "Assembly.h"
-#include "Symbols.h"
+#include "AssemblySymbols.h"
 
 struct ReplacementState
 {
@@ -21,7 +21,7 @@ using ReplaceInstPair = std::pair<std::shared_ptr<Assembly::Instruction>, Replac
 class ReplacePseudos
 {
 public:
-    ReplacePseudos(Symbols::SymbolTable &symbolTable) : _symbolTable{symbolTable} {};
+    ReplacePseudos(AssemblySymbols::AsmSymbolTable &asmSymbolTable) : _asmSymbolTable{asmSymbolTable} {};
 
     ReplacementState createInitState();
     ReplaceOperandPair replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state);
@@ -30,7 +30,7 @@ public:
     std::shared_ptr<Assembly::Program> replacePseudos(const std::shared_ptr<Assembly::Program> &prog);
 
 private:
-    Symbols::SymbolTable &_symbolTable;
+    AssemblySymbols::AsmSymbolTable &_asmSymbolTable;
 };
 
 #endif

@@ -5,6 +5,8 @@
 #include <string>
 #include <memory>
 #include "./../AST.h"
+#include "./../Types.h"
+#include "./../Const.h"
 
 class ASTPrettyPrint
 {
@@ -111,6 +113,15 @@ private:
         case AST::NodeType::Default:
             visitDefault(static_cast<const AST::Default &>(node), indent);
             break;
+        case AST::NodeType::Cast:
+            visitCast(static_cast<const AST::Cast &>(node), indent);
+            break;
+        case AST::NodeType::InitDecl:
+            visitInitDecl(static_cast<const AST::InitDecl &>(node), indent);
+            break;
+        case AST::NodeType::InitExp:
+            visitInitExp(static_cast<const AST::InitExp &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -133,7 +144,7 @@ private:
 
     void visitFunctionDeclaration(const AST::FunctionDeclaration &fnDecl)
     {
-        std::cout << getIndent() << "Function(\n";
+        std::cout << getIndent() << "FunctionDeclaration(\n";
         increaseIndent();
         std::cout << getIndent() << "name=\"" << fnDecl.getName() << "\",\n";
         std::cout << getIndent() << "params=[\n";
@@ -161,6 +172,8 @@ private:
             std::cout << getIndent() << "body=None\n";
         }
 
+        std::cout << getIndent() << "funType=" << Types::dataTypeToString(fnDecl.getFunType()) << ",\n";
+
         std::cout << getIndent() << "storageClass=";
         if (fnDecl.getOptStorageClass().has_value())
         {
@@ -182,6 +195,103 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
+    void visitVariableDeclaration(const AST::VariableDeclaration &varDecl, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "VariableDeclaration(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=\"" << varDecl.getName() << "\",\n";
+        std::cout << getIndent() << "varType=" << Types::dataTypeToString(varDecl.getVarType()) << ",\n";
+        std::cout << getIndent() << "init=";
+        if (varDecl.getOptInit().has_value())
+        {
+            visit(*varDecl.getOptInit().value(), false);
+        }
+        else
+        {
+            std::cout << "None\n";
+        }
+
+        std::cout << getIndent() << "storageClass=";
+        if (varDecl.getOptStorageClass().has_value())
+        {
+            if (varDecl.getOptStorageClass().value() == AST::StorageClass::Static)
+            {
+                std::cout << "Static,\n";
+            }
+            else
+            {
+                std::cout << "Extern,\n";
+            }
+        }
+        else
+        {
+            std::cout << "None,\n";
+        }
+
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitCast(const AST::Cast &cast, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Cast(\n";
+        increaseIndent();
+        std::cout << getIndent() << "targetType=" << Types::dataTypeToString(cast.getTargetType()) << ",\n";
+        std::cout << getIndent() << "exp=";
+        visit(*cast.getExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (cast.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(cast.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitInitDecl(const AST::InitDecl &initDecl, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "InitDecl(\n";
+        increaseIndent();
+        std::cout << getIndent() << "decl=";
+        visit(*initDecl.getDecl(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitInitExp(const AST::InitExp &initExp, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "InitExp(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        if (initExp.getOptExp().has_value())
+        {
+            visit(*initExp.getOptExp().value(), false);
+        }
+        else
+        {
+            std::cout << "None\n";
+        }
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
     void visitReturn(const AST::Return &ret, bool indent = true)
     {
         if (indent)
@@ -197,7 +307,16 @@ private:
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "Constant(" << constant.getValue() << ")\n";
+        std::cout << "Constant(" << Constants::toString(*(constant.getConst())) << ", ";
+        if (constant.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(constant.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << ")\n";
     }
 
     void visitUnary(const AST::Unary &unary, bool indent = true)
@@ -231,6 +350,16 @@ private:
         std::cout << ",\n";
         std::cout << getIndent() << "exp=";
         visit(*unary.getExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (unary.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(unary.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -303,6 +432,16 @@ private:
         visit(*binary.getExp1(), false);
         std::cout << getIndent() << "right=";
         visit(*binary.getExp2(), false);
+        std::cout << getIndent() << "dataType=";
+        if (binary.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(binary.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -311,7 +450,17 @@ private:
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "Var(" << var.getName() << ")\n";
+
+        std::cout << "Var(" << var.getName() << ", dataType=";
+        if (var.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(var.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << ")\n";
     }
 
     void visitAssignment(const AST::Assignment &assignment, bool indent = true)
@@ -324,6 +473,16 @@ private:
         visit(*assignment.getLeftExp(), false);
         std::cout << getIndent() << "right=";
         visit(*assignment.getRightExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (assignment.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(assignment.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -341,6 +500,26 @@ private:
         visit(*compoundAssignment.getLeftExp(), false);
         std::cout << getIndent() << "right=";
         visit(*compoundAssignment.getRightExp(), false);
+        std::cout << getIndent() << "resultType=";
+        if (compoundAssignment.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(compoundAssignment.getResultType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
+        std::cout << getIndent() << "dataType=";
+        if (compoundAssignment.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(compoundAssignment.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -400,6 +579,16 @@ private:
         increaseIndent();
         std::cout << getIndent() << "exp=";
         visit(*postfixIncr.getExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (postfixIncr.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(postfixIncr.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -414,6 +603,16 @@ private:
         increaseIndent();
         std::cout << getIndent() << "exp=";
         visit(*postfixDecr.getExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (postfixDecr.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(postfixDecr.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -432,6 +631,16 @@ private:
         visit(*conditional.getThen(), false);
         std::cout << getIndent() << "else=";
         visit(*conditional.getElse(), false);
+        std::cout << getIndent() << "dataType=";
+        if (conditional.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(conditional.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -445,13 +654,21 @@ private:
         increaseIndent();
         std::cout << getIndent() << "name=\"" << fnCall.getName() << "\",\n";
         std::cout << getIndent() << "args=[\n";
-        increaseIndent();
         for (const auto &arg : fnCall.getArgs())
         {
             visit(*arg, true);
         }
-        decreaseIndent();
         std::cout << getIndent() << "],\n";
+        std::cout << getIndent() << "dataType=";
+        if (fnCall.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(fnCall.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -655,7 +872,7 @@ private:
             {
                 if (key.has_value())
                 {
-                    std::cout << getIndent() << "Case(" << key.value() << ": " << value << ")\n";
+                    std::cout << getIndent() << "Case(" << Constants::toString(*key.value()) << ": " << value << ")\n";
                 }
                 else
                 {
@@ -703,45 +920,6 @@ private:
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
-
-    void visitVariableDeclaration(const AST::VariableDeclaration &varDecl, bool indent = true)
-    {
-        if (indent)
-            std::cout << getIndent();
-
-        std::cout << "Declaration(\n";
-        increaseIndent();
-        std::cout << getIndent() << "name=\"" << varDecl.getName() << "\",\n";
-        std::cout << getIndent() << "init=";
-        if (varDecl.getOptInit().has_value())
-        {
-            visit(*varDecl.getOptInit().value(), false);
-        }
-        else
-        {
-            std::cout << "None\n";
-        }
-
-        std::cout << getIndent() << "storageClass=";
-        if (varDecl.getOptStorageClass().has_value())
-        {
-            if (varDecl.getOptStorageClass().value() == AST::StorageClass::Static)
-            {
-                std::cout << "Static,\n";
-            }
-            else
-            {
-                std::cout << "Extern,\n";
-            }
-        }
-        else
-        {
-            std::cout << "None,\n";
-        }
-
-        decreaseIndent();
-        std::cout << getIndent() << "),\n";
-    }
 };
 
-#endif // AST_PRETTY_PRINT_H
+#endif

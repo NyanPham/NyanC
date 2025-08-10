@@ -4,23 +4,26 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <cstdint>
+
+#include "Initializers.h"
+#include "./utils/VariantHelper.h"
 
 /*
 program = Program(top_level*)
+asm_type = Longword | Quadword
 top_level = Function(identifier name, bool global, instruction* instructions)
-    | StaticVariable(identifier name, bool global, int init)
-instruction = Mov(operand src, operand dst)
-    | Unary(unary_operator, operand dst)
-    | Binary(binary_operator, operand src, operand dst)
-    | Cmp(operand src, operand dst)
-    | Idiv(operand)
-    | Cdq
+    | StaticVariable(identifier name, bool global, int alignment, static_init)
+instruction = Mov(asm_type, operand src, operand dst)
+    | Unary(unary_operator, asm_type, operand dst)
+    | Binary(binary_operator, asm_type, operand src, operand dst)
+    | Cmp(asm_type, operand src, operand dst)
+    | Idiv(asm_type, operand)
+    | Cdq(asm_type)
     | Jmp(identifier)
     | JmpCC(cond_code, identifier)
     | SetCC(cond_code, operand)
     | Label(identifier)
-    | AllocateStack(int)
-    | DeallocateStack(int)
     | Push(operand)
     | Call(identifier)
     | Ret
@@ -28,7 +31,7 @@ unary_operator = Neg | Not
 binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int) | Data(identifier)
 cond_code = E | NE | L | LE | G | GE
-reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11
+reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP
 */
 
 namespace Assembly
@@ -42,6 +45,7 @@ namespace Assembly
     class Stack;
     class Data;
     class Mov;
+    class Movsx;
     class Unary;
     class Binary;
     class Cmp;
@@ -51,8 +55,6 @@ namespace Assembly
     class JmpCC;
     class SetCC;
     class Label;
-    class AllocateStack;
-    class DeallocateStack;
     class Push;
     class Call;
     class Ret;
@@ -68,6 +70,7 @@ namespace Assembly
         StaticVariable,
         Ret,
         Mov,
+        Movsx,
         Unary,
         Binary,
         Cmp,
@@ -77,8 +80,6 @@ namespace Assembly
         JmpCC,
         SetCC,
         Label,
-        AllocateStack,
-        DeallocateStack,
         Push,
         Call,
         Imm,
@@ -87,6 +88,43 @@ namespace Assembly
         Stack,
         Data,
     };
+
+    // We use structs and variant to represent AsmType.
+    // We could use enums, but types might have fields later on, like pointer, array, struct types, similar to FunType in Types.h
+    struct Longword
+    {
+        Longword() {}
+
+        std::string toString() const { return "Longword"; }
+    };
+
+    struct Quadword
+    {
+        Quadword() {}
+
+        std::string toString() const { return "Quadword"; }
+    };
+
+    using AsmType = std::variant<Longword, Quadword>;
+
+    inline std::string asmTypeToString(const AsmType &type)
+    {
+        return std::visit([](const auto &t)
+                          { return t.toString(); }, type);
+    }
+
+    inline bool isAsmLongword(const AsmType &type) { return isVariant<Longword>(type); }
+    inline bool isAsmQuadword(const AsmType &type) { return isVariant<Quadword>(type); }
+
+    inline std::optional<Longword> getLongword(const AsmType &type)
+    {
+        return getVariant<Longword>(type);
+    }
+
+    inline std::optional<Quadword> getQuadword(const AsmType &type)
+    {
+        return getVariant<Quadword>(type);
+    }
 
     enum class RegName
     {
@@ -99,6 +137,7 @@ namespace Assembly
         R9,
         R10,
         R11,
+        SP,
     };
 
     enum class CondCode
@@ -164,15 +203,15 @@ namespace Assembly
     class Imm : public Operand
     {
     public:
-        Imm(int value)
+        Imm(int64_t value)
             : Operand(NodeType::Imm), _value{value}
         {
         }
 
-        int getValue() const { return _value; }
+        int64_t getValue() const { return _value; }
 
     private:
-        int _value;
+        int64_t _value;
     };
 
     class Reg : public Operand
@@ -218,13 +257,31 @@ namespace Assembly
     class Mov : public Instruction
     {
     public:
-        Mov(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
-            : Instruction(NodeType::Mov), _src{src}, _dst{dst}
+        Mov(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Mov), _asmType{asmType}, _src{src}, _dst{dst}
         {
         }
 
-        std::shared_ptr<Operand> getSrc() const { return _src; }
-        std::shared_ptr<Operand> getDst() const { return _dst; }
+        auto &getAsmType() const { return _asmType; }
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<AsmType> _asmType;
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
+    class Movsx : public Instruction
+    {
+    public:
+        Movsx(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Movsx), _src{src}, _dst{dst}
+        {
+        }
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
 
     private:
         std::shared_ptr<Operand> _src;
@@ -234,27 +291,32 @@ namespace Assembly
     class Unary : public Instruction
     {
     public:
-        Unary(UnaryOp op, std::shared_ptr<Operand> operand) : Instruction(NodeType::Unary), _op{op}, _operand{std::move(operand)} {}
+        Unary(UnaryOp op, std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> operand) : Instruction(NodeType::Unary), _op{op}, _asmType{asmType}, _operand{std::move(operand)} {}
+
         UnaryOp getOp() const { return _op; }
-        std::shared_ptr<Operand> getOperand() const { return _operand; }
+        auto &getAsmType() const { return _asmType; }
+        auto &getOperand() const { return _operand; }
 
     private:
         UnaryOp _op;
+        std::shared_ptr<AsmType> _asmType;
         std::shared_ptr<Operand> _operand;
     };
 
     class Binary : public Instruction
     {
     public:
-        Binary(BinaryOp op, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
-            : Instruction(NodeType::Binary), _op{op}, _src{src}, _dst{dst} {}
+        Binary(BinaryOp op, std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Binary), _op{op}, _asmType{asmType}, _src{src}, _dst{dst} {}
 
         BinaryOp getOp() const { return _op; }
+        auto &getAsmType() const { return _asmType; }
         std::shared_ptr<Operand> getSrc() const { return _src; }
         std::shared_ptr<Operand> getDst() const { return _dst; }
 
     private:
         BinaryOp _op;
+        std::shared_ptr<AsmType> _asmType;
         std::shared_ptr<Operand> _src;
         std::shared_ptr<Operand> _dst;
     };
@@ -262,13 +324,15 @@ namespace Assembly
     class Cmp : public Instruction
     {
     public:
-        Cmp(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
-            : Instruction(NodeType::Cmp), _src{std::move(src)}, _dst{std::move(dst)} {}
+        Cmp(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Cmp), _asmType{asmType}, _src{std::move(src)}, _dst{std::move(dst)} {}
 
+        auto &getAsmType() const { return _asmType; }
         auto getSrc() const { return _src; }
         auto getDst() const { return _dst; }
 
     private:
+        std::shared_ptr<AsmType> _asmType;
         std::shared_ptr<Operand> _src;
         std::shared_ptr<Operand> _dst;
     };
@@ -276,17 +340,23 @@ namespace Assembly
     class Idiv : public Instruction
     {
     public:
-        Idiv(std::shared_ptr<Operand> operand) : Instruction(NodeType::Idiv), _operand{operand} {}
+        Idiv(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> operand) : Instruction(NodeType::Idiv), _asmType{asmType}, _operand{operand} {}
+        auto &getAsmType() const { return _asmType; }
         std::shared_ptr<Operand> getOperand() const { return _operand; }
 
     private:
+        std::shared_ptr<AsmType> _asmType;
         std::shared_ptr<Operand> _operand;
     };
 
     class Cdq : public Instruction
     {
     public:
-        Cdq() : Instruction(NodeType::Cdq) {}
+        Cdq(std::shared_ptr<AsmType> asmType) : Instruction(NodeType::Cdq), _asmType{asmType} {}
+        auto &getAsmType() const { return _asmType; }
+
+    private:
+        std::shared_ptr<AsmType> _asmType;
     };
 
     class Jmp : public Instruction
@@ -341,26 +411,6 @@ namespace Assembly
         std::string _name;
     };
 
-    class AllocateStack : public Instruction
-    {
-    public:
-        AllocateStack(int offset) : Instruction(NodeType::AllocateStack), _offset{offset} {}
-        int getOffset() const { return _offset; }
-
-    private:
-        int _offset;
-    };
-
-    class DeallocateStack : public Instruction
-    {
-    public:
-        DeallocateStack(int offset) : Instruction(NodeType::DeallocateStack), _offset{offset} {}
-        int getOffset() const { return _offset; }
-
-    private:
-        int _offset;
-    };
-
     class Push : public Instruction
     {
     public:
@@ -390,17 +440,19 @@ namespace Assembly
     class StaticVariable : public TopLevel
     {
     public:
-        StaticVariable(const std::string &name, bool global, int init)
-            : TopLevel(NodeType::StaticVariable), _name{name}, _global{global}, _init{init} {}
+        StaticVariable(const std::string &name, bool global, int alignment, Initializers::StaticInit init)
+            : TopLevel(NodeType::StaticVariable), _name{name}, _global{global}, _alignment{alignment}, _init{init} {}
 
         const std::string &getName() const { return _name; }
         bool isGlobal() const { return _global; }
-        const int &getInit() const { return _init; }
+        auto &getAlignment() const { return _alignment; }
+        auto &getInit() const { return _init; }
 
     private:
         std::string _name;
         bool _global;
-        int _init;
+        int _alignment;
+        Initializers::StaticInit _init;
     };
 
     class Function : public TopLevel

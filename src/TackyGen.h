@@ -4,14 +4,21 @@
 #include <vector>
 #include <utility>
 #include <memory>
+#include <string>
 #include "Tacky.h"
 #include "AST.h"
 #include "Symbols.h"
+#include "Types.h"
 
 class TackyGen
 {
 public:
     TackyGen(Symbols::SymbolTable &symbolTable) : _symbolTable(symbolTable) {};
+
+    std::string createTmp(const std::optional<Types::DataType> &type);
+    std::shared_ptr<Constants::Const> mkConst(const std::optional<Types::DataType> &type, int64_t i);
+    std::shared_ptr<AST::Constant> mkAstConst(const std::optional<Types::DataType> &type, int64_t i);
+    std::shared_ptr<TACKY::Instruction> getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &dstType);
 
     std::string breakLabel(const std::string &id);
     std::string continueLabel(const std::string &id);
@@ -23,10 +30,12 @@ public:
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForWhileLoop(const std::shared_ptr<AST::While> &whileLoop);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop);
 
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitAssignment(const std::string &varName, const std::shared_ptr<AST::Expression> &rhs);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitCastExp(const std::shared_ptr<AST::Cast> &cast);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitFunCall(const std::shared_ptr<AST::FunctionCall> &fnCall);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitConditionalExp(const std::shared_ptr<AST::Conditional> &conditional);
-    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var);
-    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitCompoundAssignment(const AST::BinaryOp &op, const std::shared_ptr<AST::Var> var, const std::shared_ptr<AST::Expression> rhs);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expression> &exp);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<AST::Expression> &lhs, const std::shared_ptr<AST::Expression> &rhs, const std::optional<Types::DataType> &resultType);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitAndExp(const std::shared_ptr<AST::Binary> &binary);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitOrExp(const std::shared_ptr<AST::Binary> &binary);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<TACKY::Val>> emitUnaryExp(const std::shared_ptr<AST::Unary> &unary);

@@ -7,11 +7,15 @@
 #include <vector>
 #include <map>
 
+#include "Types.h"
+#include "Const.h"
+
 /*
 program = Program(declaration*)
 declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
-variable_declaration = (identifier name, exp? init, storage_class?)
-function_declaration = (identifier name, identifier* params, block? body, storage_class?)
+variable_declaration = (identifier name, exp? init, type var_type, storage_class?)
+function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
+type = Int | Long | FunType(type* params, type ret)
 storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
@@ -31,16 +35,16 @@ statement = Return(exp)
     | Null
     | LabeledStatement(indentifier label, statement)
     | Goto(identifier label)
-exp = Constant(int)
-    | Var(identifier)
-    | Unary(unary_operator, exp)
-    | Binary(binary_operator, exp, exp)
-    | Assignment(exp, exp)
-    | CompoundAssignment(binary_operator, exp, exp)
-    | PostfixIncr(exp)
-    | PostfixDecr(exp)
-    | Conditional(exp condition, exp then, exp else)
-    | FunctionCall(identifier, exp* args)
+exp = Constant(const, type)
+    | Var(identifier, type)
+    | Unary(unary_operator, exp, type)
+    | Binary(binary_operator, exp, exp, type)
+    | Assignment(exp, exp, type)
+    | CompoundAssignment(binary_operator, exp, exp, type)
+    | PostfixIncr(exp, type)
+    | PostfixDecr(exp, type)
+    | Conditional(exp condition, exp then, exp else, type)
+    | FunctionCall(identifier, exp* args, type)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -52,6 +56,7 @@ namespace AST
 {
     class Node;
     class Constant;
+    class Cast;
     class Var;
     class Assignment;
     class CompoundAssignment;
@@ -108,6 +113,7 @@ namespace AST
         LabeledStatement,
         Goto,
         Constant,
+        Cast,
         Unary,
         Binary,
         Var,
@@ -159,7 +165,37 @@ namespace AST
     };
 
     using Block = std::vector<std::shared_ptr<BlockItem>>;
-    using CaseMap = std::map<std::optional<int>, std::string>;
+    using CaseMap = std::map<std::optional<std::shared_ptr<Constants::Const>>, std::string, struct CaseMapComparator>;
+
+    struct CaseMapComparator
+    {
+        bool operator()(const std::optional<std::shared_ptr<Constants::Const>> &lhs,
+                        const std::optional<std::shared_ptr<Constants::Const>> &rhs) const
+        {
+            if (!lhs && !rhs)
+                return false;
+            if (!lhs)
+                return true;
+            if (!rhs)
+                return false;
+
+            const auto &lhsVal = *lhs.value();
+            const auto &rhsVal = *rhs.value();
+
+            if (Constants::isConstInt(lhsVal) && Constants::isConstInt(rhsVal))
+            {
+                return Constants::getConstInt(lhsVal)->val < Constants::getConstInt(rhsVal)->val;
+            }
+            else if (Constants::isConstLong(lhsVal) && Constants::isConstLong(rhsVal))
+            {
+                return Constants::getConstLong(lhsVal)->val < Constants::getConstLong(rhsVal)->val;
+            }
+            else
+            {
+                return Constants::isConstInt(lhsVal);
+            }
+        }
+    };
 
     class Node
     {
@@ -175,8 +211,14 @@ namespace AST
     class Expression : public Node
     {
     public:
-        Expression(NodeType type) : Node(type) {}
+        Expression(NodeType type, std::optional<Types::DataType> dataType = std::nullopt) : Node(type), _dataType{dataType} {}
         virtual ~Expression() = default;
+
+        const std::optional<Types::DataType> &getDataType() const { return _dataType; }
+        void setDataType(const std::optional<Types::DataType> &dataType) { _dataType = dataType; }
+
+    private:
+        std::optional<Types::DataType> _dataType = std::nullopt;
     };
 
     class ForInit : public Node
@@ -210,37 +252,54 @@ namespace AST
     class VariableDeclaration : public Declaration
     {
     public:
-        VariableDeclaration(std::string name, std::optional<std::shared_ptr<Expression>> init = std::nullopt, std::optional<StorageClass> storageClass = std::nullopt)
-            : Declaration(NodeType::VariableDeclaration), _name{std::move(name)}, _init{std::move(init)}, _storageClass{storageClass}
+        VariableDeclaration(const std::string &name, std::optional<std::shared_ptr<Expression>> init, const Types::DataType &varType, std::optional<StorageClass> storageClass = std::nullopt)
+            : Declaration(NodeType::VariableDeclaration), _name{std::move(name)}, _init{std::move(init)}, _varType{varType}, _storageClass{storageClass}
         {
         }
 
         const std::string &getName() const { return _name; }
         const std::optional<std::shared_ptr<Expression>> &getOptInit() const { return _init; }
+        const Types::DataType &getVarType() const { return _varType; }
         const std::optional<StorageClass> &getOptStorageClass() const { return _storageClass; }
 
     private:
         std::string _name;
         std::optional<std::shared_ptr<Expression>> _init;
+        Types::DataType _varType;
         std::optional<StorageClass> _storageClass;
     };
 
     class Constant : public Expression
     {
     public:
-        Constant(int value)
-            : Expression(NodeType::Constant), _value{value} {}
-        int getValue() const { return _value; }
+        Constant(std::shared_ptr<Constants::Const> c, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Constant, dataType), _c{c} {}
+
+        const std::shared_ptr<Constants::Const> &getConst() const { return _c; }
 
     private:
-        int _value;
+        std::shared_ptr<Constants::Const> _c;
+    };
+
+    class Cast : public Expression
+    {
+    public:
+        Cast(Types::DataType targetType, std::shared_ptr<Expression> exp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Cast, dataType), _targetType{targetType}, _exp{exp} {}
+
+        const Types::DataType &getTargetType() const { return _targetType; }
+        const std::shared_ptr<Expression> &getExp() const { return _exp; }
+
+    private:
+        Types::DataType _targetType;
+        std::shared_ptr<Expression> _exp;
     };
 
     class Binary : public Expression
     {
     public:
-        Binary(BinaryOp op, std::shared_ptr<Expression> exp1, std::shared_ptr<Expression> exp2)
-            : Expression(NodeType::Binary), _op{op}, _exp1{std::move(exp1)}, _exp2{std::move(exp2)} {}
+        Binary(BinaryOp op, std::shared_ptr<Expression> exp1, std::shared_ptr<Expression> exp2, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Binary, dataType), _op{op}, _exp1{std::move(exp1)}, _exp2{std::move(exp2)} {}
 
         BinaryOp getOp() const { return _op; }
         std::shared_ptr<Expression> getExp1() const { return _exp1; }
@@ -255,8 +314,8 @@ namespace AST
     class Unary : public Expression
     {
     public:
-        Unary(UnaryOp op, std::shared_ptr<Expression> exp)
-            : Expression(NodeType::Unary), _op{op}, _exp{exp} {}
+        Unary(UnaryOp op, std::shared_ptr<Expression> exp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Unary, dataType), _op{op}, _exp{exp} {}
 
         UnaryOp getOp() const { return _op; }
         std::shared_ptr<Expression> getExp() const { return _exp; }
@@ -269,7 +328,9 @@ namespace AST
     class Var : public Expression
     {
     public:
-        Var(const std::string &name) : Expression(NodeType::Var), _name{std::move(name)} {}
+        Var(const std::string &name, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Var, dataType), _name{std::move(name)} {}
+
         auto getName() const { return _name; }
 
     private:
@@ -279,10 +340,8 @@ namespace AST
     class Assignment : public Expression
     {
     public:
-        Assignment(std::shared_ptr<Expression> left, std::shared_ptr<Expression> right)
-            : Expression(NodeType::Assignment), _left{std::move(left)}, _right{std::move(right)}
-        {
-        }
+        Assignment(std::shared_ptr<Expression> left, std::shared_ptr<Expression> right, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Assignment, dataType), _left{std::move(left)}, _right{std::move(right)} {}
 
         auto getLeftExp() const { return _left; }
         auto getRightExp() const { return _right; }
@@ -295,28 +354,26 @@ namespace AST
     class CompoundAssignment : public Expression
     {
     public:
-        CompoundAssignment(BinaryOp op, std::shared_ptr<Expression> left, std::shared_ptr<Expression> right)
-            : Expression(NodeType::CompoundAssignment), _op{op}, _left{std::move(left)}, _right{std::move(right)}
-        {
-        }
+        CompoundAssignment(BinaryOp op, const std::shared_ptr<Expression> &left, const std::shared_ptr<Expression> &right, std::optional<Types::DataType> resultType = std::nullopt, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::CompoundAssignment, dataType), _op{op}, _left{std::move(left)}, _right{std::move(right)}, _resultType{resultType} {}
 
         auto getOp() const { return _op; }
         auto getLeftExp() const { return _left; }
         auto getRightExp() const { return _right; }
+        auto &getResultType() const { return _resultType; }
 
     private:
         BinaryOp _op;
         std::shared_ptr<Expression> _left;
         std::shared_ptr<Expression> _right;
+        std::optional<Types::DataType> _resultType;
     };
 
     class PostfixIncr : public Expression
     {
     public:
-        PostfixIncr(std::shared_ptr<Expression> exp)
-            : Expression(NodeType::PostfixIncr), _exp{std::move(exp)}
-        {
-        }
+        PostfixIncr(std::shared_ptr<Expression> exp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::PostfixIncr, dataType), _exp{std::move(exp)} {}
 
         auto getExp() const { return _exp; }
 
@@ -327,10 +384,8 @@ namespace AST
     class PostfixDecr : public Expression
     {
     public:
-        PostfixDecr(std::shared_ptr<Expression> exp)
-            : Expression(NodeType::PostfixDecr), _exp{std::move(exp)}
-        {
-        }
+        PostfixDecr(std::shared_ptr<Expression> exp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::PostfixDecr, dataType), _exp{std::move(exp)} {}
 
         auto getExp() const { return _exp; }
 
@@ -341,8 +396,8 @@ namespace AST
     class Conditional : public Expression
     {
     public:
-        Conditional(std::shared_ptr<Expression> condition, std::shared_ptr<Expression> then, std::shared_ptr<Expression> elseExp)
-            : Expression(NodeType::Conditional), _condition{condition}, _then{then}, _else{elseExp} {}
+        Conditional(std::shared_ptr<Expression> condition, std::shared_ptr<Expression> then, std::shared_ptr<Expression> elseExp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Conditional, dataType), _condition{condition}, _then{then}, _else{elseExp} {}
 
         auto getCondition() const { return _condition; }
         auto getThen() const { return _then; }
@@ -357,10 +412,8 @@ namespace AST
     class FunctionCall : public Expression
     {
     public:
-        FunctionCall(const std::string &fnName, std::vector<std::shared_ptr<Expression>> args)
-            : Expression(NodeType::FunctionCall), _fnName{fnName}, _args{args}
-        {
-        }
+        FunctionCall(const std::string &fnName, std::vector<std::shared_ptr<Expression>> args, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::FunctionCall, dataType), _fnName{fnName}, _args{args} {}
 
         const std::string &getName() const { return _fnName; }
         const std::vector<std::shared_ptr<Expression>> &getArgs() const { return _args; }
@@ -631,18 +684,20 @@ namespace AST
     class FunctionDeclaration : public Declaration
     {
     public:
-        FunctionDeclaration(const std::string &name, std::vector<std::string> params, std::optional<Block> body = std::nullopt, std::optional<StorageClass> storageClass = std::nullopt)
-            : Declaration(NodeType::FunctionDeclaration), _name{name}, _params{params}, _body{body}, _storageClass{storageClass} {}
+        FunctionDeclaration(const std::string &name, std::vector<std::string> params, std::optional<Block> body, const Types::DataType &funType, std::optional<StorageClass> storageClass = std::nullopt)
+            : Declaration(NodeType::FunctionDeclaration), _name{name}, _params{params}, _body{body}, _funType{funType}, _storageClass{storageClass} {}
 
         const std::string &getName() const { return _name; }
         const std::vector<std::string> &getParams() const { return _params; }
         const std::optional<Block> &getOptBody() const { return _body; }
+        const Types::DataType &getFunType() const { return _funType; }
         const std::optional<StorageClass> &getOptStorageClass() const { return _storageClass; }
 
     private:
         std::string _name;
         std::vector<std::string> _params;
         std::optional<Block> _body;
+        Types::DataType _funType;
         std::optional<StorageClass> _storageClass;
     };
 
