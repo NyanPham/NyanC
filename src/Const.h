@@ -6,11 +6,11 @@
 #include <cstdint>
 #include <optional>
 
+#include "Types.h"
 #include "./utils/VariantHelper.h"
 
 namespace Constants
 {
-
     struct ConstInt
     {
         int32_t val;
@@ -35,7 +35,31 @@ namespace Constants
         }
     };
 
-    using Const = std::variant<ConstInt, ConstLong>;
+    struct ConstUInt
+    {
+        uint32_t val;
+
+        ConstUInt(uint32_t val) : val{val} {}
+
+        std::string toString() const
+        {
+            return "ConstUInt(" + std::to_string(val) + ")";
+        }
+    };
+
+    struct ConstULong
+    {
+        uint64_t val;
+
+        ConstULong(uint64_t val) : val{val} {}
+
+        std::string toString() const
+        {
+            return "ConstULong(" + std::to_string(val) + ")";
+        }
+    };
+
+    using Const = std::variant<ConstInt, ConstLong, ConstUInt, ConstULong>;
 
     inline std::string toString(const Const &c)
     {
@@ -53,6 +77,16 @@ namespace Constants
         return ConstLong{val};
     }
 
+    inline Const makeConstUInt(uint32_t val)
+    {
+        return ConstUInt{val};
+    }
+
+    inline Const makeConstULong(uint64_t val)
+    {
+        return ConstULong{val};
+    }
+
     inline ConstInt makeIntZero()
     {
         return ConstInt{0};
@@ -61,6 +95,16 @@ namespace Constants
     inline ConstLong makeLongZero()
     {
         return ConstLong{0};
+    }
+
+    inline ConstUInt makeUIntZero()
+    {
+        return ConstUInt{0};
+    }
+
+    inline ConstULong makeULongZero()
+    {
+        return ConstULong{0};
     }
 
     inline bool isConstInt(const Const &c)
@@ -73,6 +117,16 @@ namespace Constants
         return isVariant<ConstLong>(c);
     }
 
+    inline bool isConstUInt(const Const &c)
+    {
+        return isVariant<ConstUInt>(c);
+    }
+
+    inline bool isConstULong(const Const &c)
+    {
+        return isVariant<ConstULong>(c);
+    }
+
     inline std::optional<ConstInt> getConstInt(const Const &c)
     {
         return getVariant<ConstInt>(c);
@@ -81,6 +135,29 @@ namespace Constants
     inline std::optional<ConstLong> getConstLong(const Const &c)
     {
         return getVariant<ConstLong>(c);
+    }
+
+    inline std::optional<ConstUInt> getConstUInt(const Const &c)
+    {
+        return getVariant<ConstUInt>(c);
+    }
+
+    inline std::optional<ConstULong> getConstULong(const Const &c)
+    {
+        return getVariant<ConstULong>(c);
+    }
+
+    inline Types::DataType typeOfConst(const Const &c)
+    {
+        if (isConstInt(c))
+            return Types::makeIntType();
+        if (isConstLong(c))
+            return Types::makeLongType();
+        if (isConstUInt(c))
+            return Types::makeUIntType();
+        if (isConstULong(c))
+            return Types::makeULongType();
+        throw std::runtime_error("Internal error: unknown const type");
     }
 };
 

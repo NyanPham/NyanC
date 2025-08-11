@@ -45,6 +45,9 @@ private:
         case Assembly::NodeType::Movsx:
             visitMovsx(static_cast<const Assembly::Movsx &>(node), indent);
             break;
+        case Assembly::NodeType::MovZeroExtend:
+            visitMovZeroExtend(static_cast<const Assembly::MovZeroExtend &>(node), indent);
+            break;
         case Assembly::NodeType::Unary:
             visitUnary(static_cast<const Assembly::Unary &>(node), indent);
             break;
@@ -56,6 +59,9 @@ private:
             break;
         case Assembly::NodeType::Idiv:
             visitIdiv(static_cast<const Assembly::Idiv &>(node), indent);
+            break;
+        case Assembly::NodeType::Div:
+            visitDiv(static_cast<const Assembly::Div &>(node), indent);
             break;
         case Assembly::NodeType::Cdq:
             visitCdq(static_cast<const Assembly::Cdq &>(node));
@@ -176,6 +182,16 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
+    void visitMovZeroExtend(const Assembly::MovZeroExtend &movzx, bool indent = true)
+    {
+        std::cout << getIndent() << "MovZeroExtend(\n";
+        increaseIndent();
+        printMember("src", *movzx.getSrc());
+        printMember("dst", *movzx.getDst());
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
     void visitUnary(const Assembly::Unary &unary, bool indent = true)
     {
         std::cout << getIndent() << "Unary(\n";
@@ -250,6 +266,17 @@ private:
         printAsmType(*idiv.getAsmType());
         std::cout << getIndent() << "operand=";
         visit(*idiv.getOperand(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitDiv(const Assembly::Div &div, bool indent = true)
+    {
+        std::cout << getIndent() << "Div(\n";
+        increaseIndent();
+        printAsmType(*div.getAsmType());
+        std::cout << getIndent() << "operand=";
+        visit(*div.getOperand(), false);
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

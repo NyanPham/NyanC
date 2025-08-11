@@ -22,16 +22,21 @@ std::shared_ptr<AST::Expression> convertTo(const std::shared_ptr<AST::Expression
     return castExp;
 }
 
-/*
-Get common types between 2 types.
-For nowm, there are only two types: Int and Long.
-*/
 Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &t2)
 {
     if (t1 == t2)
         return t1;
+    else if (Types::getSize(t1) == Types::getSize(t2))
+    {
+        if (Types::isSigned(t1))
+            return t2;
+        else
+            return t1;
+    }
+    else if (Types::getSize(t1) > Types::getSize(t2))
+        return t1;
     else
-        return Types::makeLongType();
+        return t2;
 }
 
 /*
@@ -39,16 +44,19 @@ Convert a constant to static initializer, performing type converion if needed.
 */
 Symbols::InitialValue toStaticInit(const Types::DataType &varType, const std::shared_ptr<AST::Expression> &e)
 {
-    Initializers::StaticInit initVal;
-
     if (auto c = std::dynamic_pointer_cast<AST::Constant>(e))
     {
+        Initializers::StaticInit initVal;
         auto convertedConstant = ConstConvert::convert(varType, c->getConst());
 
         if (auto constInt = Constants::getConstInt(*convertedConstant))
             initVal = Initializers::IntInit{constInt->val};
         else if (auto constLong = Constants::getConstLong(*convertedConstant))
             initVal = Initializers::LongInit{constLong->val};
+        else if (auto constUInt = Constants::getConstUInt(*convertedConstant))
+            initVal = Initializers::UIntInit{constUInt->val};
+        else if (auto constULong = Constants::getConstULong(*convertedConstant))
+            initVal = Initializers::ULongInit{constULong->val};
         else
             throw std::runtime_error("Internal error: invalid constant type");
 
@@ -66,13 +74,9 @@ TypeChecker::typeCheckVar(const std::shared_ptr<AST::Var> &var)
 
     if (Types::isFunType(vType))
         throw std::runtime_error("Tried to use function name as variable");
-    else if (Types::isIntType(vType) || Types::isLongType(vType))
-    {
-        e->setDataType(std::make_optional(vType));
-        return e;
-    }
-    else
-        throw std::runtime_error("Internal error: symbol has unknown type");
+
+    e->setDataType(std::make_optional(vType));
+    return e;
 }
 
 std::shared_ptr<AST::Constant>
@@ -80,18 +84,8 @@ TypeChecker::typeCheckConstant(const std::shared_ptr<AST::Constant> &c)
 {
     auto e = std::make_shared<AST::Constant>(c->getConst());
 
-    if (Constants::isConstInt(*c->getConst()))
-    {
-        e->setDataType(std::make_optional(Types::makeIntType()));
-        return e;
-    }
-    else if (Constants::isConstLong(*c->getConst()))
-    {
-        e->setDataType(std::make_optional(Types::makeLongType()));
-        return e;
-    }
-    else
-        throw std::runtime_error("Internal error: invalid constant type");
+    e->setDataType(std::make_optional(Constants::typeOfConst(*c->getConst())));
+    return e;
 }
 
 std::shared_ptr<AST::Unary>
@@ -261,9 +255,6 @@ TypeChecker::typeCheckFunctionCall(const std::shared_ptr<AST::FunctionCall> &fun
 {
     auto sType = _symbolTable.get(funCall->getName()).type;
 
-    if (Types::isIntType(sType) || Types::isLongType(sType))
-        throw std::runtime_error("Tried to use variable as function name");
-
     if (auto fType = Types::getFunType(sType))
     {
         if (fType->paramTypes.size() != funCall->getArgs().size())
@@ -283,7 +274,7 @@ TypeChecker::typeCheckFunctionCall(const std::shared_ptr<AST::FunctionCall> &fun
         return typedCall;
     }
 
-    throw std::runtime_error("Internal error: symbol has unknown type");
+    throw std::runtime_error("Tried to use variable as function name");
 }
 
 std::shared_ptr<AST::Expression>
@@ -596,7 +587,7 @@ TypeChecker::typeCheckFileScopeVarDecl(const std::shared_ptr<AST::VariableDeclar
     {
         auto oldDecl = _symbolTable.get(varDecl->getName());
         if (oldDecl.type != varDecl->getVarType())
-            throw std::runtime_error("Variable redeclared with differnt ype: " + varDecl->getName());
+            throw std::runtime_error("Variable redeclared with differnt type: " + varDecl->getName());
 
         if (auto staticAttrs = getStaticAttr(oldDecl.attrs))
         {

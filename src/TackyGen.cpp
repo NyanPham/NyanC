@@ -6,6 +6,7 @@
 #include "Tacky.h"
 #include "AST.h"
 #include "UniqueIds.h"
+#include "ConstConvert.h"
 
 std::string
 TackyGen::createTmp(const std::optional<Types::DataType> &type)
@@ -22,14 +23,10 @@ std::shared_ptr<Constants::Const>
 TackyGen::mkConst(const std::optional<Types::DataType> &type, int64_t i)
 {
     if (!type.has_value())
-        throw std::runtime_error("Internal error: type is null");
+        throw std::runtime_error("Internal error: type is not defined");
 
-    if (Types::isIntType(type.value()))
-        return std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(i)));
-    else if (Types::isLongType(type.value()))
-        return std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(i)));
-    else
-        throw std::runtime_error("Internal error: cannot make constant of fun type");
+    auto asInt = std::make_shared<Constants::Const>(Constants::ConstInt(static_cast<int32_t>(i)));
+    return ConstConvert::convert(*type, asInt);
 }
 
 std::shared_ptr<AST::Constant>
@@ -39,15 +36,17 @@ TackyGen::mkAstConst(const std::optional<Types::DataType> &type, int64_t i)
 }
 
 std::shared_ptr<TACKY::Instruction>
-TackyGen::getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &dstType)
+TackyGen::getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &srcType, const Types::DataType &dstType)
 {
     // Note: assumes src and dst have different types
-    if (Types::isLongType(dstType))
-        return std::make_shared<TACKY::SignExtend>(src, dst);
-    else if (Types::isIntType(dstType))
+    if (Types::getSize(dstType) == Types::getSize(srcType))
+        return std::make_shared<TACKY::Copy>(src, dst);
+    else if (Types::getSize(dstType) < Types::getSize(srcType))
         return std::make_shared<TACKY::Truncate>(src, dst);
+    else if (Types::isSigned(srcType))
+        return std::make_shared<TACKY::SignExtend>(src, dst);
     else
-        throw std::runtime_error("Internal error: Cast to funtion type");
+        return std::make_shared<TACKY::ZeroExtend>(src, dst);
 }
 
 std::string TackyGen::breakLabel(const std::string &id)
@@ -324,9 +323,9 @@ TackyGen::emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<
             // lhs = <cast tmp to lhs_type>
 
             auto tmp = std::make_shared<TACKY::Var>(createTmp(resultType));
-            auto castLhsToTmp = getCastInst(dst, tmp, resultType.value());
+            auto castLhsToTmp = getCastInst(dst, tmp, var->getDataType().value(), resultType.value());
             auto binaryInst = std::make_shared<TACKY::Binary>(tackyOp, tmp, rhsResult, tmp);
-            auto castTmpToLhs = getCastInst(tmp, dst, var->getDataType().value());
+            auto castTmpToLhs = getCastInst(tmp, dst, resultType.value(), var->getDataType().value());
 
             insts.push_back(castLhsToTmp);
             insts.push_back(binaryInst);
@@ -422,7 +421,7 @@ TackyGen::emitCastExp(const std::shared_ptr<AST::Cast> &cast)
 
     auto dstName = createTmp(cast->getTargetType());
     auto dst = std::make_shared<TACKY::Var>(dstName);
-    auto castInst = getCastInst(res, dst, cast->getTargetType());
+    auto castInst = getCastInst(res, dst, *optSrcType, cast->getTargetType());
 
     auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
     insts.insert(insts.end(), innerEval.begin(), innerEval.end());

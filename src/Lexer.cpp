@@ -18,6 +18,8 @@ Token convertIdentifer(const std::string &str, long pos)
     static const std::unordered_map<std::string, TokenType> keywords = {
         {"int", TokenType::KEYWORD_INT},
         {"long", TokenType::KEYWORD_LONG},
+        {"signed", TokenType::KEYWORD_SIGNED},
+        {"unsigned", TokenType::KEYWORD_UNSIGNED},
         {"void", TokenType::KEYWORD_VOID},
         {"return", TokenType::KEYWORD_RETURN},
         {"if", TokenType::KEYWORD_IF},
@@ -55,6 +57,18 @@ Token convertLong(const std::string &str, long pos)
     return Token(TokenType::CONST_LONG, num, pos);
 }
 
+Token convertUInt(const std::string &str, long pos)
+{
+    auto num = std::stoull(str.substr(0, str.size() - 1));
+    return Token(TokenType::CONST_UINT, num, pos);
+}
+
+Token convertULong(const std::string &str, long pos)
+{
+    auto num = std::stoull(str.substr(0, str.size() - 2));
+    return Token(TokenType::CONST_ULONG, num, pos);
+}
+
 void Lexer::setInput(std::string input)
 {
     _input = std::move(input);
@@ -66,7 +80,9 @@ void Lexer::defineTokenDefs()
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
         {std::regex("[0-9]+\\b"), convertInt},
         {std::regex("[0-9]+[lL]\\b"), convertLong},
-        // The following 17 keywords match will not be reached after identifier, but still kept here for references.
+        {std::regex("[0-9]+[uU]\\b"), convertUInt},
+        {std::regex("[0-9]+([uU][lL]|[lL][uU])\\b"), convertULong},
+        // The following 19 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
@@ -74,6 +90,14 @@ void Lexer::defineTokenDefs()
         {std::regex("long\\b"), [](const std::string &str, long pos) -> Token
          {
              return Token(TokenType::KEYWORD_LONG, str, pos);
+         }},
+        {std::regex("signed\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_SIGNED, str, pos);
+         }},
+        {std::regex("unsigned\\b"), [](const std::string &str, long pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_UNSIGNED, str, pos);
          }},
         {std::regex("void\\b"), [](const std::string &str, long pos) -> Token
          {

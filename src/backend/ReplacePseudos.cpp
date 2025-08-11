@@ -97,6 +97,20 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
             state2,
         };
     }
+    case Assembly::NodeType::MovZeroExtend:
+    {
+        auto movzx = std::dynamic_pointer_cast<Assembly::MovZeroExtend>(inst);
+
+        auto [newSrc, state1] = replaceOperand(movzx->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(movzx->getDst(), state1);
+
+        auto newMovzx = std::make_shared<Assembly::MovZeroExtend>(newSrc, newDst);
+
+        return {
+            newMovzx,
+            state2,
+        };
+    }
     case Assembly::NodeType::Unary:
     {
         auto unary = std::dynamic_pointer_cast<Assembly::Unary>(inst);
@@ -148,6 +162,19 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
 
         return {
             newIdiv,
+            state1,
+        };
+    }
+    case Assembly::NodeType::Div:
+    {
+        auto div = std::dynamic_pointer_cast<Assembly::Div>(inst);
+
+        auto [newOperand, state1] = replaceOperand(div->getOperand(), state);
+
+        auto newDiv = std::make_shared<Assembly::Div>(div->getAsmType(), newOperand);
+
+        return {
+            newDiv,
             state1,
         };
     }

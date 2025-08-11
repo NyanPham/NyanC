@@ -15,10 +15,13 @@ asm_type = Longword | Quadword
 top_level = Function(identifier name, bool global, instruction* instructions)
     | StaticVariable(identifier name, bool global, int alignment, static_init)
 instruction = Mov(asm_type, operand src, operand dst)
+    | Movsx(operand src, operand dst)
+    | MovZeroExtend(operand src, operand dst)
     | Unary(unary_operator, asm_type, operand dst)
     | Binary(binary_operator, asm_type, operand src, operand dst)
     | Cmp(asm_type, operand src, operand dst)
     | Idiv(asm_type, operand)
+    | Div(asm_type, operand)
     | Cdq(asm_type)
     | Jmp(identifier)
     | JmpCC(cond_code, identifier)
@@ -28,9 +31,9 @@ instruction = Mov(asm_type, operand src, operand dst)
     | Call(identifier)
     | Ret
 unary_operator = Neg | Not
-binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar
+binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar | Shl | Shr
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int) | Data(identifier)
-cond_code = E | NE | L | LE | G | GE
+cond_code = E | NE | L | LE | G | GE | A | AE | B | BE
 reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP
 */
 
@@ -71,10 +74,12 @@ namespace Assembly
         Ret,
         Mov,
         Movsx,
+        MovZeroExtend,
         Unary,
         Binary,
         Cmp,
         Idiv,
+        Div,
         Cdq,
         Jmp,
         JmpCC,
@@ -147,7 +152,11 @@ namespace Assembly
         L,
         LE,
         G,
-        GE
+        GE,
+        A,
+        AE,
+        B,
+        BE,
     };
 
     enum class UnaryOp
@@ -166,6 +175,8 @@ namespace Assembly
         Xor,
         Sal,
         Sar,
+        Shl,
+        Shr,
     };
 
     class Node
@@ -288,6 +299,22 @@ namespace Assembly
         std::shared_ptr<Operand> _dst;
     };
 
+    class MovZeroExtend : public Instruction
+    {
+    public:
+        MovZeroExtend(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::MovZeroExtend), _src{src}, _dst{dst}
+        {
+        }
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
     class Unary : public Instruction
     {
     public:
@@ -341,6 +368,18 @@ namespace Assembly
     {
     public:
         Idiv(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> operand) : Instruction(NodeType::Idiv), _asmType{asmType}, _operand{operand} {}
+        auto &getAsmType() const { return _asmType; }
+        std::shared_ptr<Operand> getOperand() const { return _operand; }
+
+    private:
+        std::shared_ptr<AsmType> _asmType;
+        std::shared_ptr<Operand> _operand;
+    };
+
+    class Div : public Instruction
+    {
+    public:
+        Div(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> operand) : Instruction(NodeType::Div), _asmType{asmType}, _operand{operand} {}
         auto &getAsmType() const { return _asmType; }
         std::shared_ptr<Operand> getOperand() const { return _operand; }
 

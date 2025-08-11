@@ -13,22 +13,34 @@ namespace Types
 {
     struct IntType;
     struct LongType;
+    struct UIntType;
+    struct ULongType;
     struct FunType;
 
-    using DataType = std::variant<IntType, LongType, FunType>;
+    using DataType = std::variant<IntType, LongType, UIntType, ULongType, FunType>;
 
     struct IntType
     {
         IntType() {}
+
+        int getSize() const
+        {
+            return 4;
+        }
 
         int getAlignment() const
         {
             return 4;
         }
 
+        bool isSigned() const
+        {
+            return true;
+        }
+
         std::string toString() const
         {
-            return "Int";
+            return "IntType";
         }
     };
 
@@ -36,14 +48,74 @@ namespace Types
     {
         LongType() {}
 
+        int getSize() const
+        {
+            return 8;
+        }
+
         int getAlignment() const
         {
             return 8;
         }
 
+        bool isSigned() const
+        {
+            return true;
+        }
+
         std::string toString() const
         {
-            return "Long";
+            return "LongType";
+        }
+    };
+
+    struct UIntType
+    {
+        UIntType() {}
+
+        int getSize() const
+        {
+            return 4;
+        }
+
+        int getAlignment() const
+        {
+            return 4;
+        }
+
+        bool isSigned() const
+        {
+            return false;
+        }
+
+        std::string toString() const
+        {
+            return "UIntType";
+        }
+    };
+
+    struct ULongType
+    {
+        ULongType() {}
+
+        int getSize() const
+        {
+            return 8;
+        }
+
+        int getAlignment() const
+        {
+            return 8;
+        }
+
+        bool isSigned() const
+        {
+            return false;
+        }
+
+        std::string toString() const
+        {
+            return "ULongType";
         }
     };
 
@@ -53,10 +125,22 @@ namespace Types
                           { return t.toString(); }, type);
     }
 
+    inline int getSize(const DataType &type)
+    {
+        return std::visit([](const auto &t)
+                          { return t.getSize(); }, type);
+    }
+
     inline int getAlignment(const DataType &type)
     {
         return std::visit([](const auto &t)
                           { return t.getAlignment(); }, type);
+    }
+
+    inline bool isSigned(const DataType &type)
+    {
+        return std::visit([](const auto &t)
+                          { return t.isSigned(); }, type);
     }
 
     struct FunType
@@ -68,9 +152,19 @@ namespace Types
             std::vector<std::shared_ptr<DataType>> paramTypes,
             std::shared_ptr<DataType> retType) : paramTypes(std::move(paramTypes)), retType(std::move(retType)) {}
 
+        int getSize() const
+        {
+            throw std::runtime_error("Internal error: function type doesn't have size");
+        }
+
         int getAlignment() const
         {
             throw std::runtime_error("Internal error: function type doesn't have alignment");
+        }
+
+        bool isSigned() const
+        {
+            throw std::runtime_error("Internal error: signedness doesn't make sense for function type");
         }
 
         std::string toString() const
@@ -90,7 +184,7 @@ namespace Types
         }
     };
 
-    using DataType = std::variant<IntType, LongType, FunType>;
+    using DataType = std::variant<IntType, LongType, UIntType, ULongType, FunType>;
 
     inline DataType makeIntType()
     {
@@ -100,6 +194,16 @@ namespace Types
     inline DataType makeLongType()
     {
         return LongType{};
+    }
+
+    inline DataType makeUIntType()
+    {
+        return UIntType{};
+    }
+
+    inline DataType makeULongType()
+    {
+        return ULongType{};
     }
 
     inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes,
@@ -118,6 +222,16 @@ namespace Types
         return getVariant<LongType>(type);
     }
 
+    inline std::optional<UIntType> getUIntType(const DataType &type)
+    {
+        return getVariant<UIntType>(type);
+    }
+
+    inline std::optional<ULongType> getULongType(const DataType &type)
+    {
+        return getVariant<ULongType>(type);
+    }
+
     inline std::optional<FunType> getFunType(const DataType &type)
     {
         return getVariant<FunType>(type);
@@ -131,6 +245,16 @@ namespace Types
     inline bool isLongType(const DataType &type)
     {
         return isVariant<LongType>(type);
+    }
+
+    inline bool isUIntType(const DataType &type)
+    {
+        return isVariant<UIntType>(type);
+    }
+
+    inline bool isULongType(const DataType &type)
+    {
+        return isVariant<ULongType>(type);
     }
 
     inline bool isFunType(const DataType &type)
@@ -161,13 +285,12 @@ namespace Types
                     }
                     else
                     {
-                        // Compare IntType or LongType (no additional fields to compare)
                         return true;
                     }
                 }
                 else
                 {
-                    return false; // Different types
+                    return false;
                 }
             },
             lhs, rhs);

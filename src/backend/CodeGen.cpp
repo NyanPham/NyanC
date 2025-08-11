@@ -6,6 +6,7 @@
 
 #include "CodeGen.h"
 #include "TACKY.h"
+#include "Const.h"
 #include "Assembly.h"
 #include "AssemblySymbols.h"
 
@@ -14,12 +15,28 @@ std::shared_ptr<Assembly::Imm> zero()
     return std::make_shared<Assembly::Imm>(0);
 }
 
+std::shared_ptr<Types::DataType>
+CodeGen::tackyType(const std::shared_ptr<TACKY::Val> &operand)
+{
+    if (auto constant = std::dynamic_pointer_cast<TACKY::Constant>(operand))
+    {
+        return std::make_shared<Types::DataType>(Constants::typeOfConst(*constant->getConst()));
+    }
+    else if (auto var = std::dynamic_pointer_cast<TACKY::Var>(operand))
+    {
+        auto entry = _symbolTable.get(var->getName());
+        return std::make_shared<Types::DataType>(entry.type);
+    }
+    else
+        throw std::runtime_error("Internal error: invalid operand to get tacky type");
+}
+
 std::shared_ptr<Assembly::AsmType>
 CodeGen::convertType(const Types::DataType &type)
 {
-    if (Types::isIntType(type))
+    if (Types::isIntType(type) || Types::isUIntType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Longword());
-    else if (Types::isLongType(type))
+    else if (Types::isLongType(type) || Types::isULongType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Quadword());
     else
         throw std::runtime_error("Internal error: converting function type to assembly");
@@ -28,22 +45,7 @@ CodeGen::convertType(const Types::DataType &type)
 std::shared_ptr<Assembly::AsmType>
 CodeGen::getAsmType(const std::shared_ptr<TACKY::Val> &operand)
 {
-    if (auto constant = std::dynamic_pointer_cast<TACKY::Constant>(operand))
-    {
-        if (Constants::isConstInt(*constant->getConst()))
-            return std::make_shared<Assembly::AsmType>(Assembly::Longword());
-        else if (Constants::isConstLong(*constant->getConst()))
-            return std::make_shared<Assembly::AsmType>(Assembly::Quadword());
-        else
-            throw std::runtime_error("Internal error: Invalid constant to get asm type");
-    }
-    else if (auto var = std::dynamic_pointer_cast<TACKY::Var>(operand))
-    {
-        auto symbol = _symbolTable.get(var->getName());
-        return convertType(symbol.type);
-    }
-    else
-        throw std::runtime_error("Internal error: Invalid operand to get asm type");
+    return convertType(*tackyType(operand));
 }
 
 std::vector<std::shared_ptr<Assembly::Instruction>>
@@ -83,26 +85,25 @@ CodeGen::passParams(const std::vector<std::string> &params)
 std::shared_ptr<Assembly::Operand>
 CodeGen::convertVal(const std::shared_ptr<TACKY::Val> &val)
 {
-    switch (val->getType())
+    if (auto constant = std::dynamic_pointer_cast<TACKY::Constant>(val))
     {
-    case TACKY::NodeType::Constant:
-    {
-        if (auto constInt = Constants::getConstInt(*std::dynamic_pointer_cast<TACKY::Constant>(val)->getConst()))
+        if (auto constInt = Constants::getConstInt(*constant->getConst()))
             return std::make_shared<Assembly::Imm>(constInt->val);
-        else if (auto constLong = Constants::getConstLong(*std::dynamic_pointer_cast<TACKY::Constant>(val)->getConst()))
+        else if (auto constLong = Constants::getConstLong(*constant->getConst()))
             return std::make_shared<Assembly::Imm>(constLong->val);
+        else if (auto constUInt = Constants::getConstUInt(*constant->getConst()))
+            return std::make_shared<Assembly::Imm>(constUInt->val);
+        else if (auto constULong = Constants::getConstULong(*constant->getConst()))
+            return std::make_shared<Assembly::Imm>(constULong->val);
         else
             throw std::runtime_error("Internal error: Invalid constant to convert to assembly");
     }
-    case TACKY::NodeType::Var:
+    else if (auto var = std::dynamic_pointer_cast<TACKY::Var>(val))
     {
-        return std::make_shared<Assembly::Pseudo>(std::dynamic_pointer_cast<TACKY::Var>(val)->getName());
+        return std::make_shared<Assembly::Pseudo>(var->getName());
     }
-    default:
-    {
+    else
         throw std::runtime_error("Internal error: Invalid value to convert to assembly");
-    }
-    }
 }
 
 Assembly::UnaryOp
@@ -144,10 +145,6 @@ CodeGen::convertBinop(const TACKY::BinaryOp op)
         return Assembly::BinaryOp::Or;
     case TACKY::BinaryOp::BitwiseXor:
         return Assembly::BinaryOp::Xor;
-    case TACKY::BinaryOp::BitShiftLeft:
-        return Assembly::BinaryOp::Sal;
-    case TACKY::BinaryOp::BitShiftRight:
-        return Assembly::BinaryOp::Sar;
     case TACKY::BinaryOp::Divide:
     case TACKY::BinaryOp::Remainder:
     case TACKY::BinaryOp::Equal:
@@ -156,14 +153,42 @@ CodeGen::convertBinop(const TACKY::BinaryOp op)
     case TACKY::BinaryOp::LessOrEqual:
     case TACKY::BinaryOp::GreaterThan:
     case TACKY::BinaryOp::GreaterOrEqual:
-        throw std::runtime_error("Internal Error: Shouldn't handle division like other binary operators!");
+    case TACKY::BinaryOp::BitShiftLeft:
+    case TACKY::BinaryOp::BitShiftRight:
+        throw std::runtime_error("Internal Error: Shouldn't handle like other binary operators!");
     default:
         throw std::runtime_error("Internal Error: Unknown Binary Operators!");
     }
 }
 
+Assembly::BinaryOp
+CodeGen::convertShiftOp(const TACKY::BinaryOp op, bool isSigned)
+{
+    /*
+        NOTE: Sal/Shl are actually the same operations;
+        we use different mnemonics for symmetry with Sar/Shr, which are distinct.
+    */
+    if (op == TACKY::BinaryOp::BitShiftLeft)
+    {
+        if (isSigned)
+            return Assembly::BinaryOp::Sal;
+        else
+            return Assembly::BinaryOp::Shl;
+    }
+
+    if (op == TACKY::BinaryOp::BitShiftRight)
+    {
+        if (isSigned)
+            return Assembly::BinaryOp::Sar;
+        else
+            return Assembly::BinaryOp::Shr;
+    }
+
+    throw std::runtime_error("Internal error: Not a bitwise shift operation");
+}
+
 Assembly::CondCode
-CodeGen::convertCondCode(const TACKY::BinaryOp op)
+CodeGen::convertCondCode(const TACKY::BinaryOp op, bool isSigned)
 {
     switch (op)
     {
@@ -172,13 +197,13 @@ CodeGen::convertCondCode(const TACKY::BinaryOp op)
     case TACKY::BinaryOp::NotEqual:
         return Assembly::CondCode::NE;
     case TACKY::BinaryOp::LessThan:
-        return Assembly::CondCode::L;
+        return isSigned ? Assembly::CondCode::L : Assembly::CondCode::B;
     case TACKY::BinaryOp::LessOrEqual:
-        return Assembly::CondCode::LE;
+        return isSigned ? Assembly::CondCode::LE : Assembly::CondCode::BE;
     case TACKY::BinaryOp::GreaterThan:
-        return Assembly::CondCode::G;
+        return isSigned ? Assembly::CondCode::G : Assembly::CondCode::A;
     case TACKY::BinaryOp::GreaterOrEqual:
-        return Assembly::CondCode::GE;
+        return isSigned ? Assembly::CondCode::GE : Assembly::CondCode::AE;
     default:
         throw std::runtime_error("Internal Error: Unknown binary to cond_code!");
     }
@@ -342,7 +367,8 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         case TACKY::BinaryOp::GreaterThan:
         case TACKY::BinaryOp::GreaterOrEqual:
         {
-            auto condCode = convertCondCode(binaryInst->getOp());
+            auto isSigned = Types::isSigned(*tackyType(binaryInst->getSrc1()));
+            auto condCode = convertCondCode(binaryInst->getOp(), isSigned);
 
             return {
                 std::make_shared<Assembly::Cmp>(srcType, asmSrc1, asmSrc2),
@@ -360,19 +386,32 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
                     ? Assembly::RegName::AX
                     : Assembly::RegName::DX;
 
-            return {
-                std::make_shared<Assembly::Mov>(srcType, asmSrc1, std::make_shared<Assembly::Reg>(Assembly::RegName::AX)),
-                std::make_shared<Assembly::Cdq>(srcType),
-                std::make_shared<Assembly::Idiv>(srcType, asmSrc2),
-                std::make_shared<Assembly::Mov>(srcType, std::make_shared<Assembly::Reg>(resultRegName), asmDst),
-            };
+            if (Types::isSigned(*tackyType(binaryInst->getSrc1())))
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(srcType, asmSrc1, std::make_shared<Assembly::Reg>(Assembly::RegName::AX)),
+                    std::make_shared<Assembly::Cdq>(srcType),
+                    std::make_shared<Assembly::Idiv>(srcType, asmSrc2),
+                    std::make_shared<Assembly::Mov>(srcType, std::make_shared<Assembly::Reg>(resultRegName), asmDst),
+                };
+            }
+            else
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(srcType, asmSrc1, std::make_shared<Assembly::Reg>(Assembly::RegName::AX)),
+                    std::make_shared<Assembly::Mov>(srcType, zero(), std::make_shared<Assembly::Reg>(Assembly::RegName::DX)),
+                    std::make_shared<Assembly::Div>(srcType, asmSrc2),
+                    std::make_shared<Assembly::Mov>(srcType, std::make_shared<Assembly::Reg>(resultRegName), asmDst),
+                };
+            }
         }
 
         // For Bit Shift instructions, source 2 can only be either in CX register or an Imm
         case TACKY::BinaryOp::BitShiftLeft:
         case TACKY::BinaryOp::BitShiftRight:
         {
-            auto asmOp = convertBinop(binaryInst->getOp());
+            auto isSigned = Types::isSigned(*tackyType(binaryInst->getSrc1()));
+            auto asmOp = convertShiftOp(binaryInst->getOp(), isSigned);
             auto asmType = getAsmType(binaryInst->getSrc1());
 
             if (asmSrc2->getType() == Assembly::NodeType::Imm)
@@ -466,6 +505,17 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
 
         return {
             std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Longword()), asmSrc, asmDst),
+        };
+    }
+    case TACKY::NodeType::ZeroExtend:
+    {
+        auto zeroExt = std::dynamic_pointer_cast<TACKY::ZeroExtend>(inst);
+
+        auto asmSrc = convertVal(zeroExt->getSrc());
+        auto asmDst = convertVal(zeroExt->getDst());
+
+        return {
+            std::make_shared<Assembly::MovZeroExtend>(asmSrc, asmDst),
         };
     }
     default:

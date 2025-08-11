@@ -3,6 +3,9 @@
 #include <optional>
 #include <memory>
 #include <set>
+#include <unordered_set>
+#include <algorithm>
+#include <limits>
 
 #include "Token.h"
 #include "Lexer.h"
@@ -18,7 +21,7 @@ EBNF for a subset of C:
 <variable-declaration> ::= { <specifier> }+ <identifier> [ "=" <exp> ] ";"
 <function-declaration> ::= { <specifier> }+ <identifier> "(" <param-list> ")" (<block> | ";")
 <param-list> ::= "void" | { <type-specifier> }+ <identifier> { "," { <type-specifier> }+  <identifier> }
-<type-specifier> ::= "int" | "long"
+<type-specifier> ::= "int" | "long" | "signed" | "unsigned"
 <specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
@@ -50,10 +53,12 @@ EBNF for a subset of C:
         | ">" | ">="
         | "&" | "^" | "|" | "<<" | ">>"
         | "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-<const> ::= <int> | <long>
+<const> ::= <int> | <long> | <uint> | <ulong>
 <identifier> ::= ? An identifier token ?
 <int> ::= ? An integer token ?
 <long> ::= ? An int or long token ?
+<uint> ::= ? An unsigned int token ?
+<ulong> ::= ? An unsigned int or unsigned long token ?
 */
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
@@ -371,41 +376,93 @@ AST::BinaryOp Parser::parseBinop()
 
 std::shared_ptr<AST::Constant> Parser::parseConstant()
 {
-    constexpr int64_t MAX_INT64 = static_cast<int64_t>((uint64_t(1) << 63) - 1);
-    constexpr int32_t MAX_INT32 = (static_cast<uint32_t>(1) << 31) - 1;
+    constexpr int64_t MAX_INT64 = std::numeric_limits<int64_t>::max();
+    constexpr int32_t MAX_INT32 = std::numeric_limits<int32_t>::max();
+    constexpr uint32_t MAX_UINT32 = std::numeric_limits<uint32_t>::max();
+    constexpr uint64_t MAX_UINT64 = std::numeric_limits<uint64_t>::max();
 
-    std::set<TokenType> constNodeTypes = {
+    const std::set<TokenType> constTokenTypes = {
         TokenType::CONST_INT,
         TokenType::CONST_LONG,
+        TokenType::CONST_UINT,
+        TokenType::CONST_ULONG,
     };
 
-    std::optional<Token> token{takeToken()};
-
-    if (token.has_value())
+    std::optional<Token> tokenOpt = takeToken();
+    if (!tokenOpt)
     {
-        if (!constNodeTypes.count(token->getType()))
-        {
-            raiseError("a constant", tokenTypeToString(token->getType()));
-        }
-
-        if (std::holds_alternative<uint64_t>(token->getValue()))
-        {
-            uint64_t value{std::get<uint64_t>(token->getValue())};
-            if (value > MAX_INT64)
-                throw std::runtime_error("Constant too large to fit in an int or long: " + std::to_string(value));
-
-            if (token->getType() == TokenType::CONST_INT && value <= MAX_INT32)
-                return std::make_shared<AST::Constant>(
-                    std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(value))));
-            else
-                return std::make_shared<AST::Constant>(
-                    std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
-        }
-
-        raiseError("an integer", "non-integer value");
+        raiseError("a constant", "empty token");
+        return nullptr; // unreachable if raiseError exits.
     }
 
-    raiseError("a constant", "empty token");
+    Token token = tokenOpt.value();
+
+    if (!constTokenTypes.count(token.getType()))
+    {
+        raiseError("a constant", tokenTypeToString(token.getType()));
+    }
+
+    if (!std::holds_alternative<uint64_t>(token.getValue()))
+    {
+        raiseError("an integer", "non-integer value");
+    }
+    uint64_t value = std::get<uint64_t>(token.getValue());
+
+    if (token.getType() == TokenType::CONST_INT || token.getType() == TokenType::CONST_LONG)
+    {
+        if (value > static_cast<uint64_t>(MAX_INT64))
+        {
+            throw std::runtime_error("Constant too large to fit in an int or long: " + std::to_string(value));
+        }
+
+        if (token.getType() == TokenType::CONST_INT)
+        {
+            if (value <= static_cast<uint64_t>(MAX_INT32))
+            {
+                return std::make_shared<AST::Constant>(
+                    std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(value))));
+            }
+            else
+            {
+                return std::make_shared<AST::Constant>(
+                    std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
+            }
+        }
+        else
+        {
+            return std::make_shared<AST::Constant>(
+                std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
+        }
+    }
+
+    else if (token.getType() == TokenType::CONST_UINT || token.getType() == TokenType::CONST_ULONG)
+    {
+        if (value > MAX_UINT64) // Already chunked to uint64_t
+        {
+            throw std::runtime_error("Constant too large to fit in an unsigned int or long: " + std::to_string(value));
+        }
+
+        if (token.getType() == TokenType::CONST_UINT)
+        {
+            if (value <= static_cast<uint64_t>(MAX_UINT32))
+            {
+                return std::make_shared<AST::Constant>(
+                    std::make_shared<Constants::Const>(Constants::makeConstUInt(static_cast<uint32_t>(value))));
+            }
+            else
+            {
+                return std::make_shared<AST::Constant>(
+                    std::make_shared<Constants::Const>(Constants::makeConstULong(value)));
+            }
+        }
+        else
+        {
+            return std::make_shared<AST::Constant>(
+                std::make_shared<Constants::Const>(Constants::makeConstULong(value)));
+        }
+    }
+
+    throw std::runtime_error("Internal error: unknown token constant type");
     return nullptr;
 }
 
@@ -437,7 +494,7 @@ std::vector<Token> Parser::parseTypeSpecifierList()
     std::vector<Token> typeSpecifiers{};
     auto nextToken{peekToken()};
 
-    while (nextToken.has_value() && _typeSpecifierTypes.count(nextToken->getType()))
+    while (nextToken.has_value() && isTypeSpecifier(nextToken.value()))
     {
         auto spec{takeToken()};
         typeSpecifiers.push_back(spec.value());
@@ -452,7 +509,7 @@ std::vector<Token> Parser::parseSpecifierList()
     std::vector<Token> specifiers{};
     auto nextToken{peekToken()};
 
-    while (nextToken.has_value() && _specifierTypes.count(nextToken->getType()))
+    while (nextToken.has_value() && isSpecifier(nextToken.value()))
     {
         auto spec{takeToken()};
         specifiers.push_back(spec.value());
@@ -477,45 +534,37 @@ AST::StorageClass Parser::parseStorageClass(const Token &spec)
 
 Types::DataType Parser::parseType(const std::vector<Token> &typeList)
 {
-    switch (typeList.size())
+    bool hasDuplicateTokenType(const std::vector<Token> &tokens);
+    bool containsUnsignedAndSigned(const std::vector<Token> &tokens);
+    bool containsToken(const std::vector<Token> &tokens, TokenType type);
+
+    if (
+        typeList.empty() ||
+        hasDuplicateTokenType(typeList) ||
+        containsUnsignedAndSigned(typeList))
     {
-    case 1:
-    {
-        switch (typeList[0].getType())
-        {
-        case TokenType::KEYWORD_INT:
-            return Types::IntType{};
-        case TokenType::KEYWORD_LONG:
-            return Types::LongType{};
-        default:
-            throw std::runtime_error("Internal error: invalid type specifier");
-        }
+        throw std::runtime_error("Invalid type specifier");
     }
-    case 2:
-    {
-        if (
-            (typeList[0].getType() == TokenType::KEYWORD_INT &&
-             typeList[1].getType() == TokenType::KEYWORD_LONG) ||
-            (typeList[0].getType() == TokenType::KEYWORD_LONG &&
-             typeList[1].getType() == TokenType::KEYWORD_INT))
-        {
-            return Types::LongType{};
-        }
-        throw std::runtime_error("Internal error: invalid type specifier");
-    }
-    default:
-        throw std::runtime_error("Internal error: invalid type specifier");
-    }
+
+    if (containsToken(typeList, TokenType::KEYWORD_UNSIGNED) && containsToken(typeList, TokenType::KEYWORD_LONG))
+        return Types::makeULongType();
+    else if (containsToken(typeList, TokenType::KEYWORD_UNSIGNED))
+        return Types::makeUIntType();
+    else if (containsToken(typeList, TokenType::KEYWORD_LONG))
+        return Types::makeLongType();
+    else
+        return Types::makeIntType();
 }
 
-std::pair<Types::DataType, std::optional<AST::StorageClass>> Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
+std::pair<Types::DataType, std::optional<AST::StorageClass>>
+Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
 {
     std::vector<Token> types{};
     std::vector<Token> storageClasses{};
 
     for (const auto &spec : specifierList)
     {
-        if (_typeSpecifierTypes.count(spec.getType()))
+        if (isTypeSpecifier(spec))
             types.push_back(spec);
         else
             storageClasses.push_back(spec);
@@ -534,7 +583,8 @@ std::pair<Types::DataType, std::optional<AST::StorageClass>> Parser::parseTypeAn
     return {type, storageClass};
 }
 
-std::optional<std::shared_ptr<AST::Expression>> Parser::parseOptionalExp(TokenType delim)
+std::optional<std::shared_ptr<AST::Expression>>
+Parser::parseOptionalExp(TokenType delim)
 {
     auto nextToken{peekToken()};
 
@@ -591,7 +641,7 @@ std::shared_ptr<AST::ForInit> Parser::parseForInit()
         raiseError("a for initializer", "empty token");
     }
 
-    if (_specifierTypes.count(nextToken->getType()))
+    if (isSpecifier(nextToken.value()))
     {
         return std::make_shared<AST::InitDecl>(parseVariableDeclaration());
     }
@@ -688,6 +738,8 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
     {
     case TokenType::CONST_INT:
     case TokenType::CONST_LONG:
+    case TokenType::CONST_UINT:
+    case TokenType::CONST_ULONG:
     {
         auto c = parseConstant();
         return c;
@@ -754,7 +806,7 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
     }
     case TokenType::OPEN_PAREN:
     {
-        if (nextTokens[1].has_value() && _typeSpecifierTypes.count(nextTokens[1]->getType()))
+        if (nextTokens[1].has_value() && isTypeSpecifier(nextTokens[1].value()))
         {
             // It's a cast, consume the "(", then parse the type specifiers
             takeToken();
@@ -1124,7 +1176,10 @@ std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()
 {
     auto nextToken{peekToken()};
 
-    if (_specifierTypes.count(nextToken->getType()))
+    if (!nextToken.has_value())
+        raiseError("a token", "end of tokens");
+
+    if (isSpecifier(nextToken.value()))
         return parseDeclaration();
     else
         return parseStatement();
@@ -1161,4 +1216,32 @@ std::shared_ptr<AST::Program> Parser::parse(const std::string &input)
     _lexer.setInput(input);
 
     return parseProgram();
+}
+
+bool hasDuplicateTokenType(const std::vector<Token> &tokens)
+{
+    std::unordered_set<TokenType> seenTypes;
+
+    for (const auto &token : tokens)
+    {
+        if (seenTypes.find(token.getType()) != seenTypes.end())
+        {
+            return true;
+        }
+        seenTypes.insert(token.getType());
+    }
+
+    return false;
+}
+
+bool containsToken(const std::vector<Token> &tokens, TokenType type)
+{
+    return std::find_if(tokens.begin(), tokens.end(), [type](const Token &token)
+                        { return token.getType() == type; }) != tokens.end();
+}
+
+bool containsUnsignedAndSigned(const std::vector<Token> &tokens)
+{
+    return containsToken(tokens, TokenType::KEYWORD_UNSIGNED) &&
+           containsToken(tokens, TokenType::KEYWORD_SIGNED);
 }

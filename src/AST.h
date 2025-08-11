@@ -15,7 +15,7 @@ program = Program(declaration*)
 declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
 variable_declaration = (identifier name, exp? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
-type = Int | Long | FunType(type* params, type ret)
+type = Int | Long | UInt | ULong | FunType(type* params, type ret)
 storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
@@ -50,6 +50,7 @@ binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
     | GreaterThan | GreaterOrEqual
     | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
+const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int)
 */
 
 namespace AST
@@ -189,6 +190,14 @@ namespace AST
             else if (Constants::isConstLong(lhsVal) && Constants::isConstLong(rhsVal))
             {
                 return Constants::getConstLong(lhsVal)->val < Constants::getConstLong(rhsVal)->val;
+            }
+            else if (Constants::isConstUInt(lhsVal) && Constants::isConstUInt(rhsVal))
+            {
+                return Constants::getConstUInt(lhsVal)->val < Constants::getConstUInt(rhsVal)->val;
+            }
+            else if (Constants::isConstULong(lhsVal) && Constants::isConstULong(rhsVal))
+            {
+                return Constants::getConstULong(lhsVal)->val < Constants::getConstULong(rhsVal)->val;
             }
             else
             {

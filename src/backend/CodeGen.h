@@ -15,6 +15,7 @@ class CodeGen
 public:
     CodeGen(Symbols::SymbolTable &symbolTable) : _symbolTable(symbolTable) {}
 
+    std::shared_ptr<Types::DataType> tackyType(const std::shared_ptr<TACKY::Val> &operand);
     std::shared_ptr<Assembly::AsmType> convertType(const Types::DataType &type);
     std::shared_ptr<Assembly::AsmType> getAsmType(const std::shared_ptr<TACKY::Val> &operand);
     std::vector<std::shared_ptr<Assembly::Instruction>> passParams(const std::vector<std::string> &params);
@@ -22,7 +23,8 @@ public:
     std::shared_ptr<Assembly::Operand> convertVal(const std::shared_ptr<TACKY::Val> &val);
     Assembly::UnaryOp convertUnop(const TACKY::UnaryOp op);
     Assembly::BinaryOp convertBinop(const TACKY::BinaryOp op);
-    Assembly::CondCode convertCondCode(const TACKY::BinaryOp op);
+    Assembly::BinaryOp convertShiftOp(const TACKY::BinaryOp op, bool isSigned);
+    Assembly::CondCode convertCondCode(const TACKY::BinaryOp op, bool isSigned);
     std::vector<std::shared_ptr<Assembly::Instruction>> convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall);
     std::vector<std::shared_ptr<Assembly::Instruction>> convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst);
     std::shared_ptr<Assembly::TopLevel> convertTopLevel(const std::shared_ptr<TACKY::TopLevel> &topLevel);

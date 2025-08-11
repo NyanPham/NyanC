@@ -16,6 +16,7 @@ top_level = Function(identifier name, bool global, identifier* params, Instructi
 instruction = Return(val)
     | SignExtend(val src, val dst)
     | Truncate(val src, val dst)
+    | ZeroExtend(val src, val dst)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
     | Copy(val src, val dst)
@@ -43,6 +44,7 @@ namespace TACKY
     class Return;
     class SignExtend;
     class Truncate;
+    class ZeroExtend;
     class Unary;
     class Binary;
     class Copy;
@@ -63,6 +65,7 @@ namespace TACKY
         Return,
         SignExtend,
         Truncate,
+        ZeroExtend,
         Unary,
         Binary,
         Copy,
@@ -306,6 +309,19 @@ namespace TACKY
     {
     public:
         Truncate(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::Truncate), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class ZeroExtend : public Instruction
+    {
+    public:
+        ZeroExtend(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::ZeroExtend), _src{src}, _dst{dst} {}
 
         auto &getSrc() const { return _src; }
         auto &getDst() const { return _dst; }

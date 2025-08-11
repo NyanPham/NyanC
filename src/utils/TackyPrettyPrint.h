@@ -74,6 +74,9 @@ private:
         case TACKY::NodeType::Truncate:
             visitTruncate(static_cast<const TACKY::Truncate &>(node), indent);
             break;
+        case TACKY::NodeType::ZeroExtend:
+            visitZeroExtend(static_cast<const TACKY::ZeroExtend &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -357,6 +360,20 @@ private:
         visit(*truncate.getSrc(), false);
         std::cout << getIndent() << "dst=";
         visit(*truncate.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitZeroExtend(const TACKY::ZeroExtend &zeroExtend, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "ZeroExtend(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*zeroExtend.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*zeroExtend.getDst(), false);
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

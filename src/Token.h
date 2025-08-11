@@ -10,10 +10,14 @@ enum class TokenType
     IDENTIFIER,
     CONST_INT,
     CONST_LONG,
+    CONST_UINT,
+    CONST_ULONG,
 
     // Keywords
     KEYWORD_INT,
     KEYWORD_LONG,
+    KEYWORD_SIGNED,
+    KEYWORD_UNSIGNED,
     KEYWORD_VOID,
     KEYWORD_RETURN,
     KEYWORD_IF,

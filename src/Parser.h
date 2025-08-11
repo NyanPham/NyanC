@@ -77,6 +77,8 @@ private:
     std::set<TokenType> _specifierTypes = {
         TokenType::KEYWORD_INT,
         TokenType::KEYWORD_LONG,
+        TokenType::KEYWORD_SIGNED,
+        TokenType::KEYWORD_UNSIGNED,
         TokenType::KEYWORD_STATIC,
         TokenType::KEYWORD_EXTERN,
     };
@@ -84,7 +86,19 @@ private:
     std::set<TokenType> _typeSpecifierTypes = {
         TokenType::KEYWORD_INT,
         TokenType::KEYWORD_LONG,
+        TokenType::KEYWORD_SIGNED,
+        TokenType::KEYWORD_UNSIGNED,
     };
+
+    bool isTypeSpecifier(const Token &token)
+    {
+        return _typeSpecifierTypes.find(token.getType()) != _typeSpecifierTypes.end();
+    }
+
+    bool isSpecifier(const Token &token)
+    {
+        return _specifierTypes.find(token.getType()) != _specifierTypes.end();
+    }
 };
 
 class ParseError : public std::runtime_error

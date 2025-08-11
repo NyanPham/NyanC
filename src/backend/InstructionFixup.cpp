@@ -159,6 +159,34 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
             };
         }
     }
+    case Assembly::NodeType::MovZeroExtend:
+    {
+        /* Rewrite MovZeroExtend as one or two instructions */
+        auto movzx = std::dynamic_pointer_cast<Assembly::MovZeroExtend>(inst);
+
+        if (movzx->getSrc()->getType() == Assembly::NodeType::Reg)
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
+                    movzx->getSrc(),
+                    movzx->getDst()),
+            };
+        }
+        else
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
+                    movzx->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
+                    movzx->getDst()),
+            };
+        }
+    }
     case Assembly::NodeType::Idiv:
     {
         /* Idiv cannot operate on constant */
@@ -173,6 +201,30 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
                 std::make_shared<Assembly::Idiv>(
                     idiv->getAsmType(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+            };
+        }
+        else
+        {
+            return {
+                inst,
+            };
+        }
+    }
+    case Assembly::NodeType::Div:
+    {
+        /* Div cannot operate on constant */
+        auto div = std::dynamic_pointer_cast<Assembly::Div>(inst);
+
+        if (isImmOperand(div->getOperand()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(
+                    div->getAsmType(),
+                    std::dynamic_pointer_cast<Assembly::Imm>(div->getOperand()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Div>(
+                    div->getAsmType(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
             };
         }

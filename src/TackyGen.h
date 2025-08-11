@@ -18,7 +18,7 @@ public:
     std::string createTmp(const std::optional<Types::DataType> &type);
     std::shared_ptr<Constants::Const> mkConst(const std::optional<Types::DataType> &type, int64_t i);
     std::shared_ptr<AST::Constant> mkAstConst(const std::optional<Types::DataType> &type, int64_t i);
-    std::shared_ptr<TACKY::Instruction> getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &dstType);
+    std::shared_ptr<TACKY::Instruction> getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &srcType, const Types::DataType &dstType);
 
     std::string breakLabel(const std::string &id);
     std::string continueLabel(const std::string &id);
