@@ -28,14 +28,16 @@ namespace AssemblySymbols
     {
         Assembly::AsmType asmType;
         bool isStatic;
+        bool isConstant;
 
         Obj() = default;
-        Obj(Assembly::AsmType asmType, bool isStatic) : asmType{asmType}, isStatic{isStatic} {}
+        Obj(Assembly::AsmType asmType, bool isStatic, bool isConstant) : asmType{asmType}, isStatic{isStatic}, isConstant{isConstant} {}
 
         std::string toString() const
         {
             return "Obj { asmType: " + Assembly::asmTypeToString(asmType) +
-                   ", isStatic: " + std::string(isStatic ? "true" : "false") + " }";
+                   ", isStatic: " + std::string(isStatic ? "true" : "false") +
+                   ", isConstant: " + std::string(isConstant ? "true" : "false") + " }";
         }
     };
 
@@ -54,7 +56,12 @@ namespace AssemblySymbols
 
         void addVar(const std::string &varName, const std::shared_ptr<Assembly::AsmType> &t, bool isStatic)
         {
-            symbols[varName] = Obj(*t, isStatic);
+            symbols[varName] = Obj(*t, isStatic, false);
+        }
+
+        void addConstant(const std::string &constName, const std::shared_ptr<Assembly::AsmType> &t)
+        {
+            symbols[constName] = Obj(*t, true, true);
         }
 
         void setBytesRequired(const std::string &funName, int bytesRequired)
@@ -84,7 +91,7 @@ namespace AssemblySymbols
             {
                 if (Assembly::isAsmLongword(obj->asmType))
                     return 4;
-                if (Assembly::isAsmQuadword(obj->asmType))
+                if (Assembly::isAsmQuadword(obj->asmType) || Assembly::isAsmDouble(obj->asmType))
                     return 8;
             }
 
@@ -101,7 +108,7 @@ namespace AssemblySymbols
             {
                 if (Assembly::isAsmLongword(obj->asmType))
                     return 4;
-                if (Assembly::isAsmQuadword(obj->asmType))
+                if (Assembly::isAsmQuadword(obj->asmType) || Assembly::isAsmDouble(obj->asmType))
                     return 8;
             }
 
@@ -124,6 +131,18 @@ namespace AssemblySymbols
             auto entry = get(varName);
             if (auto *obj = std::get_if<Obj>(&entry))
                 return obj->isStatic;
+            else
+                throw std::runtime_error("Internal error: this is a function, not an object");
+        }
+
+        bool isConstant(const std::string &constName)
+        {
+            if (!exists(constName))
+                throw std::runtime_error("Internal error: symbol not found");
+
+            auto entry = get(constName);
+            if (auto *obj = std::get_if<Obj>(&entry))
+                return obj->isConstant;
             else
                 throw std::runtime_error("Internal error: this is a function, not an object");
         }

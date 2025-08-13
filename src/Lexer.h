@@ -13,7 +13,7 @@
 struct TokenDef
 {
     std::regex reg;
-    std::function<Token(const std::string &, int)> converter;
+    std::function<Token(const std::string &, size_t &)> converter;
 };
 
 class Lexer
@@ -32,7 +32,7 @@ public:
 
 private:
     std::string _input;
-    long _pos = 0;
+    size_t _pos = 0;
     std::vector<TokenDef> _tokenDefs;
     const std::string _whitespace = " \t\n\r\v\f ";
 };

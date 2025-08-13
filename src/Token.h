@@ -12,12 +12,14 @@ enum class TokenType
     CONST_LONG,
     CONST_UINT,
     CONST_ULONG,
+    CONST_DOUBLE,
 
     // Keywords
     KEYWORD_INT,
     KEYWORD_LONG,
     KEYWORD_SIGNED,
     KEYWORD_UNSIGNED,
+    KEYWORD_DOUBLE,
     KEYWORD_VOID,
     KEYWORD_RETURN,
     KEYWORD_IF,
@@ -80,7 +82,7 @@ enum class TokenType
     COLON,
 };
 
-using TokenValue = std::variant<std::string, uint64_t>;
+using TokenValue = std::variant<std::string, uint64_t, long double>;
 
 class Token
 {

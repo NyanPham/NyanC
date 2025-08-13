@@ -17,10 +17,7 @@ namespace Initializers
         IntInit() = default;
         IntInit(int32_t val) : val{val} {}
 
-        std::string toString() const
-        {
-            return "IntInit(" + std::to_string(val) + ")";
-        }
+        std::string toString() const { return "IntInit(" + std::to_string(val) + ")"; }
     };
 
     struct LongInit
@@ -30,10 +27,7 @@ namespace Initializers
         LongInit() = default;
         LongInit(int64_t val) : val{val} {}
 
-        std::string toString() const
-        {
-            return "LongInit(" + std::to_string(val) + ")";
-        }
+        std::string toString() const { return "LongInit(" + std::to_string(val) + ")"; }
     };
 
     struct UIntInit
@@ -43,10 +37,7 @@ namespace Initializers
         UIntInit() = default;
         UIntInit(uint32_t val) : val{val} {}
 
-        std::string toString() const
-        {
-            return "UIntInit(" + std::to_string(val) + ")";
-        }
+        std::string toString() const { return "UIntInit(" + std::to_string(val) + ")"; }
     };
 
     struct ULongInit
@@ -56,13 +47,20 @@ namespace Initializers
         ULongInit() = default;
         ULongInit(uint64_t val) : val{val} {}
 
-        std::string toString() const
-        {
-            return "ULongInit(" + std::to_string(val) + ")";
-        }
+        std::string toString() const { return "ULongInit(" + std::to_string(val) + ")"; }
     };
 
-    using StaticInit = std::variant<IntInit, LongInit, UIntInit, ULongInit>;
+    struct DoubleInit
+    {
+        double val;
+
+        DoubleInit() = default;
+        DoubleInit(double val) : val{val} {}
+
+        std::string toString() const { return "DoubleInit(" + std::to_string(val) + ")"; }
+    };
+
+    using StaticInit = std::variant<IntInit, LongInit, UIntInit, ULongInit, DoubleInit>;
 
     inline std::string toString(const StaticInit &staticInit)
     {
@@ -90,6 +88,11 @@ namespace Initializers
         return isVariant<ULongInit>(staticInit);
     }
 
+    inline bool isDoubleInit(const StaticInit &staticInit)
+    {
+        return isVariant<DoubleInit>(staticInit);
+    }
+
     inline const std::optional<IntInit> getIntInit(const StaticInit &staticInit)
     {
         return getVariant<IntInit>(staticInit);
@@ -110,6 +113,11 @@ namespace Initializers
         return getVariant<ULongInit>(staticInit);
     }
 
+    inline const std::optional<DoubleInit> getDoubleInit(const StaticInit &staticInit)
+    {
+        return getVariant<DoubleInit>(staticInit);
+    }
+
     inline StaticInit zero(const Types::DataType &type)
     {
         if (Types::isIntType(type))
@@ -120,20 +128,25 @@ namespace Initializers
             return UIntInit{0};
         else if (Types::isULongType(type))
             return ULongInit{0};
+        else if (Types::isDoubleType(type))
+            return DoubleInit{0.0};
         else
             throw std::runtime_error("Internal error: Zero doesn't make sense for function type");
     }
 
     inline bool isZero(const StaticInit &staticInit)
     {
-        if (isVariant<IntInit>(staticInit))
-            return getVariant<IntInit>(staticInit)->val == 0;
-        else if (isVariant<LongInit>(staticInit))
-            return getVariant<LongInit>(staticInit)->val == 0;
-        else if (isVariant<UIntInit>(staticInit))
-            return getVariant<UIntInit>(staticInit)->val == 0;
-        else if (isVariant<ULongInit>(staticInit))
-            return getVariant<ULongInit>(staticInit)->val == 0;
+        if (auto intInit = getIntInit(staticInit))
+            return intInit->val == 0;
+        else if (auto longInit = getLongInit(staticInit))
+            return longInit->val == 0;
+        else if (auto uintInit = getUIntInit(staticInit))
+            return uintInit->val == 0;
+        else if (auto ulongInit = getULongInit(staticInit))
+            return ulongInit->val == 0;
+        else if (auto doubleInit = getDoubleInit(staticInit))
+            // Note: consider all double non-zero since we don't know if it's zero or negative-zero
+            return false;
         else
             throw std::runtime_error("Internal error: Invalid static initializer");
     }

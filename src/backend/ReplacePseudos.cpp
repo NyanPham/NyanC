@@ -196,7 +196,6 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
         auto push = std::dynamic_pointer_cast<Assembly::Push>(inst);
 
         auto [newOperand, state1] = replaceOperand(push->getOperand(), state);
-
         auto newPush = std::make_shared<Assembly::Push>(newOperand);
 
         return {
@@ -204,6 +203,33 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
             state1,
         };
     }
+    case Assembly::NodeType::Cvttsd2si:
+    {
+        auto cvt = std::dynamic_pointer_cast<Assembly::Cvttsd2si>(inst);
+
+        auto [newSrc, state1] = replaceOperand(cvt->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(cvt->getDst(), state1);
+        auto newCvt = std::make_shared<Assembly::Cvttsd2si>(cvt->getAsmType(), newSrc, newDst);
+
+        return {
+            newCvt,
+            state2,
+        };
+    }
+    case Assembly::NodeType::Cvtsi2sd:
+    {
+        auto cvt = std::dynamic_pointer_cast<Assembly::Cvtsi2sd>(inst);
+
+        auto [newSrc, state1] = replaceOperand(cvt->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(cvt->getDst(), state1);
+        auto newCvt = std::make_shared<Assembly::Cvtsi2sd>(cvt->getAsmType(), newSrc, newDst);
+
+        return {
+            newCvt,
+            state2,
+        };
+    }
+
     case Assembly::NodeType::Ret:
     case Assembly::NodeType::Cdq:
     case Assembly::NodeType::Label:

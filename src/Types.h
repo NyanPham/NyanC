@@ -15,108 +15,59 @@ namespace Types
     struct LongType;
     struct UIntType;
     struct ULongType;
+    struct DoubleType;
     struct FunType;
 
-    using DataType = std::variant<IntType, LongType, UIntType, ULongType, FunType>;
+    using DataType = std::variant<IntType, LongType, UIntType, ULongType, DoubleType, FunType>;
 
     struct IntType
     {
         IntType() {}
 
-        int getSize() const
-        {
-            return 4;
-        }
-
-        int getAlignment() const
-        {
-            return 4;
-        }
-
-        bool isSigned() const
-        {
-            return true;
-        }
-
-        std::string toString() const
-        {
-            return "IntType";
-        }
+        int getSize() const { return 4; }
+        int getAlignment() const { return 4; }
+        bool isSigned() const { return true; }
+        std::string toString() const { return "IntType"; }
     };
 
     struct LongType
     {
         LongType() {}
 
-        int getSize() const
-        {
-            return 8;
-        }
-
-        int getAlignment() const
-        {
-            return 8;
-        }
-
-        bool isSigned() const
-        {
-            return true;
-        }
-
-        std::string toString() const
-        {
-            return "LongType";
-        }
+        int getSize() const { return 8; }
+        int getAlignment() const { return 8; }
+        bool isSigned() const { return true; }
+        std::string toString() const { return "LongType"; }
     };
 
     struct UIntType
     {
         UIntType() {}
 
-        int getSize() const
-        {
-            return 4;
-        }
-
-        int getAlignment() const
-        {
-            return 4;
-        }
-
-        bool isSigned() const
-        {
-            return false;
-        }
-
-        std::string toString() const
-        {
-            return "UIntType";
-        }
+        int getSize() const { return 4; }
+        int getAlignment() const { return 4; }
+        bool isSigned() const { return false; }
+        std::string toString() const { return "UIntType"; }
     };
 
     struct ULongType
     {
         ULongType() {}
 
-        int getSize() const
-        {
-            return 8;
-        }
+        int getSize() const { return 8; }
+        int getAlignment() const { return 8; }
+        bool isSigned() const { return false; }
+        std::string toString() const { return "ULongType"; }
+    };
 
-        int getAlignment() const
-        {
-            return 8;
-        }
+    struct DoubleType
+    {
+        DoubleType() {}
 
-        bool isSigned() const
-        {
-            return false;
-        }
-
-        std::string toString() const
-        {
-            return "ULongType";
-        }
+        int getSize() const { return 8; }
+        int getAlignment() const { return 8; }
+        bool isSigned() const { throw std::runtime_error("Internal error: signedness doens't make sense for double type"); }
+        std::string toString() const { return "DoubleType"; }
     };
 
     inline std::string dataTypeToString(const DataType &type)
@@ -184,8 +135,6 @@ namespace Types
         }
     };
 
-    using DataType = std::variant<IntType, LongType, UIntType, ULongType, FunType>;
-
     inline DataType makeIntType()
     {
         return IntType{};
@@ -204,6 +153,11 @@ namespace Types
     inline DataType makeULongType()
     {
         return ULongType{};
+    }
+
+    inline DataType makeDoubleType()
+    {
+        return DoubleType{};
     }
 
     inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes,
@@ -232,6 +186,11 @@ namespace Types
         return getVariant<ULongType>(type);
     }
 
+    inline std::optional<DoubleType> getDoubleType(const DataType &type)
+    {
+        return getVariant<DoubleType>(type);
+    }
+
     inline std::optional<FunType> getFunType(const DataType &type)
     {
         return getVariant<FunType>(type);
@@ -255,6 +214,11 @@ namespace Types
     inline bool isULongType(const DataType &type)
     {
         return isVariant<ULongType>(type);
+    }
+
+    inline bool isDoubleType(const DataType &type)
+    {
+        return isVariant<DoubleType>(type);
     }
 
     inline bool isFunType(const DataType &type)

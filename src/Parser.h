@@ -77,6 +77,7 @@ private:
     std::set<TokenType> _specifierTypes = {
         TokenType::KEYWORD_INT,
         TokenType::KEYWORD_LONG,
+        TokenType::KEYWORD_DOUBLE,
         TokenType::KEYWORD_SIGNED,
         TokenType::KEYWORD_UNSIGNED,
         TokenType::KEYWORD_STATIC,
@@ -86,6 +87,7 @@ private:
     std::set<TokenType> _typeSpecifierTypes = {
         TokenType::KEYWORD_INT,
         TokenType::KEYWORD_LONG,
+        TokenType::KEYWORD_DOUBLE,
         TokenType::KEYWORD_SIGNED,
         TokenType::KEYWORD_UNSIGNED,
     };

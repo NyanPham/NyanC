@@ -26,6 +26,10 @@ Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &
 {
     if (t1 == t2)
         return t1;
+
+    if (Types::isDoubleType(t1) || Types::isDoubleType(t2))
+        return Types::makeDoubleType();
+
     else if (Types::getSize(t1) == Types::getSize(t2))
     {
         if (Types::isSigned(t1))
@@ -44,10 +48,10 @@ Convert a constant to static initializer, performing type converion if needed.
 */
 Symbols::InitialValue toStaticInit(const Types::DataType &varType, const std::shared_ptr<AST::Expression> &e)
 {
-    if (auto c = std::dynamic_pointer_cast<AST::Constant>(e))
+    if (auto astConstant = std::dynamic_pointer_cast<AST::Constant>(e))
     {
         Initializers::StaticInit initVal;
-        auto convertedConstant = ConstConvert::convert(varType, c->getConst());
+        auto convertedConstant = ConstConvert::convert(varType, astConstant->getConst());
 
         if (auto constInt = Constants::getConstInt(*convertedConstant))
             initVal = Initializers::IntInit{constInt->val};
@@ -57,6 +61,8 @@ Symbols::InitialValue toStaticInit(const Types::DataType &varType, const std::sh
             initVal = Initializers::UIntInit{constUInt->val};
         else if (auto constULong = Constants::getConstULong(*convertedConstant))
             initVal = Initializers::ULongInit{constULong->val};
+        else if (auto constDouble = Constants::getConstDouble(*convertedConstant))
+            initVal = Initializers::DoubleInit{constDouble->val};
         else
             throw std::runtime_error("Internal error: invalid constant type");
 
@@ -99,6 +105,10 @@ TypeChecker::typeCheckUnary(const std::shared_ptr<AST::Unary> &unary)
         typedUnExp->setDataType(std::make_optional(Types::makeIntType()));
         return typedUnExp;
     }
+    else if (unary->getOp() == AST::UnaryOp::Complement && Types::isDoubleType(*typedInner->getDataType()))
+    {
+        throw std::runtime_error("Can't apply bitwise complement to double");
+    }
     else
     {
         typedUnExp->setDataType(typedInner->getDataType());
@@ -114,10 +124,17 @@ TypeChecker::typeCheckBinary(const std::shared_ptr<AST::Binary> &binary)
 
     if (binary->getOp() == AST::BinaryOp::BitShiftLeft || binary->getOp() == AST::BinaryOp::BitShiftRight)
     {
-        // Don't perform usual arithmetic conversions; result has type of left operand
-        auto typedBinExp = std::make_shared<AST::Binary>(binary->getOp(), typedE1, typedE2);
-        typedBinExp->setDataType(typedE1->getDataType());
-        return typedBinExp;
+        if (Types::isDoubleType(*typedE1->getDataType()) || Types::isDoubleType(*typedE2->getDataType()))
+        {
+            throw std::runtime_error("Both operands of bitshift must have integer type");
+        }
+        else
+        {
+            // Don't perform usual arithmetic conversions; result has type of left operand
+            auto typedBinExp = std::make_shared<AST::Binary>(binary->getOp(), typedE1, typedE2);
+            typedBinExp->setDataType(typedE1->getDataType());
+            return typedBinExp;
+        }
     }
 
     if (binary->getOp() == AST::BinaryOp::And || binary->getOp() == AST::BinaryOp::Or)
@@ -137,9 +154,19 @@ TypeChecker::typeCheckBinary(const std::shared_ptr<AST::Binary> &binary)
     auto convertedE2 = convertTo(typedE2, commonType);
     auto typedBinExp = std::make_shared<AST::Binary>(binary->getOp(), convertedE1, convertedE2);
 
+    if ((binary->getOp() == AST::BinaryOp::Remainder ||
+         binary->getOp() == AST::BinaryOp::BitwiseAnd ||
+         binary->getOp() == AST::BinaryOp::BitwiseOr ||
+         binary->getOp() == AST::BinaryOp::BitwiseXor) &&
+        Types::isDoubleType(commonType))
+    {
+        throw std::runtime_error("Can't apply % or bitwise operations to double");
+    }
+
     if (binary->getOp() == AST::BinaryOp::Add ||
         binary->getOp() == AST::BinaryOp::Subtract ||
         binary->getOp() == AST::BinaryOp::Multiply ||
+        binary->getOp() == AST::BinaryOp::Divide ||
         binary->getOp() == AST::BinaryOp::Remainder ||
         binary->getOp() == AST::BinaryOp::BitwiseAnd ||
         binary->getOp() == AST::BinaryOp::BitwiseOr ||
@@ -173,6 +200,18 @@ TypeChecker::typeCheckCompoundAssignment(const std::shared_ptr<AST::CompoundAssi
 
     if (!typedLhs->getDataType().has_value() || !typedRhs->getDataType().has_value())
         throw std::runtime_error("Compound assignment operands have no data type");
+
+    if (
+        (compoundAssign->getOp() == AST::BinaryOp::Remainder ||
+         compoundAssign->getOp() == AST::BinaryOp::BitwiseAnd ||
+         compoundAssign->getOp() == AST::BinaryOp::BitwiseOr ||
+         compoundAssign->getOp() == AST::BinaryOp::BitwiseXor ||
+         compoundAssign->getOp() == AST::BinaryOp::BitShiftLeft ||
+         compoundAssign->getOp() == AST::BinaryOp::BitShiftRight) &&
+        (Types::isDoubleType(*typedLhs->getDataType()) || Types::isDoubleType(*typedRhs->getDataType())))
+    {
+        throw std::runtime_error("Operand of compound assignment doesn't support double operands");
+    }
 
     auto lhsType = typedLhs->getDataType().value();
     auto rhsType = typedRhs->getDataType().value();
@@ -404,27 +443,33 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
 
         // Note: e must be converted to type of controlling expression in enclosing switch;
         // We do that during CollectSwitchCases pass
-        auto newValue = typeCheckExp(caseStmt->getValue());
+        auto typedExp = typeCheckExp(caseStmt->getValue());
         auto newBody = typeCheckStatement(caseStmt->getBody(), retType);
 
-        return std::make_shared<AST::Case>(newValue, newBody, caseStmt->getId());
+        if (Types::isDoubleType(*typedExp->getDataType()))
+            throw std::runtime_error("Case expression cannot be double");
+
+        return std::make_shared<AST::Case>(typedExp, newBody, caseStmt->getId());
     }
     case AST::NodeType::Default:
     {
         auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
-        auto newBody = typeCheckStatement(defaultStmt->getBody(), retType);
+        auto typedBody = typeCheckStatement(defaultStmt->getBody(), retType);
 
-        return std::make_shared<AST::Default>(newBody, defaultStmt->getId());
+        return std::make_shared<AST::Default>(typedBody, defaultStmt->getId());
     }
     case AST::NodeType::Switch:
     {
         auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
-        auto newControl = typeCheckExp(switchStmt->getControl());
-        auto newBody = typeCheckStatement(switchStmt->getBody(), retType);
+        auto typedControl = typeCheckExp(switchStmt->getControl());
+        auto typedBody = typeCheckStatement(switchStmt->getBody(), retType);
+
+        if (Types::isDoubleType(*typedControl->getDataType()))
+            throw std::runtime_error("Controlling expression in switch cannot be double");
 
         return std::make_shared<AST::Switch>(
-            newControl,
-            newBody,
+            typedControl,
+            typedBody,
             switchStmt->getOptCases(),
             switchStmt->getId());
     }

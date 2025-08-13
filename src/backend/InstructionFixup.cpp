@@ -56,11 +56,14 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
 
         if (isMemoryOperand(mov->getSrc()) && isMemoryOperand(mov->getDst()))
         {
-            auto RegR10{std::make_shared<Assembly::Reg>(Assembly::RegName::R10)};
+            auto scratchReg{
+                std::make_shared<Assembly::Reg>(Assembly::isAsmDouble(*mov->getAsmType())
+                                                    ? Assembly::RegName::XMM14
+                                                    : Assembly::RegName::R10)};
 
             return {
-                std::make_shared<Assembly::Mov>(mov->getAsmType(), mov->getSrc(), RegR10),
-                std::make_shared<Assembly::Mov>(mov->getAsmType(), RegR10, mov->getDst()),
+                std::make_shared<Assembly::Mov>(mov->getAsmType(), mov->getSrc(), scratchReg),
+                std::make_shared<Assembly::Mov>(mov->getAsmType(), scratchReg, mov->getDst()),
             };
         }
         // Mov can't move a large constant to a memory address
@@ -247,6 +250,34 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         case Assembly::BinaryOp::Or:
         case Assembly::BinaryOp::Xor:
         {
+            // Binary operations on double require register as destination
+            if (
+                Assembly::isAsmDouble(*binary->getAsmType()))
+            {
+                if (binary->getDst()->getType() == Assembly::NodeType::Reg)
+                {
+                    return {
+                        binary,
+                    };
+                }
+
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                        binary->getDst(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                    std::make_shared<Assembly::Binary>(
+                        binary->getOp(),
+                        std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                        binary->getSrc(),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15),
+                        binary->getDst()),
+                };
+            }
+
             // Add/Sub/And/Or/Xor can't take large immediates as source operands
             if (
                 Assembly::isAsmQuadword(*binary->getAsmType()) &&
@@ -372,6 +403,27 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     case Assembly::NodeType::Cmp:
     {
         auto cmp = std::dynamic_pointer_cast<Assembly::Cmp>(inst);
+        // Destination of comisd must be a register
+        if (Assembly::isAsmDouble(*cmp->getAsmType()))
+        {
+            if (cmp->getDst()->getType() == Assembly::NodeType::Reg)
+            {
+                return {
+                    cmp,
+                };
+            }
+
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                    cmp->getDst(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                std::make_shared<Assembly::Cmp>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                    cmp->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+            };
+        }
 
         // Both operands of cmp can't be in memory
         if (isMemoryOperand(cmp->getSrc()) && isMemoryOperand(cmp->getDst()))
@@ -460,6 +512,55 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
                 std::make_shared<Assembly::Push>(
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+            };
+        }
+        else
+        {
+            return {
+                inst,
+            };
+        }
+    }
+    case Assembly::NodeType::Cvttsd2si:
+    {
+        auto cvt = std::dynamic_pointer_cast<Assembly::Cvttsd2si>(inst);
+        if (cvt->getDst()->getType() != Assembly::NodeType::Reg)
+        {
+            return {
+                std::make_shared<Assembly::Cvttsd2si>(cvt->getAsmType(), cvt->getSrc(), std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Mov>(cvt->getAsmType(), std::make_shared<Assembly::Reg>(Assembly::RegName::R11), cvt->getDst()),
+            };
+        }
+        else
+        {
+            return {
+                inst,
+            };
+        }
+    }
+    case Assembly::NodeType::Cvtsi2sd:
+    {
+        auto cvt = std::dynamic_pointer_cast<Assembly::Cvtsi2sd>(inst);
+        if (isImmOperand(cvt->getSrc()) && isMemoryOperand(cvt->getDst()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(cvt->getAsmType(), cvt->getSrc(), std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Cvtsi2sd>(cvt->getAsmType(), std::make_shared<Assembly::Reg>(Assembly::RegName::R10), std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Double()), std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15), cvt->getDst()),
+            };
+        }
+        else if (isImmOperand(cvt->getSrc()))
+        {
+            return {
+                std::make_shared<Assembly::Mov>(cvt->getAsmType(), cvt->getSrc(), std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
+                std::make_shared<Assembly::Cvtsi2sd>(cvt->getAsmType(), std::make_shared<Assembly::Reg>(Assembly::RegName::R10), cvt->getDst()),
+            };
+        }
+        else if (isMemoryOperand(cvt->getDst()))
+        {
+            return {
+                std::make_shared<Assembly::Cvtsi2sd>(cvt->getAsmType(), cvt->getSrc(), std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Double()), std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15), cvt->getDst()),
             };
         }
         else

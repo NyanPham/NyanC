@@ -13,13 +13,14 @@
  * Check if the idenfitier is a keyword and convert it to the appropriate token
  * Recognized keywords are: int, void, return, if, else, goto, break, continue, while, do, for
  */
-Token convertIdentifer(const std::string &str, long pos)
+Token convertIdentifer(const std::string &str, size_t &pos)
 {
     static const std::unordered_map<std::string, TokenType> keywords = {
         {"int", TokenType::KEYWORD_INT},
         {"long", TokenType::KEYWORD_LONG},
         {"signed", TokenType::KEYWORD_SIGNED},
         {"unsigned", TokenType::KEYWORD_UNSIGNED},
+        {"double", TokenType::KEYWORD_DOUBLE},
         {"void", TokenType::KEYWORD_VOID},
         {"return", TokenType::KEYWORD_RETURN},
         {"if", TokenType::KEYWORD_IF},
@@ -46,27 +47,84 @@ Token convertIdentifer(const std::string &str, long pos)
     return Token(TokenType::IDENTIFIER, str, pos);
 }
 
-Token convertInt(const std::string &str, long pos)
+Token convertInt(const std::string &str, size_t &pos)
 {
-    return Token(TokenType::CONST_INT, std::stoull(str), pos);
+    size_t len = str.length();
+    size_t numLen = len;
+    while (numLen > 0 && !isdigit(str[numLen - 1]))
+    {
+        --numLen;
+    }
+
+    std::string numStr = str.substr(0, numLen);
+
+    if (numStr.length() < str.length())
+        pos -= 1;
+
+    return Token(TokenType::CONST_INT, std::stoull(numStr), pos);
 }
 
-Token convertLong(const std::string &str, long pos)
+Token convertLong(const std::string &str, size_t &pos)
 {
-    auto num = std::stoull(str.substr(0, str.size() - 1));
-    return Token(TokenType::CONST_LONG, num, pos);
+    size_t len = str.length();
+    size_t numLen = len;
+    while (numLen > 0 && !isdigit(str[numLen - 1]))
+    {
+        --numLen;
+    }
+
+    std::string numStr = str.substr(0, numLen);
+    if (numStr.length() + 1 < str.length())
+        pos -= 1;
+    return Token(TokenType::CONST_LONG, std::stoull(numStr), pos);
 }
 
-Token convertUInt(const std::string &str, long pos)
+Token convertUInt(const std::string &str, size_t &pos)
 {
-    auto num = std::stoull(str.substr(0, str.size() - 1));
-    return Token(TokenType::CONST_UINT, num, pos);
+    size_t len = str.length();
+    size_t numLen = len;
+    while (numLen > 0 && !isdigit(str[numLen - 1]))
+    {
+        --numLen;
+    }
+
+    std::string numStr = str.substr(0, numLen);
+    if (numStr.length() + 1 < str.length())
+        pos -= 1;
+    return Token(TokenType::CONST_UINT, std::stoull(numStr), pos);
 }
 
-Token convertULong(const std::string &str, long pos)
+Token convertULong(const std::string &str, size_t &pos)
 {
-    auto num = std::stoull(str.substr(0, str.size() - 2));
-    return Token(TokenType::CONST_ULONG, num, pos);
+    size_t len = str.length();
+    size_t numLen = len;
+    while (numLen > 0 && !isdigit(str[numLen - 1]))
+    {
+        --numLen;
+    }
+
+    std::string numStr = str.substr(0, numLen);
+    if (numStr.length() + 2 < str.length())
+        pos -= 1;
+    return Token(TokenType::CONST_ULONG, std::stoull(numStr), pos);
+}
+
+Token convertDouble(const std::string &str, size_t &pos)
+{
+    size_t numLen = 0;
+    while (numLen < str.length() &&
+           (isdigit(str[numLen]) || str[numLen] == '.' || str[numLen] == 'e' || str[numLen] == 'E' ||
+            str[numLen] == '+' || str[numLen] == '-'))
+    {
+        ++numLen;
+    }
+
+    std::string numStr = str.substr(0, numLen);
+
+    if (numStr.length() < str.length())
+        pos -= 1;
+
+    return Token(TokenType::CONST_DOUBLE, std::stold(numStr), pos);
 }
 
 void Lexer::setInput(std::string input)
@@ -78,251 +136,256 @@ void Lexer::defineTokenDefs()
 {
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
-        {std::regex("[0-9]+\\b"), convertInt},
-        {std::regex("[0-9]+[lL]\\b"), convertLong},
-        {std::regex("[0-9]+[uU]\\b"), convertUInt},
-        {std::regex("[0-9]+([uU][lL]|[lL][uU])\\b"), convertULong},
-        // The following 19 keywords match will not be reached after identifier, but still kept here for references.
-        {std::regex("int\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("([0-9]+)[^\\w.]"), convertInt},
+        {std::regex("([0-9]+[lL])[^\\w.]"), convertLong},
+        {std::regex("([0-9]+[uU])[^\\w.]"), convertUInt},
+        {std::regex("([0-9]+([lL][uU]|[uU][lL]))[^\\w.]"), convertULong},
+        {std::regex("(([0-9]*\\.[0-9]+|[0-9]+\\.?)[Ee][+-]?[0-9]+|[0-9]*\\.[0-9]+|[0-9]+\\.)[^\\w.]"), convertDouble},
+        // The following 20 keywords match will not be reached after identifier, but still kept here for references.
+        {std::regex("int\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);
          }},
-        {std::regex("long\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("long\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_LONG, str, pos);
          }},
-        {std::regex("signed\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("signed\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_SIGNED, str, pos);
          }},
-        {std::regex("unsigned\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("unsigned\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_UNSIGNED, str, pos);
          }},
-        {std::regex("void\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("double\\b"), [](const std::string &str, size_t &pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_DOUBLE, str, pos);
+         }},
+        {std::regex("void\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_VOID, str, pos);
          }},
-        {std::regex("return\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("return\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_RETURN, str, pos);
          }},
-        {std::regex("if\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("if\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_IF, str, pos);
          }},
-        {std::regex("else\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("else\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_ELSE, str, pos);
          }},
-        {std::regex("goto\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("goto\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_GOTO, str, pos);
          }},
-        {std::regex("break\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("break\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_BREAK, str, pos);
          }},
-        {std::regex("continue\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("continue\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_CONTINUE, str, pos);
          }},
-        {std::regex("while\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("while\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_WHILE, str, pos);
          }},
-        {std::regex("do\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("do\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_DO, str, pos);
          }},
-        {std::regex("for\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("for\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_FOR, str, pos);
          }},
-        {std::regex("switch\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("switch\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_SWITCH, str, pos);
          }},
-        {std::regex("case\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("case\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_CASE, str, pos);
          }},
-        {std::regex("default\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("default\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_DEFAULT, str, pos);
          }},
-        {std::regex("static\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("static\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_STATIC, str, pos);
          }},
-        {std::regex("extern\\b"), [](const std::string &str, long pos) -> Token
+        {std::regex("extern\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_EXTERN, str, pos);
          }},
-        {std::regex("\\("), [](const std::string &str, long pos) -> Token
+        {std::regex("\\("), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::OPEN_PAREN, str, pos);
          }},
-        {std::regex("\\)"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\)"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::CLOSE_PAREN, str, pos);
          }},
-        {std::regex("\\{"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\{"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::OPEN_BRACE, str, pos);
          }},
-        {std::regex("\\}"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\}"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::CLOSE_BRACE, str, pos);
          }},
-        {std::regex(";"), [](const std::string &str, long pos) -> Token
+        {std::regex(";"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::SEMICOLON, str, pos);
          }},
-        {std::regex(","), [](const std::string &str, long pos) -> Token
+        {std::regex(","), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::COMMA, str, pos);
          }},
-        {std::regex("-"), [](const std::string &str, long pos) -> Token
+        {std::regex("-"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::HYPHEN, str, pos);
          }},
-        {std::regex("--"), [](const std::string &str, long pos) -> Token
+        {std::regex("--"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_HYPHEN, str, pos);
          }},
-        {std::regex("~"), [](const std::string &str, long pos) -> Token
+        {std::regex("~"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::TILDE, str, pos);
          }},
-        {std::regex("\\+"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\+"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::PLUS, str, pos);
          }},
-        {std::regex("\\*"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\*"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::STAR, str, pos);
          }},
-        {std::regex("/"), [](const std::string &str, long pos) -> Token
+        {std::regex("/"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::SLASH, str, pos);
          }},
-        {std::regex("%"), [](const std::string &str, long pos) -> Token
+        {std::regex("%"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::PERCENT, str, pos);
          }},
 
-        {std::regex("\\&"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\&"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::AMPERSAND, str, pos);
          }},
 
-        {std::regex("\\^"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\^"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::CARET, str, pos);
          }},
 
-        {std::regex("\\|"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\|"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::PIPE, str, pos);
          }},
-        {std::regex("<<"), [](const std::string &str, long pos) -> Token
+        {std::regex("<<"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_LEFT_BRACKET, str, pos);
          }},
-        {std::regex(">>"), [](const std::string &str, long pos) -> Token
+        {std::regex(">>"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_RIGHT_BRACKET, str, pos);
          }},
-        {std::regex("!"), [](const std::string &str, long pos) -> Token
+        {std::regex("!"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::BANG, str, pos);
          }},
-        {std::regex("\\&\\&"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\&\\&"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::LOGICAL_AND, str, pos);
          }},
-        {std::regex("\\|\\|"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\|\\|"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::LOGICAL_OR, str, pos);
          }},
-        {std::regex("=="), [](const std::string &str, long pos) -> Token
+        {std::regex("=="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_EQUAL, str, pos);
          }},
-        {std::regex("!="), [](const std::string &str, long pos) -> Token
+        {std::regex("!="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::NOT_EQUAL, str, pos);
          }},
-        {std::regex("<"), [](const std::string &str, long pos) -> Token
+        {std::regex("<"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::LESS_THAN, str, pos);
          }},
-        {std::regex("<="), [](const std::string &str, long pos) -> Token
+        {std::regex("<="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::LESS_OR_EQUAL, str, pos);
          }},
-        {std::regex(">"), [](const std::string &str, long pos) -> Token
+        {std::regex(">"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::GREATER_THAN, str, pos);
          }},
-        {std::regex(">="), [](const std::string &str, long pos) -> Token
+        {std::regex(">="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::GREATER_OR_EQUAL, str, pos);
          }},
-        {std::regex("="), [](const std::string &str, long pos) -> Token
+        {std::regex("="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::EQUAL_SIGN, str, pos);
          }},
-        {std::regex("\\+\\+"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\+\\+"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_PLUS, str, pos);
          }},
-        {std::regex("\\+="), [](const std::string &str, long pos) -> Token
+        {std::regex("\\+="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::PLUS_EQUAL, str, pos);
          }},
-        {std::regex("-="), [](const std::string &str, long pos) -> Token
+        {std::regex("-="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::HYPHEN_EQUAL, str, pos);
          }},
-        {std::regex("\\*="), [](const std::string &str, long pos) -> Token
+        {std::regex("\\*="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::STAR_EQUAL, str, pos);
          }},
-        {std::regex("/="), [](const std::string &str, long pos) -> Token
+        {std::regex("/="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::SLASH_EQUAL, str, pos);
          }},
-        {std::regex("%="), [](const std::string &str, long pos) -> Token
+        {std::regex("%="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::PERCENT_EQUAL, str, pos);
          }},
-        {std::regex("&="), [](const std::string &str, long pos) -> Token
+        {std::regex("&="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::AMPERSAND_EQUAL, str, pos);
          }},
-        {std::regex("\\|="), [](const std::string &str, long pos) -> Token
+        {std::regex("\\|="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::PIPE_EQUAL, str, pos);
          }},
-        {std::regex("\\^="), [](const std::string &str, long pos) -> Token
+        {std::regex("\\^="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::CARET_EQUAL, str, pos);
          }},
-        {std::regex("<<="), [](const std::string &str, long pos) -> Token
+        {std::regex("<<="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_LEFT_BRACKET_EQUAL, str, pos);
          }},
-        {std::regex(">>="), [](const std::string &str, long pos) -> Token
+        {std::regex(">>="), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::DOUBLE_RIGHT_BRACKET_EQUAL, str, pos);
          }},
-        {std::regex("\\?"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\?"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::QUESTION_MARK, str, pos);
          }},
-        {std::regex("\\:"), [](const std::string &str, long pos) -> Token
+        {std::regex("\\:"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::COLON, str, pos);
          }},
@@ -410,7 +473,7 @@ std::optional<Token> Lexer::token()
 
 std::optional<Token> Lexer::peek()
 {
-    long savedPos = _pos;
+    size_t savedPos = _pos;
     std::optional<Token> nextToken = token();
     _pos = savedPos;
 
@@ -420,7 +483,7 @@ std::optional<Token> Lexer::peek()
 std::vector<std::optional<Token>> Lexer::npeek(int n)
 {
     std::vector<std::optional<Token>> tokens;
-    long savedPos = _pos;
+    size_t savedPos = _pos;
 
     for (int i = 0; i < n; ++i)
     {

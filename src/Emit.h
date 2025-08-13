@@ -29,6 +29,7 @@ public:
     std::string showByteOperand(const std::shared_ptr<Assembly::Operand> &operand);
     std::string showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg);
     std::string showQuadwordOperand(const std::shared_ptr<Assembly::Operand> &operand);
+    std::string showDoubleReg(const std::shared_ptr<Assembly::Reg> &reg);
     std::string showFunName(const std::shared_ptr<Assembly::Call> &fnCall);
     std::string showUnaryOp(Assembly::UnaryOp op);
     std::string showBinaryOp(Assembly::BinaryOp op);
@@ -36,6 +37,7 @@ public:
     std::string showLocalLabel(const std::string &name);
     std::string showCondCode(Assembly::CondCode condCode);
     std::string emitInst(std::shared_ptr<Assembly::Instruction> inst);
+    std::string emitConstant(const std::string &name, size_t alignement, const Initializers::StaticInit &init);
     std::string emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel);
     std::string emitStackNote();
     void emit(std::shared_ptr<Assembly::Program> prog, const std::string &output);

@@ -11,12 +11,15 @@
 
 /*
 program = Program(top_level*)
-asm_type = Longword | Quadword
+asm_type = Longword | Quadword | Double
 top_level = Function(identifier name, bool global, instruction* instructions)
     | StaticVariable(identifier name, bool global, int alignment, static_init)
+    | StaticConstant(identifier name, int alignment, static_init)
 instruction = Mov(asm_type, operand src, operand dst)
     | Movsx(operand src, operand dst)
     | MovZeroExtend(operand src, operand dst)
+    | Cvttsd2si(asm_type, operand src, operand dst)
+    | Cvtsi2sd(asm_type, operand src, operand dst)
     | Unary(unary_operator, asm_type, operand dst)
     | Binary(binary_operator, asm_type, operand src, operand dst)
     | Cmp(asm_type, operand src, operand dst)
@@ -30,11 +33,11 @@ instruction = Mov(asm_type, operand src, operand dst)
     | Push(operand)
     | Call(identifier)
     | Ret
-unary_operator = Neg | Not
-binary_operator = Add | Sub | Mult | And | Or | Xor | Sal | Sar | Shl | Shr
+unary_operator = Neg | Not | ShrOneOp
+binary_operator = Add | Sub | Mult | DivDouble | And | Or | Xor | Sal | Sar | Shl | Shr
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int) | Data(identifier)
 cond_code = E | NE | L | LE | G | GE | A | AE | B | BE
-reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP
+reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP | XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7 | XMM14 | XMM15
 */
 
 namespace Assembly
@@ -49,6 +52,8 @@ namespace Assembly
     class Data;
     class Mov;
     class Movsx;
+    class Cvttsd2si;
+    class Cvtsi2sd;
     class Unary;
     class Binary;
     class Cmp;
@@ -62,6 +67,7 @@ namespace Assembly
     class Call;
     class Ret;
     class StaticVariable;
+    class StaticConstant;
     class Function;
     class TopLevel;
     class Program;
@@ -71,10 +77,13 @@ namespace Assembly
         Program,
         Function,
         StaticVariable,
+        StaticConstant,
         Ret,
         Mov,
         Movsx,
         MovZeroExtend,
+        Cvttsd2si,
+        Cvtsi2sd,
         Unary,
         Binary,
         Cmp,
@@ -110,7 +119,14 @@ namespace Assembly
         std::string toString() const { return "Quadword"; }
     };
 
-    using AsmType = std::variant<Longword, Quadword>;
+    struct Double
+    {
+        Double() {}
+
+        std::string toString() const { return "Double"; }
+    };
+
+    using AsmType = std::variant<Longword, Quadword, Double>;
 
     inline std::string asmTypeToString(const AsmType &type)
     {
@@ -120,6 +136,7 @@ namespace Assembly
 
     inline bool isAsmLongword(const AsmType &type) { return isVariant<Longword>(type); }
     inline bool isAsmQuadword(const AsmType &type) { return isVariant<Quadword>(type); }
+    inline bool isAsmDouble(const AsmType &type) { return isVariant<Double>(type); }
 
     inline std::optional<Longword> getLongword(const AsmType &type)
     {
@@ -129,6 +146,11 @@ namespace Assembly
     inline std::optional<Quadword> getQuadword(const AsmType &type)
     {
         return getVariant<Quadword>(type);
+    }
+
+    inline std::optional<Double> getDouble(const AsmType &type)
+    {
+        return getVariant<Double>(type);
     }
 
     enum class RegName
@@ -143,6 +165,16 @@ namespace Assembly
         R10,
         R11,
         SP,
+        XMM0,
+        XMM1,
+        XMM2,
+        XMM3,
+        XMM4,
+        XMM5,
+        XMM6,
+        XMM7,
+        XMM14,
+        XMM15,
     };
 
     enum class CondCode
@@ -163,6 +195,7 @@ namespace Assembly
     {
         Not,
         Neg,
+        ShrOneOp,
     };
 
     enum class BinaryOp
@@ -170,6 +203,7 @@ namespace Assembly
         Add,
         Sub,
         Mult,
+        DivDouble,
         And,
         Or,
         Xor,
@@ -214,15 +248,15 @@ namespace Assembly
     class Imm : public Operand
     {
     public:
-        Imm(int64_t value)
+        Imm(uint64_t value)
             : Operand(NodeType::Imm), _value{value}
         {
         }
 
-        int64_t getValue() const { return _value; }
+        uint64_t getValue() const { return _value; }
 
     private:
-        int64_t _value;
+        uint64_t _value;
     };
 
     class Reg : public Operand
@@ -311,6 +345,42 @@ namespace Assembly
         auto &getDst() const { return _dst; }
 
     private:
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
+    class Cvttsd2si : public Instruction
+    {
+    public:
+        Cvttsd2si(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Cvttsd2si), _asmType{asmType}, _src{src}, _dst{dst}
+        {
+        }
+
+        auto &getAsmType() const { return _asmType; }
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<AsmType> _asmType;
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
+    class Cvtsi2sd : public Instruction
+    {
+    public:
+        Cvtsi2sd(std::shared_ptr<AsmType> asmType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Cvtsi2sd), _asmType{asmType}, _src{src}, _dst{dst}
+        {
+        }
+
+        auto &getAsmType() const { return _asmType; }
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<AsmType> _asmType;
         std::shared_ptr<Operand> _src;
         std::shared_ptr<Operand> _dst;
     };
@@ -490,6 +560,22 @@ namespace Assembly
     private:
         std::string _name;
         bool _global;
+        int _alignment;
+        Initializers::StaticInit _init;
+    };
+
+    class StaticConstant : public TopLevel
+    {
+    public:
+        StaticConstant(const std::string &name, int alignment, Initializers::StaticInit init)
+            : TopLevel(NodeType::StaticConstant), _name{name}, _alignment{alignment}, _init{init} {}
+
+        const std::string &getName() const { return _name; }
+        auto &getAlignment() const { return _alignment; }
+        auto &getInit() const { return _init; }
+
+    private:
+        std::string _name;
         int _alignment;
         Initializers::StaticInit _init;
     };

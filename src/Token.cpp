@@ -27,6 +27,8 @@ std::string tokenTypeToString(TokenType type)
         return "CONST_UINT";
     case TokenType::CONST_ULONG:
         return "CONST_ULONG";
+    case TokenType::CONST_DOUBLE:
+        return "CONST_DOUBLE";
     case TokenType::KEYWORD_INT:
         return "KEYWORD_INT";
     case TokenType::KEYWORD_LONG:
@@ -35,6 +37,8 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_SIGNED";
     case TokenType::KEYWORD_UNSIGNED:
         return "KEYWORD_UNSIGNED";
+    case TokenType::KEYWORD_DOUBLE:
+        return "KEYWORD_DOUBLE";
     case TokenType::KEYWORD_VOID:
         return "KEYWORD_VOID";
     case TokenType::KEYWORD_RETURN:

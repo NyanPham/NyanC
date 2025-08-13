@@ -4,6 +4,8 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <unordered_map>
+#include <tuple>
 
 #include "TACKY.h"
 #include "Assembly.h"
@@ -15,10 +17,17 @@ class CodeGen
 public:
     CodeGen(Symbols::SymbolTable &symbolTable) : _symbolTable(symbolTable) {}
 
+    std::shared_ptr<Assembly::StaticConstant> convertConstant(double key, const std::pair<std::string, size_t> &constant);
+    std::tuple<
+        std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>,
+        std::vector<std::shared_ptr<Assembly::Operand>>,
+        std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>>
+    classifyParameters(const std::vector<std::shared_ptr<TACKY::Val>> &tackyVals);
+    std::string addConstant(double dbl, size_t alignment = 8);
     std::shared_ptr<Types::DataType> tackyType(const std::shared_ptr<TACKY::Val> &operand);
     std::shared_ptr<Assembly::AsmType> convertType(const Types::DataType &type);
     std::shared_ptr<Assembly::AsmType> getAsmType(const std::shared_ptr<TACKY::Val> &operand);
-    std::vector<std::shared_ptr<Assembly::Instruction>> passParams(const std::vector<std::string> &params);
+    std::vector<std::shared_ptr<Assembly::Instruction>> passParams(const std::vector<std::shared_ptr<TACKY::Val>> &params);
 
     std::shared_ptr<Assembly::Operand> convertVal(const std::shared_ptr<TACKY::Val> &val);
     Assembly::UnaryOp convertUnop(const TACKY::UnaryOp op);
@@ -36,14 +45,26 @@ public:
 private:
     Symbols::SymbolTable &_symbolTable;
     AssemblySymbols::AsmSymbolTable _asmSymbolTable;
+    std::unordered_map<double, std::pair<std::string, size_t>> _constants;
 
-    const std::vector<Assembly::RegName> PARAM_PASSING_REGS{
+    const std::vector<Assembly::RegName> INT_PARAM_PASSING_REGS{
         Assembly::RegName::DI,
         Assembly::RegName::SI,
         Assembly::RegName::DX,
         Assembly::RegName::CX,
         Assembly::RegName::R8,
         Assembly::RegName::R9,
+    };
+
+    const std::vector<Assembly::RegName> DBL_PARAM_PASSING_REGS{
+        Assembly::RegName::XMM0,
+        Assembly::RegName::XMM1,
+        Assembly::RegName::XMM2,
+        Assembly::RegName::XMM3,
+        Assembly::RegName::XMM4,
+        Assembly::RegName::XMM5,
+        Assembly::RegName::XMM6,
+        Assembly::RegName::XMM7,
     };
 };
 

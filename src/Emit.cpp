@@ -9,10 +9,12 @@
 
 std::string Emit::suffix(const std::shared_ptr<Assembly::AsmType> &asmType)
 {
-    if (auto asmLong = Assembly::getLongword(*asmType))
+    if (Assembly::isAsmLongword(*asmType))
         return "l";
-    else if (auto asmQuad = Assembly::getQuadword(*asmType))
+    else if (Assembly::isAsmQuadword(*asmType))
         return "q";
+    else if (Assembly::isAsmDouble(*asmType))
+        return "sd";
     else
         throw std::runtime_error("Internal error: Unknown assembly type to get suffix");
 }
@@ -37,6 +39,8 @@ std::string Emit::emitInit(const Initializers::StaticInit &init)
         return std::format(".long {}", static_cast<uint32_t>(uIntInit->val));
     else if (auto uLongInit = Initializers::getULongInit(init))
         return std::format(".quad {}", static_cast<uint64_t>(uLongInit->val));
+    else if (auto doubleInit = Initializers::getDoubleInit(init))
+        return std::format(".quad {}", static_cast<double>(doubleInit->val));
     else
         throw std::runtime_error("Internal error: Invalid StaticInit to emit init");
 }
@@ -79,7 +83,7 @@ std::string Emit::showLongReg(const std::shared_ptr<Assembly::Reg> &reg)
     case Assembly::RegName::SP:
         throw std::runtime_error("Internal error: no 32-bit RSP");
     default:
-        throw std::runtime_error("Internal Error: Unknown register!");
+        throw std::runtime_error("Internal Error: Can't store longword in XMM register");
     }
 }
 
@@ -89,8 +93,10 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
     {
         if (Assembly::isAsmLongword(*asmType))
             return showLongReg(reg);
-        else
+        else if (Assembly::isAsmQuadword(*asmType))
             return showQuadwordReg(reg);
+        else
+            return showDoubleReg(reg);
     }
 
     if (auto imm = std::dynamic_pointer_cast<Assembly::Imm>(operand))
@@ -105,7 +111,10 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
 
     if (auto data = std::dynamic_pointer_cast<Assembly::Data>(operand))
     {
-        return std::format("{}(%rip)", data->getName());
+        auto lbl = _asmSymbolTable.isConstant(data->getName())
+                       ? showLocalLabel(data->getName())
+                       : showLabel(data->getName());
+        return std::format("{}(%rip)", lbl);
     }
 
     // Printing pseudo is only for debugging
@@ -142,7 +151,7 @@ std::string Emit::showByteReg(const std::shared_ptr<Assembly::Reg> &reg)
     case Assembly::RegName::SP:
         throw std::runtime_error("Internal error: no one-byte RSP");
     default:
-        throw std::runtime_error("Internal Error: Unknown register!");
+        throw std::runtime_error("Internal Error: can't store byte type in XMM register");
     }
 }
 
@@ -181,7 +190,7 @@ std::string Emit::showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg)
     case Assembly::RegName::SP:
         return "%rsp";
     default:
-        throw std::runtime_error("Internal Error: Unknown register!");
+        throw std::runtime_error("Internal Error: can't store quadword in XMM register");
     }
 }
 
@@ -193,6 +202,35 @@ std::string Emit::showQuadwordOperand(const std::shared_ptr<Assembly::Operand> &
     }
 
     return showOperand(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), operand);
+}
+
+std::string Emit::showDoubleReg(const std::shared_ptr<Assembly::Reg> &reg)
+{
+    switch (reg->getName())
+    {
+    case Assembly::RegName::XMM0:
+        return "\%xmm0";
+    case Assembly::RegName::XMM1:
+        return "\%xmm1";
+    case Assembly::RegName::XMM2:
+        return "\%xmm2";
+    case Assembly::RegName::XMM3:
+        return "\%xmm3";
+    case Assembly::RegName::XMM4:
+        return "\%xmm4";
+    case Assembly::RegName::XMM5:
+        return "\%xmm5";
+    case Assembly::RegName::XMM6:
+        return "\%xmm6";
+    case Assembly::RegName::XMM7:
+        return "\%xmm7";
+    case Assembly::RegName::XMM14:
+        return "\%xmm14";
+    case Assembly::RegName::XMM15:
+        return "\%xmm15";
+    default:
+        throw std::runtime_error("Internal Error: can't store double type in general-purpose register");
+    }
 }
 
 std::string Emit::showFunName(const std::shared_ptr<Assembly::Call> &fnCall)
@@ -251,6 +289,8 @@ std::string Emit::showUnaryOp(Assembly::UnaryOp op)
         return "not";
     case Assembly::UnaryOp::Neg:
         return "neg";
+    case Assembly::UnaryOp::ShrOneOp:
+        return "shr";
     default:
         throw std::runtime_error("Internal Error: Invalid unary operator!");
     }
@@ -266,6 +306,8 @@ std::string Emit::showBinaryOp(Assembly::BinaryOp op)
         return "sub";
     case Assembly::BinaryOp::Mult:
         return "imul";
+    case Assembly::BinaryOp::DivDouble:
+        return "div";
     case Assembly::BinaryOp::And:
         return "and";
     case Assembly::BinaryOp::Or:
@@ -307,6 +349,14 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
         {
             return std::format("\t{}{}\t{}, {}\n", showBinaryOp(binary->getOp()), suffix(binary->getAsmType()), showByteOperand(binary->getSrc()), showOperand(binary->getAsmType(), binary->getDst()));
         }
+        else if (binary->getOp() == Assembly::BinaryOp::Xor && Assembly::isAsmDouble(*binary->getAsmType()))
+        {
+            return std::format("\txorpd\t{}, {}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), binary->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), binary->getDst()));
+        }
+        else if (binary->getOp() == Assembly::BinaryOp::Mult && Assembly::isAsmDouble(*binary->getAsmType()))
+        {
+            return std::format("\tmulsd\t{}, {}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), binary->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), binary->getDst()));
+        }
         else
         {
             return std::format("\t{}{}\t{}, {}\n", showBinaryOp(binary->getOp()), suffix(binary->getAsmType()), showOperand(binary->getAsmType(), binary->getSrc()), showOperand(binary->getAsmType(), binary->getDst()));
@@ -315,7 +365,15 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     case Assembly::NodeType::Cmp:
     {
         auto cmp = std::dynamic_pointer_cast<Assembly::Cmp>(inst);
-        return std::format("\tcmp{}\t{}, {}\n", suffix(cmp->getAsmType()), showOperand(cmp->getAsmType(), cmp->getSrc()), showOperand(cmp->getAsmType(), cmp->getDst()));
+
+        if (Assembly::isAsmDouble(*cmp->getAsmType()))
+        {
+            return std::format("\tcomisd\t{}, {}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), cmp->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), cmp->getDst()));
+        }
+        else
+        {
+            return std::format("\tcmp{}\t{}, {}\n", suffix(cmp->getAsmType()), showOperand(cmp->getAsmType(), cmp->getSrc()), showOperand(cmp->getAsmType(), cmp->getDst()));
+        }
     }
     case Assembly::NodeType::Idiv:
     {
@@ -335,7 +393,7 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
         else if (Assembly::isAsmQuadword(*cdq->getAsmType()))
             return "\tcdo\n";
         else
-            throw std::runtime_error("Internal error: Invalid type for CDQ");
+            throw std::runtime_error("Internal error: can't apply cdq to double type");
     }
     case Assembly::NodeType::Jmp:
     {
@@ -360,7 +418,15 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     case Assembly::NodeType::Push:
     {
         auto push = std::dynamic_pointer_cast<Assembly::Push>(inst);
-        return std::format("\tpushq\t{}\n", showQuadwordOperand(push->getOperand()));
+        try
+        {
+            return std::format("\tpushq\t{}\n", showQuadwordOperand(push->getOperand()));
+        }
+        catch (const std::exception &e)
+        {
+            // For intermediate/debug output only
+            return std::format("\tpushq\t{}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), push->getOperand()));
+        }
     }
     case Assembly::NodeType::Call:
     {
@@ -371,6 +437,16 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     {
         auto movsx = std::dynamic_pointer_cast<Assembly::Movsx>(inst);
         return std::format("\tmovslq \t{}, {}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Longword()), movsx->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), movsx->getDst()));
+    }
+    case Assembly::NodeType::Cvtsi2sd:
+    {
+        auto cvt = std::dynamic_pointer_cast<Assembly::Cvtsi2sd>(inst);
+        return std::format("\tcvtsi2sd{}\t{}, {}\n", suffix(cvt->getAsmType()), showOperand(cvt->getAsmType(), cvt->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), cvt->getDst()));
+    }
+    case Assembly::NodeType::Cvttsd2si:
+    {
+        auto cvt = std::dynamic_pointer_cast<Assembly::Cvttsd2si>(inst);
+        return std::format("\tcvttsd2si{}\t{}, {}\n", suffix(cvt->getAsmType()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), cvt->getSrc()), showOperand(cvt->getAsmType(), cvt->getDst()));
     }
     case Assembly::NodeType::Ret:
     {
@@ -385,6 +461,14 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
         throw std::runtime_error("Unknown instruction type");
     }
     }
+}
+
+std::string Emit::emitConstant(const std::string &name, size_t alignement, const Initializers::StaticInit &init)
+{
+    // Targeting Linux  Os
+    auto constant_section_name = ".section .rodata";
+    auto contents = std::format("\t{}\n\t{} {}\n{}:\n\t{}\n", constant_section_name, alignDirective(), alignement, showLocalLabel(name), emitInit(init));
+    return contents;
 }
 
 std::string Emit::emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel)
@@ -411,6 +495,10 @@ std::string Emit::emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel)
         {
             return std::format("{}\t.data\n\t{} {}\n{}:\n\t{}\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), std::to_string(staticVar->getAlignment()), label, emitInit(staticVar->getInit()));
         }
+    }
+    else if (auto staticConst = std::dynamic_pointer_cast<Assembly::StaticConstant>(topLevel))
+    {
+        return emitConstant(staticConst->getName(), staticConst->getAlignment(), staticConst->getInit());
     }
     else
         throw std::runtime_error("Internal error: Unknown assembly toplevel type");

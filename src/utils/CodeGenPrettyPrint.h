@@ -36,6 +36,9 @@ private:
         case Assembly::NodeType::StaticVariable:
             visitStaticVariable(static_cast<const Assembly::StaticVariable &>(node));
             break;
+        case Assembly::NodeType::StaticConstant:
+            visitStaticConstant(static_cast<const Assembly::StaticConstant &>(node));
+            break;
         case Assembly::NodeType::Ret:
             visitRet(static_cast<const Assembly::Ret &>(node));
             break;
@@ -47,6 +50,12 @@ private:
             break;
         case Assembly::NodeType::MovZeroExtend:
             visitMovZeroExtend(static_cast<const Assembly::MovZeroExtend &>(node), indent);
+            break;
+        case Assembly::NodeType::Cvttsd2si:
+            visitCvttsd2si(static_cast<const Assembly::Cvttsd2si &>(node), indent);
+            break;
+        case Assembly::NodeType::Cvtsi2sd:
+            visitCvtsi2sd(static_cast<const Assembly::Cvtsi2sd &>(node), indent);
             break;
         case Assembly::NodeType::Unary:
             visitUnary(static_cast<const Assembly::Unary &>(node), indent);
@@ -120,6 +129,10 @@ private:
             {
                 visitStaticVariable(*var);
             }
+            else if (auto c = std::dynamic_pointer_cast<Assembly::StaticConstant>(tl))
+            {
+                visitStaticConstant(*c);
+            }
         }
 
         decreaseIndent();
@@ -149,6 +162,18 @@ private:
         increaseIndent();
         std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
         std::cout << getIndent() << "global=\"" << staticVar.isGlobal() << "\",\n";
+        std::cout << getIndent() << "alignment=" << std::to_string(staticVar.getAlignment()) << "\",\n";
+        std::cout << getIndent() << "init=\"" << Initializers::toString(staticVar.getInit()) << "\",\n";
+
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitStaticConstant(const Assembly::StaticConstant &staticVar)
+    {
+        std::cout << getIndent() << "StaticConstant(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
         std::cout << getIndent() << "alignment=" << std::to_string(staticVar.getAlignment()) << "\",\n";
         std::cout << getIndent() << "init=\"" << Initializers::toString(staticVar.getInit()) << "\",\n";
 
@@ -192,12 +217,40 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
+    void visitCvttsd2si(const Assembly::Cvttsd2si &cvt, bool indent = true)
+    {
+        std::cout << getIndent() << "Cvttsd2si(\n";
+        increaseIndent();
+        printAsmType(*cvt.getAsmType());
+        printMember("src", *cvt.getSrc());
+        printMember("dst", *cvt.getDst());
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitCvtsi2sd(const Assembly::Cvtsi2sd &cvt, bool indent = true)
+    {
+        std::cout << getIndent() << "Cvtsi2sd(\n";
+        increaseIndent();
+        printAsmType(*cvt.getAsmType());
+        printMember("src", *cvt.getSrc());
+        printMember("dst", *cvt.getDst());
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
     void visitUnary(const Assembly::Unary &unary, bool indent = true)
     {
         std::cout << getIndent() << "Unary(\n";
         increaseIndent();
         printAsmType(*unary.getAsmType());
-        std::cout << getIndent() << "op=" << (unary.getOp() == Assembly::UnaryOp::Not ? "Not" : "Neg") << ",\n";
+        std::cout << getIndent() << "op=";
+        if (unary.getOp() == Assembly::UnaryOp::Not)
+            std::cout << "Not,\n";
+        else if (unary.getOp() == Assembly::UnaryOp::Neg)
+            std::cout << "Neg,\n";
+        else
+            std::cout << "ShrOneOp,\n";
         std::cout << getIndent() << "operand=";
         visit(*unary.getOperand(), false);
         decreaseIndent();
@@ -220,6 +273,9 @@ private:
         case Assembly::BinaryOp::Mult:
             std::cout << "Mult";
             break;
+        case Assembly::BinaryOp::DivDouble:
+            std::cout << "Div";
+            break;
         case Assembly::BinaryOp::And:
             std::cout << "And";
             break;
@@ -234,6 +290,14 @@ private:
             break;
         case Assembly::BinaryOp::Sar:
             std::cout << "Sar";
+            break;
+        case Assembly::BinaryOp::Shl:
+            std::cout << "Shl";
+            break;
+        case Assembly::BinaryOp::Shr:
+            std::cout << "Shr";
+            break;
+        default:
             break;
         }
         std::cout << ",\n";
@@ -441,6 +505,26 @@ private:
             return "R11";
         case Assembly::RegName::SP:
             return "RSP";
+        case Assembly::RegName::XMM0:
+            return "XMM0";
+        case Assembly::RegName::XMM1:
+            return "XMM1";
+        case Assembly::RegName::XMM2:
+            return "XMM2";
+        case Assembly::RegName::XMM3:
+            return "XMM3";
+        case Assembly::RegName::XMM4:
+            return "XMM4";
+        case Assembly::RegName::XMM5:
+            return "XMM5";
+        case Assembly::RegName::XMM6:
+            return "XMM6";
+        case Assembly::RegName::XMM7:
+            return "XMM7";
+        case Assembly::RegName::XMM14:
+            return "XMM14";
+        case Assembly::RegName::XMM15:
+            return "XMM15";
         default:
             return "Unknown";
         }

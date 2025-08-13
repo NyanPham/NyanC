@@ -21,7 +21,7 @@ EBNF for a subset of C:
 <variable-declaration> ::= { <specifier> }+ <identifier> [ "=" <exp> ] ";"
 <function-declaration> ::= { <specifier> }+ <identifier> "(" <param-list> ")" (<block> | ";")
 <param-list> ::= "void" | { <type-specifier> }+ <identifier> { "," { <type-specifier> }+  <identifier> }
-<type-specifier> ::= "int" | "long" | "signed" | "unsigned"
+<type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double"
 <specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
@@ -53,12 +53,13 @@ EBNF for a subset of C:
         | ">" | ">="
         | "&" | "^" | "|" | "<<" | ">>"
         | "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-<const> ::= <int> | <long> | <uint> | <ulong>
+<const> ::= <int> | <long> | <uint> | <ulong> | <double>
 <identifier> ::= ? An identifier token ?
 <int> ::= ? An integer token ?
 <long> ::= ? An int or long token ?
 <uint> ::= ? An unsigned int token ?
 <ulong> ::= ? An unsigned int or unsigned long token ?
+<double> ::= ? A floating-point constant token ?
 */
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
@@ -386,6 +387,7 @@ std::shared_ptr<AST::Constant> Parser::parseConstant()
         TokenType::CONST_LONG,
         TokenType::CONST_UINT,
         TokenType::CONST_ULONG,
+        TokenType::CONST_DOUBLE,
     };
 
     std::optional<Token> tokenOpt = takeToken();
@@ -402,25 +404,37 @@ std::shared_ptr<AST::Constant> Parser::parseConstant()
         raiseError("a constant", tokenTypeToString(token.getType()));
     }
 
-    if (!std::holds_alternative<uint64_t>(token.getValue()))
+    if (std::holds_alternative<long double>(token.getValue()))
     {
-        raiseError("an integer", "non-integer value");
+        long double value = std::get<long double>(token.getValue());
+
+        return std::make_shared<AST::Constant>(
+            std::make_shared<Constants::Const>(Constants::makeConstDouble(value)));
     }
-    uint64_t value = std::get<uint64_t>(token.getValue());
 
-    if (token.getType() == TokenType::CONST_INT || token.getType() == TokenType::CONST_LONG)
+    if (std::holds_alternative<uint64_t>(token.getValue()))
     {
-        if (value > static_cast<uint64_t>(MAX_INT64))
-        {
-            throw std::runtime_error("Constant too large to fit in an int or long: " + std::to_string(value));
-        }
+        uint64_t value = std::get<uint64_t>(token.getValue());
 
-        if (token.getType() == TokenType::CONST_INT)
+        if (token.getType() == TokenType::CONST_INT || token.getType() == TokenType::CONST_LONG)
         {
-            if (value <= static_cast<uint64_t>(MAX_INT32))
+            if (value > static_cast<uint64_t>(MAX_INT64))
             {
-                return std::make_shared<AST::Constant>(
-                    std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(value))));
+                throw std::runtime_error("Constant too large to fit in an int or long: " + std::to_string(value));
+            }
+
+            if (token.getType() == TokenType::CONST_INT)
+            {
+                if (value <= static_cast<uint64_t>(MAX_INT32))
+                {
+                    return std::make_shared<AST::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(value))));
+                }
+                else
+                {
+                    return std::make_shared<AST::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
+                }
             }
             else
             {
@@ -428,37 +442,32 @@ std::shared_ptr<AST::Constant> Parser::parseConstant()
                     std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
             }
         }
-        else
-        {
-            return std::make_shared<AST::Constant>(
-                std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(value))));
-        }
-    }
 
-    else if (token.getType() == TokenType::CONST_UINT || token.getType() == TokenType::CONST_ULONG)
-    {
-        if (value > MAX_UINT64) // Already chunked to uint64_t
+        else if (token.getType() == TokenType::CONST_UINT || token.getType() == TokenType::CONST_ULONG)
         {
-            throw std::runtime_error("Constant too large to fit in an unsigned int or long: " + std::to_string(value));
-        }
-
-        if (token.getType() == TokenType::CONST_UINT)
-        {
-            if (value <= static_cast<uint64_t>(MAX_UINT32))
+            if (value > MAX_UINT64) // Already chunked to uint64_t
             {
-                return std::make_shared<AST::Constant>(
-                    std::make_shared<Constants::Const>(Constants::makeConstUInt(static_cast<uint32_t>(value))));
+                throw std::runtime_error("Constant too large to fit in an unsigned int or long: " + std::to_string(value));
+            }
+
+            if (token.getType() == TokenType::CONST_UINT)
+            {
+                if (value <= static_cast<uint64_t>(MAX_UINT32))
+                {
+                    return std::make_shared<AST::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstUInt(static_cast<uint32_t>(value))));
+                }
+                else
+                {
+                    return std::make_shared<AST::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstULong(value)));
+                }
             }
             else
             {
                 return std::make_shared<AST::Constant>(
                     std::make_shared<Constants::Const>(Constants::makeConstULong(value)));
             }
-        }
-        else
-        {
-            return std::make_shared<AST::Constant>(
-                std::make_shared<Constants::Const>(Constants::makeConstULong(value)));
         }
     }
 
@@ -538,9 +547,13 @@ Types::DataType Parser::parseType(const std::vector<Token> &typeList)
     bool containsUnsignedAndSigned(const std::vector<Token> &tokens);
     bool containsToken(const std::vector<Token> &tokens, TokenType type);
 
+    if (typeList.size() == 1 && containsToken(typeList, TokenType::KEYWORD_DOUBLE))
+        return Types::makeDoubleType();
+
     if (
         typeList.empty() ||
         hasDuplicateTokenType(typeList) ||
+        containsToken(typeList, TokenType::KEYWORD_DOUBLE) ||
         containsUnsignedAndSigned(typeList))
     {
         throw std::runtime_error("Invalid type specifier");
@@ -740,6 +753,7 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
     case TokenType::CONST_LONG:
     case TokenType::CONST_UINT:
     case TokenType::CONST_ULONG:
+    case TokenType::CONST_DOUBLE:
     {
         auto c = parseConstant();
         return c;

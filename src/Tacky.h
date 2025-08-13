@@ -17,6 +17,10 @@ instruction = Return(val)
     | SignExtend(val src, val dst)
     | Truncate(val src, val dst)
     | ZeroExtend(val src, val dst)
+    | DoubleToInt(val src, val dst)
+    | DoubleToUInt(val src, val dst)
+    | IntToDouble(val src, val dst)
+    | UIntToDouble(val src, val dst)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
     | Copy(val src, val dst)
@@ -43,6 +47,10 @@ namespace TACKY
     class Instruction;
     class Return;
     class SignExtend;
+    class DoubleToInt;
+    class DoubleToUInt;
+    class IntToDouble;
+    class UIntToDouble;
     class Truncate;
     class ZeroExtend;
     class Unary;
@@ -66,6 +74,10 @@ namespace TACKY
         SignExtend,
         Truncate,
         ZeroExtend,
+        DoubleToInt,
+        DoubleToUInt,
+        IntToDouble,
+        UIntToDouble,
         Unary,
         Binary,
         Copy,
@@ -322,6 +334,58 @@ namespace TACKY
     {
     public:
         ZeroExtend(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::ZeroExtend), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class DoubleToInt : public Instruction
+    {
+    public:
+        DoubleToInt(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::DoubleToInt), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class DoubleToUInt : public Instruction
+    {
+    public:
+        DoubleToUInt(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::DoubleToUInt), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class IntToDouble : public Instruction
+    {
+    public:
+        IntToDouble(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::IntToDouble), _src{src}, _dst{dst} {}
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class UIntToDouble : public Instruction
+    {
+    public:
+        UIntToDouble(const std::shared_ptr<Val> src, const std::shared_ptr<Val> dst) : Instruction(NodeType::UIntToDouble), _src{src}, _dst{dst} {}
 
         auto &getSrc() const { return _src; }
         auto &getDst() const { return _dst; }

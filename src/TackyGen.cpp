@@ -38,7 +38,22 @@ TackyGen::mkAstConst(const std::optional<Types::DataType> &type, int64_t i)
 std::shared_ptr<TACKY::Instruction>
 TackyGen::getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &srcType, const Types::DataType &dstType)
 {
-    // Note: assumes src and dst have different types
+    if (Types::isDoubleType(dstType))
+    {
+        if (Types::isSigned(srcType))
+            return std::make_shared<TACKY::IntToDouble>(src, dst);
+        else
+            return std::make_shared<TACKY::UIntToDouble>(src, dst);
+    }
+    else if (Types::isDoubleType(srcType))
+    {
+        if (Types::isSigned(dstType))
+            return std::make_shared<TACKY::DoubleToInt>(src, dst);
+        else
+            return std::make_shared<TACKY::DoubleToUInt>(src, dst);
+    }
+
+    // Cast between int types. Note: assumes src and dst have different types
     if (Types::getSize(dstType) == Types::getSize(srcType))
         return std::make_shared<TACKY::Copy>(src, dst);
     else if (Types::getSize(dstType) < Types::getSize(srcType))

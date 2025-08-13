@@ -77,6 +77,18 @@ private:
         case TACKY::NodeType::ZeroExtend:
             visitZeroExtend(static_cast<const TACKY::ZeroExtend &>(node), indent);
             break;
+        case TACKY::NodeType::DoubleToInt:
+            visitDoubleToInt(static_cast<const TACKY::DoubleToInt &>(node), indent);
+            break;
+        case TACKY::NodeType::DoubleToUInt:
+            visitDoubleToUInt(static_cast<const TACKY::DoubleToUInt &>(node), indent);
+            break;
+        case TACKY::NodeType::IntToDouble:
+            visitIntToDouble(static_cast<const TACKY::IntToDouble &>(node), indent);
+            break;
+        case TACKY::NodeType::UIntToDouble:
+            visitUIntToDouble(static_cast<const TACKY::UIntToDouble &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -374,6 +386,62 @@ private:
         visit(*zeroExtend.getSrc(), false);
         std::cout << getIndent() << "dst=";
         visit(*zeroExtend.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitDoubleToInt(const TACKY::DoubleToInt &node, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "DoubleToInt(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*node.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*node.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitDoubleToUInt(const TACKY::DoubleToUInt &node, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "DoubleToUInt(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*node.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*node.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitIntToDouble(const TACKY::IntToDouble &node, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "IntToDouble(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*node.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*node.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitUIntToDouble(const TACKY::UIntToDouble &node, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "UIntToDouble(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*node.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*node.getDst(), false);
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
