@@ -8,6 +8,18 @@
 #include "UniqueIds.h"
 #include "ConstConvert.h"
 
+ssize_t getPtrScale(const Types::DataType &type)
+{
+    if (auto ptrType = Types::getPointerType(type))
+    {
+        return Types::getSize(*ptrType->referencedType);
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: tried to get scale of non-pointer type");
+    }
+}
+
 // An expression result that may or may not be lvalue converted
 struct PlainOperand
 {
@@ -18,16 +30,16 @@ struct PlainOperand
     }
 };
 
-struct DereferencePointer
+struct DereferencedPointer
 {
     std::shared_ptr<TACKY::Val> val;
     std::string toString() const
     {
-        return "DereferencePointer";
+        return "DereferencedPointer";
     }
 };
 
-using ExpResult = std::variant<PlainOperand, DereferencePointer>;
+using ExpResult = std::variant<PlainOperand, DereferencedPointer>;
 std::string expResultToString(const ExpResult &expRes)
 {
     return std::visit([](const auto &v)
@@ -315,15 +327,49 @@ TackyGen::emitConditionalExp(const std::shared_ptr<AST::Conditional> &conditiona
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
 TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expression> &exp)
 {
+    /*  If LHS is a variable:
+            dst = lhs
+            lhs = lhs <op> 1
+        If LHS is a pointer:
+            dst = load(ptr)
+            tmp = dst <op> 1
+            store(tmp, ptr)
+
+        If LHS has a pointer type, we implement <op> with AddPtr
+        otherwise with Binary instruction
+    */
+
     // define var for result - i.e. value of lvalue BEFORE incr or decr
     auto dst = std::make_shared<TACKY::Var>(createTmp(exp->getDataType()));
 
     // evaluate inner to get ExpResult
     auto [innerEval, lval] = emitTackyForExp(exp);
-    auto tackyOp = convertBinop(op);
-    auto one = std::make_shared<TACKY::Constant>(mkConst(exp->getDataType(), 1));
-    // copy result to dst and perform incr or decr
+    
+    /*  Helper to construct Binary or AddPtr instruction from operands, depending on type
+        Note that dst is destination of this instruction rather than the whole expression
+        (i.e. it's the lvalue we're updating, or a temporary we'll then store to that lvalue)
+    */
+    auto doOp = [this, exp](const AST::BinaryOp op, const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst) -> std::shared_ptr<TACKY::Instruction>
+    {
+        std::shared_ptr<TACKY::Constant> index = nullptr;
 
+        if (op == AST::BinaryOp::Add)
+            index = std::make_shared<TACKY::Constant>(mkConst(std::make_optional(Types::makeLongType()), 1));
+        else if (op == AST::BinaryOp::Subtract)
+            index = std::make_shared<TACKY::Constant>(mkConst(std::make_optional(Types::makeLongType()), -1));
+        else
+            throw std::runtime_error("Internal error");
+
+        if (Types::isPointerType(*exp->getDataType()))
+            return std::make_shared<TACKY::AddPtr>(src, index, getPtrScale(*exp->getDataType()), dst);
+        else
+        {
+            auto one = std::make_shared<TACKY::Constant>(mkConst(exp->getDataType(), 1));
+            return std::make_shared<TACKY::Binary>(convertBinop(op), src, one, dst);
+        }
+    };
+
+    // copy result to dst and perform incr or decr
     auto operInsts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
 
     if (auto plainOperand = std::get_if<PlainOperand>(&(*lval)))
@@ -333,9 +379,9 @@ TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expres
             v = v + 1 // v - 1
         */
         operInsts.push_back(std::make_shared<TACKY::Copy>(plainOperand->val, dst));
-        operInsts.push_back(std::make_shared<TACKY::Binary>(tackyOp, plainOperand->val, one, plainOperand->val));
+        operInsts.push_back(doOp(op, plainOperand->val, plainOperand->val));
     }
-    else if (auto derefPtr = std::get_if<DereferencePointer>(&(*lval)))
+    else if (auto derefPtr = std::get_if<DereferencedPointer>(&(*lval)))
     {
         /*
             dst = Load(p)
@@ -344,7 +390,7 @@ TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expres
         */
         auto tmp = std::make_shared<TACKY::Var>(createTmp(exp->getDataType()));
         operInsts.push_back(std::make_shared<TACKY::Load>(derefPtr->val, dst));
-        operInsts.push_back(std::make_shared<TACKY::Binary>(tackyOp, dst, one, tmp));
+        operInsts.push_back(doOp(op, dst, tmp));
         operInsts.push_back(std::make_shared<TACKY::Store>(tmp, derefPtr->val));
     }
 
@@ -361,9 +407,6 @@ TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expres
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
 TackyGen::emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<AST::Expression> &lhs, const std::shared_ptr<AST::Expression> &rhs, const std::optional<Types::DataType> &resultType)
 {
-    if (!resultType.has_value() || !lhs->getDataType().has_value())
-        throw std::runtime_error("Internal error: Data type is null");
-
     /*
         if LHS is var w/ same type as result:
             lhs = lhs <op> rval
@@ -401,7 +444,7 @@ TackyGen::emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<
     {
         dst = plainOperand->val;
     }
-    else if (auto derefPtr = std::get_if<DereferencePointer>(&(*_lhs)))
+    else if (auto derefPtr = std::get_if<DereferencedPointer>(&(*_lhs)))
     {
         dst = std::make_shared<TACKY::Var>(createTmp(lhsType));
         loadInst.push_back(std::make_shared<TACKY::Load>(derefPtr->val, dst));
@@ -432,14 +475,46 @@ TackyGen::emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<
         castFrom.push_back(castTmpToLhs);
     }
 
-    auto binaryInst = std::make_shared<TACKY::Binary>(convertBinop(op), resultVar, _rhs, resultVar);
+    auto doOperation = [this, resultType, op, resultVar, _rhs]() -> std::vector<std::shared_ptr<TACKY::Instruction>>
+    {
+        if (Types::isPointerType(*resultType))
+        {
+            auto scale = getPtrScale(*resultType);
+            if (op == AST::BinaryOp::Add)
+            {
+                return {
+                    std::make_shared<TACKY::AddPtr>(resultVar, _rhs, scale, resultVar),
+                };
+            }
+            else if (op == AST::BinaryOp::Subtract)
+            {
+                auto negatedIndex = std::make_shared<TACKY::Var>(createTmp(Types::makeLongType()));
+                return {
+                    std::make_shared<TACKY::Unary>(TACKY::UnaryOp::Negate, _rhs, negatedIndex),
+                    std::make_shared<TACKY::AddPtr>(resultVar, negatedIndex, scale, resultVar),
+                };
+            }
+            else
+            {
+                throw std::runtime_error("Internal error in compound assignment");
+            }
+        }
+        else
+        {
+            return {
+                std::make_shared<TACKY::Binary>(convertBinop(op), resultVar, _rhs, resultVar),
+            };
+        }
+    };
+
     auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    auto operationInst = doOperation();
 
     insts.insert(insts.end(), evalLhs.begin(), evalLhs.end());
     insts.insert(insts.end(), evalRhs.begin(), evalRhs.end());
     insts.insert(insts.end(), loadInst.begin(), loadInst.end());
     insts.insert(insts.end(), castTo.begin(), castTo.end());
-    insts.push_back(binaryInst);
+    insts.insert(insts.end(), operationInst.begin(), operationInst.end());
     insts.insert(insts.end(), castFrom.begin(), castFrom.end());
     insts.insert(insts.end(), storeInst.begin(), storeInst.end());
 
@@ -553,7 +628,7 @@ TackyGen::emitAssignment(const std::shared_ptr<AST::Expression> &lhs, const std:
     {
         insts.push_back(std::make_shared<TACKY::Copy>(rval, plainOperand->val));
     }
-    else if (auto derefPtr = std::get_if<DereferencePointer>(&(*lval)))
+    else if (auto derefPtr = std::get_if<DereferencedPointer>(&(*lval)))
     {
         insts.push_back(std::make_shared<TACKY::Store>(rval, derefPtr->val));
     }
@@ -605,12 +680,109 @@ TackyGen::emitBinaryExp(const std::shared_ptr<AST::Binary> &binary)
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
+TackyGen::emitPointerAddition(const Types::DataType &type, const std::shared_ptr<AST::Expression> &exp1, const std::shared_ptr<AST::Expression> &exp2)
+{
+    auto [eval1, v1] = emitTackyAndConvert(exp1);
+    auto [eval2, v2] = emitTackyAndConvert(exp2);
+    auto dstName = createTmp(std::make_optional(type));
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+
+    std::shared_ptr<TACKY::Val> ptr = nullptr;
+    std::shared_ptr<TACKY::Val> index = nullptr;
+
+    if (type == *exp1->getDataType())
+    {
+        ptr = v1;
+        index = v2;
+    }
+    else
+    {
+        ptr = v2;
+        index = v1;
+    }
+
+    auto scale = getPtrScale(type);
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+    insts.insert(insts.end(), eval1.begin(), eval1.end());
+    insts.insert(insts.end(), eval2.begin(), eval2.end());
+    insts.push_back(std::make_shared<TACKY::AddPtr>(ptr, index, scale, dst));
+
+    return {
+        insts,
+        std::make_shared<ExpResult>(PlainOperand(dst)),
+    };
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
+TackyGen::emitSubtractionFromPointer(const Types::DataType &type, const std::shared_ptr<AST::Expression> &ptrExp, const std::shared_ptr<AST::Expression> &indexExp)
+{
+    auto [eval1, ptr] = emitTackyAndConvert(ptrExp);
+    auto [eval2, index] = emitTackyAndConvert(indexExp);
+    auto dstName = createTmp(std::make_optional(type));
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+    auto negatedIndex = std::make_shared<TACKY::Var>(createTmp(Types::makeLongType()));
+    auto scale = getPtrScale(type);
+
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    insts.insert(insts.end(), eval1.begin(), eval1.end());
+    insts.insert(insts.end(), eval2.begin(), eval2.end());
+    insts.push_back(std::make_shared<TACKY::Unary>(TACKY::UnaryOp::Negate, index, negatedIndex));
+    insts.push_back(std::make_shared<TACKY::AddPtr>(ptr, negatedIndex, scale, dst));
+
+    return {
+        insts,
+        std::make_shared<ExpResult>(PlainOperand(dst)),
+    };
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
+TackyGen::emitPointerDiff(const Types::DataType &type, const std::shared_ptr<AST::Expression> &exp1, const std::shared_ptr<AST::Expression> &exp2)
+{
+    auto [eval1, v1] = emitTackyAndConvert(exp1);
+    auto [eval2, v2] = emitTackyAndConvert(exp2);
+    auto ptrDiff = std::make_shared<TACKY::Var>(createTmp(Types::makeLongType()));
+    auto dstName = createTmp(std::make_optional(type));
+    auto dst = std::make_shared<TACKY::Var>(dstName);
+    auto scale = std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(getPtrScale(*exp1->getDataType())))));
+
+    auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+    insts.insert(insts.end(), eval1.begin(), eval1.end());
+    insts.insert(insts.end(), eval2.begin(), eval2.end());
+    insts.push_back(std::make_shared<TACKY::Binary>(TACKY::BinaryOp::Subtract, v1, v2, ptrDiff));
+    insts.push_back(std::make_shared<TACKY::Binary>(TACKY::BinaryOp::Divide, ptrDiff, scale, dst));
+
+    return {
+        insts,
+        std::make_shared<ExpResult>(PlainOperand(dst)),
+    };
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
+TackyGen::emitSubscript(const std::shared_ptr<AST::Subscript> &subscript)
+{
+    auto [insts, result] = emitPointerAddition(Types::makePointerType(std::make_shared<Types::DataType>(*subscript->getDataType())), subscript->getExp1(), subscript->getExp2());
+
+    if (auto plainOperand = std::get_if<PlainOperand>(&(*result)))
+    {
+        return {
+            insts,
+            std::make_shared<ExpResult>(DereferencedPointer(plainOperand->val)),
+        };
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: expected result of pointer addition to be lvalue converted");
+    }
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
 TackyGen::emitDereference(const std::shared_ptr<AST::Dereference> &dereference)
 {
     auto [insts, result] = emitTackyAndConvert(dereference->getInnerExp());
     return {
         insts,
-        std::make_shared<ExpResult>(DereferencePointer(result)),
+        std::make_shared<ExpResult>(DereferencedPointer(result)),
     };
 }
 
@@ -628,7 +800,7 @@ TackyGen::emitAddrOf(const std::shared_ptr<AST::AddrOf> &addrOf)
             std::make_shared<ExpResult>(PlainOperand(dst)),
         };
     }
-    else if (auto derefPtr = std::get_if<DereferencePointer>(&(*result)))
+    else if (auto derefPtr = std::get_if<DereferencedPointer>(&(*result)))
     {
         return {
             insts,
@@ -646,7 +818,7 @@ TackyGen::emitTackyAndConvert(const std::shared_ptr<AST::Expression> &exp)
     {
         return {insts, plainOperand->val};
     }
-    else if (auto derefPtr = std::get_if<DereferencePointer>(&(*result)))
+    else if (auto derefPtr = std::get_if<DereferencedPointer>(&(*result)))
     {
         auto dst = std::make_shared<TACKY::Var>(createTmp(exp->getDataType()));
         insts.push_back(std::make_shared<TACKY::Load>(derefPtr->val, dst));
@@ -681,11 +853,19 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
         switch (unary->getOp())
         {
         case AST::UnaryOp::Incr:
-            return emitCompoundExpression(AST::BinaryOp::Add, unary->getExp(), mkAstConst(unary->getDataType(), 1), unary->getDataType());
+        {
+            auto constType = Types::isPointerType(*unary->getDataType()) ? std::make_optional(Types::makeLongType()) : unary->getDataType();
+            return emitCompoundExpression(AST::BinaryOp::Add, unary->getExp(), mkAstConst(constType, 1), unary->getDataType());
+        }
         case AST::UnaryOp::Decr:
-            return emitCompoundExpression(AST::BinaryOp::Subtract, unary->getExp(), mkAstConst(unary->getDataType(), 1), unary->getDataType());
+        {
+            auto constType = Types::isPointerType(*unary->getDataType()) ? std::make_optional(Types::makeLongType()) : unary->getDataType();
+            return emitCompoundExpression(AST::BinaryOp::Subtract, unary->getExp(), mkAstConst(constType, 1), unary->getDataType());
+        }
         default:
+        {
             return emitUnaryExp(unary);
+        }
         }
     }
     case AST::NodeType::Cast:
@@ -696,11 +876,25 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
         switch (binary->getOp())
         {
         case AST::BinaryOp::And:
+        {
             return emitAndExp(binary);
+        }
         case AST::BinaryOp::Or:
+        {
             return emitOrExp(binary);
+        }
         default:
+        {
+            if (binary->getOp() == AST::BinaryOp::Add && Types::isPointerType(*binary->getDataType()))
+                return emitPointerAddition(*binary->getDataType(), binary->getExp1(), binary->getExp2());
+            else if (binary->getOp() == AST::BinaryOp::Subtract && Types::isPointerType(*binary->getDataType()))
+                return emitSubtractionFromPointer(*binary->getDataType(), binary->getExp1(), binary->getExp2());
+            else if (binary->getOp() == AST::BinaryOp::Subtract && Types::isPointerType(*binary->getExp1()->getDataType()))
+                // at least one operand is pointer, but result isn't, must be subtracting one pointer from another
+                return emitPointerDiff(*binary->getDataType(), binary->getExp1(), binary->getExp2());
+
             return emitBinaryExp(binary);
+        }
         }
     }
     case AST::NodeType::Assignment:
@@ -739,6 +933,10 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
     case AST::NodeType::AddrOf:
     {
         return emitAddrOf(std::dynamic_pointer_cast<AST::AddrOf>(exp));
+    }
+    case AST::NodeType::Subscript:
+    {
+        return emitSubscript(std::dynamic_pointer_cast<AST::Subscript>(exp));
     }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");
@@ -950,6 +1148,42 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
 }
 
 std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const std::string &name, ssize_t offset)
+{
+    if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init))
+    {
+        auto [evalInit, v] = emitTackyAndConvert(singleInit->getExp());
+        evalInit.push_back(std::make_shared<TACKY::CopyToOffset>(v, name, offset));
+        return evalInit;
+    }
+    else if (auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init))
+    {
+        auto newInits = std::vector<std::shared_ptr<TACKY::Instruction>>{};
+
+        if (compoundInit->getDataType().has_value() && Types::isArrayType(compoundInit->getDataType().value()))
+        {
+            auto arrayType = Types::getArrayType(compoundInit->getDataType().value());
+            for (size_t i = 0; i < compoundInit->getInits().size(); ++i)
+            {
+                auto elemInit = compoundInit->getInits()[i];
+                auto newOffset = offset + (i * Types::getSize(*arrayType->elemType));
+                auto innerInits = emitCompoundInit(elemInit, name, newOffset);
+                newInits.insert(newInits.end(), innerInits.begin(), innerInits.end());
+            }
+            return newInits;
+        }
+        else
+        {
+            throw std::runtime_error("Internal error: compound init has non-array type");
+        }
+    }
+    else
+    {
+        throw std::invalid_argument("Internal error: Invalid initializer type");
+    }
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
 TackyGen::emitLocalDeclaration(const std::shared_ptr<AST::Declaration> &decl)
 {
     if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
@@ -972,12 +1206,19 @@ TackyGen::emitVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &va
 {
     if (varDecl->getOptInit().has_value())
     {
-        // Treat declaration with initializer as assignment
-        auto lhs = std::make_shared<AST::Var>(varDecl->getName());
-        lhs->setDataType(std::make_optional(varDecl->getVarType()));
-        auto [evalAssignment, _] = emitAssignment(lhs, varDecl->getOptInit().value());
+        if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(varDecl->getOptInit().value()))
+        {
+            // Treat declaration with initializer as assignment
+            auto lhs = std::make_shared<AST::Var>(varDecl->getName());
+            lhs->setDataType(std::make_optional(varDecl->getVarType()));
+            auto [evalAssignment, _] = emitAssignment(lhs, singleInit->getExp());
 
-        return evalAssignment;
+            return evalAssignment;
+        }
+        else if (auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(varDecl->getOptInit().value()))
+        {
+            return emitCompoundInit(compoundInit, varDecl->getName(), 0);
+        }
     }
 
     return {};
@@ -1040,7 +1281,7 @@ TackyGen::convertSymbolsToTacky()
                         name,
                         staticAttrs->global,
                         symbol.type,
-                        initial.value().staticInit));
+                        initial.value().staticInits));
             }
             else if (auto tentative = Symbols::getTentative(staticAttrs->init))
             {

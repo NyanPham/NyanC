@@ -12,7 +12,7 @@
 /*
 program = Program(top_level*)
 top_level = Function(identifier name, bool global, identifier* params, Instruction* instructions)
-    | StaticVariable(identifier name, bool global, Types.t t, Initializers.static_init init)
+    | StaticVariable(identifier name, bool global, Types.t t, Initializers.static_init* init_list)
 instruction = Return(val)
     | SignExtend(val src, val dst)
     | Truncate(val src, val dst)
@@ -27,6 +27,8 @@ instruction = Return(val)
     | GetAddress(val src, val dst)
     | Load(val src_ptr, val dst)
     | Store(val src, val dst_ptr)
+    | AddPtr(val ptr, val index, int scale, val dst)
+    | CopyToOffset(val src, identifier dst, int offset)
     | Jump(identifier target)
     | JumpIfZero(val condition, identifier target)
     | JumpIfNotZero(val condition, identifier target)
@@ -59,6 +61,11 @@ namespace TACKY
     class Unary;
     class Binary;
     class Copy;
+    class GetAddress;
+    class Load;
+    class Store;
+    class AddPtr;
+    class CopyToOffset;
     class Jump;
     class JumpIfZero;
     class JumpIfNotZero;
@@ -87,6 +94,8 @@ namespace TACKY
         GetAddress,
         Load,
         Store,
+        AddPtr,
+        CopyToOffset,
         Jump,
         JumpIfZero,
         JumpIfNotZero,
@@ -276,6 +285,41 @@ namespace TACKY
         std::shared_ptr<Val> _dstPtr;
     };
 
+    class AddPtr : public Instruction
+    {
+    public:
+        AddPtr(std::shared_ptr<Val> ptr, std::shared_ptr<Val> index, int scale, std::shared_ptr<Val> dst)
+            : Instruction(NodeType::AddPtr), _ptr{std::move(ptr)}, _index{std::move(index)}, _scale{scale}, _dst{std::move(dst)}
+        {
+        }
+        std::shared_ptr<Val> getPtr() const { return _ptr; }
+        std::shared_ptr<Val> getIndex() const { return _index; }
+        int getScale() const { return _scale; }
+        std::shared_ptr<Val> getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _ptr;
+        std::shared_ptr<Val> _index;
+        int _scale;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class CopyToOffset : public Instruction
+    {
+    public:
+        CopyToOffset(std::shared_ptr<Val> src, const std::string &dst, ssize_t offset)
+            : Instruction(NodeType::CopyToOffset), _src{std::move(src)}, _dst{std::move(dst)}, _offset{offset} {}
+
+        std::shared_ptr<Val> getSrc() const { return _src; }
+        const std::string &getDst() const { return _dst; }
+        ssize_t getOffset() const { return _offset; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::string _dst;
+        ssize_t _offset;
+    };
+
     class Jump : public Instruction
     {
     public:
@@ -449,21 +493,21 @@ namespace TACKY
     class StaticVariable : public TopLevel
     {
     public:
-        StaticVariable(const std::string &name, bool global, const Types::DataType &t, const Initializers::StaticInit &init)
-            : TopLevel(NodeType::StaticVariable), _name{std::move(name)}, _global{global}, _dataType{t}, _init{init}
+        StaticVariable(const std::string &name, bool global, const Types::DataType &t, const std::vector<std::shared_ptr<Initializers::StaticInit>> &inits)
+            : TopLevel(NodeType::StaticVariable), _name{std::move(name)}, _global{global}, _dataType{t}, _inits{inits}
         {
         }
 
         const std::string &getName() const { return _name; }
         bool isGlobal() const { return _global; }
         auto &getDataType() const { return _dataType; }
-        auto &getInit() const { return _init; }
+        auto &getInits() const { return _inits; }
 
     private:
         std::string _name;
         bool _global;
         Types::DataType _dataType;
-        Initializers::StaticInit _init;
+        std::vector<std::shared_ptr<Initializers::StaticInit>> _inits;
     };
 
     class Function : public TopLevel

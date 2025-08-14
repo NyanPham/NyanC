@@ -33,6 +33,7 @@ bool isMemoryOperand(const std::shared_ptr<Assembly::Operand> &operand)
     {
     case Assembly::NodeType::Memory:
     case Assembly::NodeType::Data:
+    case Assembly::NodeType::Indexed:
         return true;
     default:
         return false;

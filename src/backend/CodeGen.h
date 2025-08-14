@@ -17,6 +17,9 @@ class CodeGen
 public:
     CodeGen(Symbols::SymbolTable &symbolTable) : _symbolTable(symbolTable) {}
 
+    int getVarAlignment(const Types::DataType &type);
+    std::shared_ptr<Assembly::AsmType> convertVarType(const Types::DataType &type);
+
     std::vector<std::shared_ptr<Assembly::Instruction>> convertDblComparison(TACKY::BinaryOp op, const std::shared_ptr<Assembly::AsmType> &dstType, std::shared_ptr<Assembly::Operand> &asmSrc1, std::shared_ptr<Assembly::Operand> &asmSrc2, const std::shared_ptr<Assembly::Operand> &asmDst);
     std::shared_ptr<Assembly::StaticConstant> convertConstant(double key, const std::pair<std::string, size_t> &constant);
     std::tuple<

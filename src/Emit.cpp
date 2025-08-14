@@ -3,6 +3,7 @@
 #include <format>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 
 #include "Emit.h"
 #include "Assembly.h"
@@ -16,17 +17,7 @@ std::string Emit::suffix(const std::shared_ptr<Assembly::AsmType> &asmType)
     else if (Assembly::isAsmDouble(*asmType))
         return "sd";
     else
-        throw std::runtime_error("Internal error: Unknown assembly type to get suffix");
-}
-
-std::string Emit::emitZeroInit(const Initializers::StaticInit &init)
-{
-    if (Initializers::isIntInit(init) || Initializers::isUIntInit(init))
-        return ".zero 4";
-    else if (Initializers::isLongInit(init) || Initializers::isULongInit(init))
-        return ".zero 8";
-    else
-        throw std::runtime_error("Internal error: Invalid StaticInit to emit zero");
+        throw std::runtime_error("Internal error: found instrcution w/ non-scalar operand type");
 }
 
 std::string Emit::emitInit(const Initializers::StaticInit &init)
@@ -41,6 +32,10 @@ std::string Emit::emitInit(const Initializers::StaticInit &init)
         return std::format(".quad {}", static_cast<uint64_t>(uLongInit->val));
     else if (auto doubleInit = Initializers::getDoubleInit(init))
         return std::format(".quad {}", static_cast<double>(doubleInit->val));
+
+    // a partly-initialized array can include a mix of zero and non-zero initializers
+    else if (auto zeroInit = Initializers::getZeroInit(init))
+        return std::format(".zero {}", zeroInit->byteCount);
     else
         throw std::runtime_error("Internal error: Invalid StaticInit to emit init");
 }
@@ -97,8 +92,10 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
             return showLongReg(reg);
         else if (Assembly::isAsmQuadword(*asmType))
             return showQuadwordReg(reg);
-        else
+        else if (Assembly::isAsmDouble(*asmType))
             return showDoubleReg(reg);
+        else // is ByteArray
+            throw std::runtime_error("Internal error: can't store non-scalar operand in register");
     }
 
     if (auto imm = std::dynamic_pointer_cast<Assembly::Imm>(operand))
@@ -122,10 +119,23 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
         return std::format("{}(%rip)", lbl);
     }
 
-    // Printing pseudo is only for debugging
+    if (auto indexed = std::dynamic_pointer_cast<Assembly::Indexed>(operand))
+    {
+        return std::format("({}, {}, {})", showQuadwordReg(indexed->getBase()),
+                           showQuadwordReg(indexed->getIndex()),
+                           indexed->getScale());
+    }
+
+    // Printing Pseudo is only for debugging
     if (auto pseudo = std::dynamic_pointer_cast<Assembly::Pseudo>(operand))
     {
         return pseudo->getName();
+    }
+
+    // Printing PseudoMem is only for debugging
+    if (auto pseudoMem = std::dynamic_pointer_cast<Assembly::PseudoMem>(operand))
+    {
+        return std::format("{}({})", pseudoMem->getOffset(), pseudoMem->getName());
     }
 
     throw std::runtime_error("Internal Error: Unknown operand!");
@@ -411,7 +421,7 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
         else if (Assembly::isAsmQuadword(*cdq->getAsmType()))
             return "\tcdo\n";
         else
-            throw std::runtime_error("Internal error: can't apply cdq to double type");
+            throw std::runtime_error("Internal error: can't apply cdq to non-integer type");
     }
     case Assembly::NodeType::Jmp:
     {
@@ -503,15 +513,22 @@ std::string Emit::emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel)
     }
     else if (auto staticVar = std::dynamic_pointer_cast<Assembly::StaticVariable>(topLevel))
     {
+        // Initializers::isZero returns False for all doubles
         auto label = showLabel(staticVar->getName());
-
-        if (Initializers::isZero(staticVar->getInit()))
+        std::string initsStr;
+        for (const auto &init : staticVar->getInits())
         {
-            return std::format("{}\t.bss\n\t{} {}\n{}:\n\t{}\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), std::to_string(staticVar->getAlignment()), label, emitZeroInit(staticVar->getInit()));
+            initsStr += emitInit(*init) + "\n\t";
+        }
+
+        if (std::all_of(staticVar->getInits().begin(), staticVar->getInits().end(), [](const auto &init)
+                        { return Initializers::isZero(*init); }))
+        {
+            return std::format("{}\t.bss\n\t{} {}\n{}:\n\t{}\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), std::to_string(staticVar->getAlignment()), label, initsStr);
         }
         else
         {
-            return std::format("{}\t.data\n\t{} {}\n{}:\n\t{}\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), std::to_string(staticVar->getAlignment()), label, emitInit(staticVar->getInit()));
+            return std::format("{}\t.data\n\t{} {}\n{}:\n\t{}\n", emitGlobalDirective(staticVar->isGlobal(), label), alignDirective(), std::to_string(staticVar->getAlignment()), label, initsStr);
         }
     }
     else if (auto staticConst = std::dynamic_pointer_cast<Assembly::StaticConstant>(topLevel))

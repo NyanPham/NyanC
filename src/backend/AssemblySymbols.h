@@ -93,6 +93,8 @@ namespace AssemblySymbols
                     return 4;
                 if (Assembly::isAsmQuadword(obj->asmType) || Assembly::isAsmDouble(obj->asmType))
                     return 8;
+                if (Assembly::isAsmByteArray(obj->asmType))
+                    return std::get<Assembly::ByteArray>(obj->asmType).size;
             }
 
             throw std::runtime_error("Internal error: this is a function, not an object");
@@ -110,6 +112,8 @@ namespace AssemblySymbols
                     return 4;
                 if (Assembly::isAsmQuadword(obj->asmType) || Assembly::isAsmDouble(obj->asmType))
                     return 8;
+                if (Assembly::isAsmByteArray(obj->asmType))
+                    return std::get<Assembly::ByteArray>(obj->asmType).alignment;
             }
 
             throw std::runtime_error("Internal error: this is a function, not an object");

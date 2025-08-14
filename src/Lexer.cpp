@@ -246,6 +246,14 @@ void Lexer::defineTokenDefs()
          {
              return Token(TokenType::COMMA, str, pos);
          }},
+        {std::regex("\\["), [](const std::string &str, size_t &pos) -> Token
+         {
+             return Token(TokenType::OPEN_BRACKET, str, pos);
+         }},
+        {std::regex("\\]"), [](const std::string &str, size_t &pos) -> Token
+         {
+             return Token(TokenType::CLOSE_BRACKET, str, pos);
+         }},
         {std::regex("-"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::HYPHEN, str, pos);

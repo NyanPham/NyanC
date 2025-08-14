@@ -11,10 +11,14 @@
 
 /*
 program = Program(top_level*)
-asm_type = Longword | Quadword | Double
+asm_type =
+    | Longword
+    | Quadword
+    | Double
+    | ByteArray(int size, int alignment)
 top_level = Function(identifier name, bool global, instruction* instructions)
-    | StaticVariable(identifier name, bool global, int alignment, static_init)
-    | StaticConstant(identifier name, int alignment, static_init)
+    | StaticVariable(identifier name, bool global, int alignment, static_init* inits)
+    | StaticConstant(identifier name, int alignment, static_init init)
 instruction = Mov(asm_type, operand src, operand dst)
     | Movsx(operand src, operand dst)
     | MovZeroExtend(operand src, operand dst)
@@ -36,7 +40,7 @@ instruction = Mov(asm_type, operand src, operand dst)
     | Ret
 unary_operator = Neg | Not | ShrOneOp
 binary_operator = Add | Sub | Mult | DivDouble | And | Or | Xor | Sal | Sar | Shl | Shr
-operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Memory(reg, int) | Data(identifier)
+operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Memory(reg, int) | Data(identifier) | PseudoMem(identifier, int) | Indexed(reg base, reg index, int scale)
 cond_code = E | NE | L | LE | G | GE | A | AE | B | BE | P | NP
 reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP | BP | XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7 | XMM14 | XMM15
 */
@@ -49,7 +53,9 @@ namespace Assembly
     class Imm;
     class Reg;
     class Pseudo;
-    class Stack;
+    class Memory;
+    class PseudoMem;
+    class Indexed;
     class Data;
     class Mov;
     class Movsx;
@@ -103,6 +109,8 @@ namespace Assembly
         Pseudo,
         Memory,
         Data,
+        PseudoMem,
+        Indexed,
     };
 
     // We use structs and variant to represent AsmType.
@@ -128,7 +136,17 @@ namespace Assembly
         std::string toString() const { return "Double"; }
     };
 
-    using AsmType = std::variant<Longword, Quadword, Double>;
+    struct ByteArray
+    {
+        int size;
+        int alignment;
+
+        ByteArray(int size, int alignment) : size{size}, alignment{alignment} {}
+
+        std::string toString() const { return "ByteArray(int=" + std::to_string(size) + ", alignment=" + std::to_string(alignment) + ")"; }
+    };
+
+    using AsmType = std::variant<Longword, Quadword, Double, ByteArray>;
 
     inline std::string asmTypeToString(const AsmType &type)
     {
@@ -139,6 +157,7 @@ namespace Assembly
     inline bool isAsmLongword(const AsmType &type) { return isVariant<Longword>(type); }
     inline bool isAsmQuadword(const AsmType &type) { return isVariant<Quadword>(type); }
     inline bool isAsmDouble(const AsmType &type) { return isVariant<Double>(type); }
+    inline bool isAsmByteArray(const AsmType &type) { return isVariant<ByteArray>(type); }
 
     inline std::optional<Longword> getLongword(const AsmType &type)
     {
@@ -153,6 +172,11 @@ namespace Assembly
     inline std::optional<Double> getDouble(const AsmType &type)
     {
         return getVariant<Double>(type);
+    }
+
+    inline std::optional<ByteArray> getByteArray(const AsmType &type)
+    {
+        return getVariant<ByteArray>(type);
     }
 
     enum class RegName
@@ -306,6 +330,36 @@ namespace Assembly
 
     private:
         std::string _name;
+    };
+
+    class PseudoMem : public Operand
+    {
+    public:
+        PseudoMem(const std::string &name, int offset)
+            : Operand(NodeType::PseudoMem), _name{name}, _offset{offset} {}
+
+        const std::string &getName() const { return _name; }
+        int getOffset() const { return _offset; }
+
+    private:
+        std::string _name;
+        int _offset;
+    };
+
+    class Indexed : public Operand
+    {
+    public:
+        Indexed(std::shared_ptr<Reg> base, std::shared_ptr<Reg> index, int scale)
+            : Operand(NodeType::Indexed), _base{base}, _index{index}, _scale{scale} {}
+
+        auto &getBase() const { return _base; }
+        auto &getIndex() const { return _index; }
+        int getScale() const { return _scale; }
+
+    private:
+        std::shared_ptr<Reg> _base;
+        std::shared_ptr<Reg> _index;
+        int _scale;
     };
 
     class Mov : public Instruction
@@ -574,19 +628,19 @@ namespace Assembly
     class StaticVariable : public TopLevel
     {
     public:
-        StaticVariable(const std::string &name, bool global, int alignment, Initializers::StaticInit init)
-            : TopLevel(NodeType::StaticVariable), _name{name}, _global{global}, _alignment{alignment}, _init{init} {}
+        StaticVariable(const std::string &name, bool global, int alignment, std::vector<std::shared_ptr<Initializers::StaticInit>> inits)
+            : TopLevel(NodeType::StaticVariable), _name{name}, _global{global}, _alignment{alignment}, _inits{inits} {}
 
         const std::string &getName() const { return _name; }
         bool isGlobal() const { return _global; }
         auto &getAlignment() const { return _alignment; }
-        auto &getInit() const { return _init; }
+        auto &getInits() const { return _inits; }
 
     private:
         std::string _name;
         bool _global;
         int _alignment;
-        Initializers::StaticInit _init;
+        std::vector<std::shared_ptr<Initializers::StaticInit>> _inits;
     };
 
     class StaticConstant : public TopLevel

@@ -16,6 +16,26 @@ ReplacePseudos::createInitState()
     };
 }
 
+std::pair<int, ReplacementState>
+ReplacePseudos::calculateOffset(const std::string &name, ReplacementState &state)
+{
+    auto size = _asmSymbolTable.getSize(name);
+    auto alignment = _asmSymbolTable.getAlignment(name);
+    int newOffset = Rounding::roundAwayFromZero(alignment, state.currOffset - size);
+
+    ReplacementState newState = {
+        currOffset : newOffset,
+        offsetMap : state.offsetMap,
+    };
+
+    newState.offsetMap[name] = newOffset;
+
+    return {
+        newOffset,
+        newState,
+    };
+}
+
 ReplaceOperandPair
 ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state)
 {
@@ -31,29 +51,54 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
         else
         {
             auto it = state.offsetMap.find(pseudo->getName());
-            if (it == state.offsetMap.end())
+            if (it != state.offsetMap.end())
             {
-                auto size = _asmSymbolTable.getSize(pseudo->getName());
-                auto alignment = _asmSymbolTable.getAlignment(pseudo->getName());
-
-                int newOffset = Rounding::roundAwayFromZero(alignment, state.currOffset - size);
-                state.offsetMap[pseudo->getName()] = newOffset;
-
-                ReplacementState newState = {
-                    currOffset : newOffset,
-                    offsetMap : state.offsetMap,
+                return {
+                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), it->second),
+                    state,
                 };
+            }
+            else
+            {
+                auto [newOffset, newState] = calculateOffset(pseudo->getName(), state);
 
                 return {
                     std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), newOffset),
                     newState,
                 };
             }
+        }
+    }
+    else if (auto pseudoMem = std::dynamic_pointer_cast<Assembly::PseudoMem>(operand))
+    {
+        if (_asmSymbolTable.isStatic(pseudoMem->getName()))
+        {
+            if (pseudoMem->getOffset() == 0)
+                return {
+                    std::make_shared<Assembly::Data>(pseudoMem->getName()),
+                    state,
+                };
+            else
+                throw std::runtime_error("Internal error: shouldn't have static variables with non-zero offset at this point");
+        }
+        else
+        {
+            auto it = state.offsetMap.find(pseudoMem->getName());
+            if (it != state.offsetMap.end())
+            {
+                // We've already assigned this operand a stack slot
+                return {
+                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), it->second + pseudoMem->getOffset()),
+                    state,
+                };
+            }
             else
             {
+                // assign operand name a stack slot, and add its offset to the offset w/tin operand.name to get new operand
+                auto [newOffset, newState] = calculateOffset(pseudoMem->getName(), state);
                 return {
-                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), it->second),
-                    state,
+                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), newOffset + pseudoMem->getOffset()),
+                    newState,
                 };
             }
         }

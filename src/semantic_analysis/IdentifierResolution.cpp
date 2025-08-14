@@ -23,6 +23,28 @@ IdMap IdentifierResolution::copyIdentifierMap(const IdMap &idMap)
     return newIdMap;
 }
 
+std::shared_ptr<AST::Initializer> IdentifierResolution::resolveInitializer(const std::shared_ptr<AST::Initializer> &init, IdMap &idMap)
+{
+    if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init))
+    {
+        return std::make_shared<AST::SingleInit>(resolveExp(singleInit->getExp(), idMap));
+    }
+    else if (auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init))
+    {
+        std::vector<std::shared_ptr<AST::Initializer>> resolvedInits;
+        resolvedInits.reserve(compoundInit->getInits().size());
+        for (const auto &innerInit : compoundInit->getInits())
+        {
+            resolvedInits.push_back(resolveInitializer(innerInit, idMap));
+        }
+        return std::make_shared<AST::CompoundInit>(std::move(resolvedInits));
+    }
+    else
+    {
+        throw std::runtime_error("Internal Error: Unknown Initializer type!");
+    }
+}
+
 std::shared_ptr<AST::ForInit> IdentifierResolution::resolveForInit(const std::shared_ptr<AST::ForInit> &forInit, IdMap &idMap)
 {
     switch (forInit->getType())
@@ -180,6 +202,14 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
         auto addrOf = std::dynamic_pointer_cast<AST::AddrOf>(exp);
         return std::make_shared<AST::AddrOf>(resolveExp(addrOf->getInnerExp(), idMap), addrOf->getDataType());
     }
+    case AST::NodeType::Subscript:
+    {
+        auto subscript = std::dynamic_pointer_cast<AST::Subscript>(exp);
+        return std::make_shared<AST::Subscript>(
+            resolveExp(subscript->getExp1(), idMap),
+            resolveExp(subscript->getExp2(), idMap),
+            subscript->getDataType());
+    }
     default:
         throw std::runtime_error("Internal error: Unknown expression!");
     }
@@ -318,7 +348,9 @@ std::shared_ptr<AST::VariableDeclaration>
 IdentifierResolution::resolveLocalVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap)
 {
     auto uniqueName = resolveLocalVarHelper(varDecl->getName(), varDecl->getOptStorageClass(), idMap);
-    std::optional<std::shared_ptr<AST::Expression>> resolvedInit = resolveOptionalExp(varDecl->getOptInit(), idMap);
+    std::optional<std::shared_ptr<AST::Initializer>> resolvedInit = varDecl->getOptInit().has_value()
+                                                                        ? std::make_optional(resolveInitializer(varDecl->getOptInit().value(), idMap))
+                                                                        : std::nullopt;
 
     return std::make_shared<AST::VariableDeclaration>(uniqueName, resolvedInit, varDecl->getVarType(), varDecl->getOptStorageClass());
 }

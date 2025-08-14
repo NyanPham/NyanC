@@ -18,13 +18,6 @@ public:
         visit(program);
     }
 
-private:
-    int indentLevel;
-
-    void increaseIndent() { indentLevel++; }
-    void decreaseIndent() { indentLevel--; }
-    std::string getIndent() const { return std::string(indentLevel * 4, ' '); }
-
     void visit(const AST::Node &node, bool indent = true)
     {
         switch (node.getType())
@@ -128,11 +121,43 @@ private:
         case AST::NodeType::AddrOf:
             visitAddrOf(static_cast<const AST::AddrOf &>(node), indent);
             break;
+        case AST::NodeType::SingleInit:
+        case AST::NodeType::CompoundInit:
+            visitInitializer(static_cast<const AST::Initializer &>(node), indent);
+            break;
+        case AST::NodeType::Subscript:
+            visitSubscript(static_cast<const AST::Subscript &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
         }
     }
+
+    void visitAddrOf(const AST::AddrOf &addr, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "AddrOf(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        visit(*addr.getInnerExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (addr.getDataType().has_value())
+            std::cout << Types::dataTypeToString(addr.getDataType().value());
+        else
+            std::cout << "unchecked";
+        std::cout << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+private:
+    int indentLevel;
+
+    void increaseIndent() { indentLevel++; }
+    void decreaseIndent() { indentLevel--; }
+    std::string getIndent() const { return std::string(indentLevel * 4, ' '); }
 
     void visitProgram(const AST::Program &program)
     {
@@ -213,7 +238,7 @@ private:
         std::cout << getIndent() << "init=";
         if (varDecl.getOptInit().has_value())
         {
-            visit(*varDecl.getOptInit().value(), false);
+            visitInitializer(*varDecl.getOptInit().value(), false);
         }
         else
         {
@@ -239,6 +264,47 @@ private:
 
         decreaseIndent();
         std::cout << getIndent() << "),\n";
+    }
+
+    void visitInitializer(const AST::Initializer &init, bool indent = true)
+    {
+        if (init.getType() == AST::NodeType::SingleInit)
+        {
+            if (indent)
+                std::cout << getIndent();
+            std::cout << "SingleInit(\n";
+            increaseIndent();
+            std::cout << getIndent() << "exp=";
+            visit(*static_cast<const AST::SingleInit &>(init).getExp(), false);
+            std::cout << getIndent() << "dataType=";
+            if (init.getDataType().has_value())
+                std::cout << Types::dataTypeToString(init.getDataType().value());
+            else
+                std::cout << "unchecked";
+            std::cout << "\n";
+            decreaseIndent();
+            std::cout << getIndent() << "),\n";
+        }
+        else if (init.getType() == AST::NodeType::CompoundInit)
+        {
+            if (indent)
+                std::cout << getIndent();
+            std::cout << "CompoundInit(\n";
+            increaseIndent();
+            const auto &inits = static_cast<const AST::CompoundInit &>(init).getInits();
+            for (const auto &subInit : inits)
+            {
+                visitInitializer(*subInit, true);
+            }
+            std::cout << getIndent() << "dataType=";
+            if (init.getDataType().has_value())
+                std::cout << Types::dataTypeToString(init.getDataType().value());
+            else
+                std::cout << "unchecked";
+            std::cout << "\n";
+            decreaseIndent();
+            std::cout << getIndent() << "),\n";
+        }
     }
 
     void visitCast(const AST::Cast &cast, bool indent = true)
@@ -945,17 +1011,19 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
-    void visitAddrOf(const AST::AddrOf &addr, bool indent = true)
+    void visitSubscript(const AST::Subscript &sub, bool indent = true)
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "AddrOf(\n";
+        std::cout << "Subscript(\n";
         increaseIndent();
-        std::cout << getIndent() << "exp=";
-        visit(*addr.getInnerExp(), false);
+        std::cout << getIndent() << "exp1=";
+        visit(*sub.getExp1(), false);
+        std::cout << getIndent() << "exp2=";
+        visit(*sub.getExp2(), false);
         std::cout << getIndent() << "dataType=";
-        if (addr.getDataType().has_value())
-            std::cout << Types::dataTypeToString(addr.getDataType().value());
+        if (sub.getDataType().has_value())
+            std::cout << Types::dataTypeToString(sub.getDataType().value());
         else
             std::cout << "unchecked";
         std::cout << "\n";

@@ -81,6 +81,10 @@ std::string tokenTypeToString(TokenType type)
         return "SEMICOLON";
     case TokenType::COMMA:
         return "COMMA";
+    case TokenType::OPEN_BRACKET:
+        return "OPEN_BRACKET";
+    case TokenType::CLOSE_BRACKET:
+        return "CLOSE_BRACKET";
     case TokenType::HYPHEN:
         return "HYPHEN";
     case TokenType::DOUBLE_HYPHEN:

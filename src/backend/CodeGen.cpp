@@ -18,6 +18,23 @@ std::shared_ptr<Assembly::Imm> zero()
     return std::make_shared<Assembly::Imm>(0);
 }
 
+int CodeGen::getVarAlignment(const Types::DataType &type)
+{
+    if (Types::isArrayType(type) && Types::getSize(type) >= 16)
+        return 16;
+    else
+        return Types::getAlignment(type);
+}
+
+std::shared_ptr<Assembly::AsmType>
+CodeGen::convertVarType(const Types::DataType &type)
+{
+    if (Types::isArrayType(type))
+        return std::make_shared<Assembly::AsmType>(Assembly::ByteArray(Types::getSize(type), Types::getAlignment(type)));
+    else
+        return convertType(type);
+}
+
 // Helper function for double comparisons w/ support for NaN
 std::vector<std::shared_ptr<Assembly::Instruction>>
 CodeGen::convertDblComparison(TACKY::BinaryOp op, const std::shared_ptr<Assembly::AsmType> &dstType, std::shared_ptr<Assembly::Operand> &asmSrc1, std::shared_ptr<Assembly::Operand> &asmSrc2, const std::shared_ptr<Assembly::Operand> &asmDst)
@@ -165,6 +182,10 @@ CodeGen::convertType(const Types::DataType &type)
         return std::make_shared<Assembly::AsmType>(Assembly::Quadword());
     else if (Types::isDoubleType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Double());
+    else if (Types::isArrayType(type))
+        return std::make_shared<Assembly::AsmType>(Assembly::ByteArray(
+            Types::getSize(type),
+            Types::getAlignment(type)));
     else
         throw std::runtime_error("Internal error: converting function type to assembly");
 }
@@ -229,6 +250,8 @@ CodeGen::convertVal(const std::shared_ptr<TACKY::Val> &val)
     }
     else if (auto var = std::dynamic_pointer_cast<TACKY::Var>(val))
     {
+        if (Types::isArrayType(_symbolTable.get(var->getName()).type))
+            return std::make_shared<Assembly::PseudoMem>(var->getName(), 0);
         return std::make_shared<Assembly::Pseudo>(var->getName());
     }
     else
@@ -881,6 +904,93 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
             };
         }
     }
+    case TACKY::NodeType::CopyToOffset:
+    {
+        auto copyToOffset = std::dynamic_pointer_cast<TACKY::CopyToOffset>(inst);
+        return {
+            std::make_shared<Assembly::Mov>(
+                getAsmType(copyToOffset->getSrc()),
+                convertVal(copyToOffset->getSrc()),
+                std::make_shared<Assembly::PseudoMem>(copyToOffset->getDst(), copyToOffset->getOffset())),
+        };
+    }
+    case TACKY::NodeType::AddPtr:
+    {
+        auto addPtr = std::dynamic_pointer_cast<TACKY::AddPtr>(inst);
+
+        if (auto c = [addPtr, this]() -> std::optional<int64_t>
+            {
+                auto cnst = std::dynamic_pointer_cast<TACKY::Constant>(addPtr->getIndex());
+                if (cnst && Constants::isConstLong(*cnst->getConst()))
+                {
+                    return Constants::getConstLong(*cnst->getConst())->val;
+                }
+
+                return std::nullopt;
+            }())
+        {
+            // note that typechecker converts index to long
+            // QUESTION: what's the largest offset we should support?
+            auto i = c;
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    convertVal(addPtr->getPtr()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+                std::make_shared<Assembly::Lea>(
+                    std::make_shared<Assembly::Memory>(
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R9),
+                        i.value() * addPtr->getScale()),
+                    convertVal(addPtr->getDst())),
+            };
+        }
+        else
+        {
+            if (addPtr->getScale() == 1 || addPtr->getScale() == 2 || addPtr->getScale() == 4 || addPtr->getScale() == 8)
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        convertVal(addPtr->getPtr()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R8)),
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        convertVal(addPtr->getIndex()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+                    std::make_shared<Assembly::Lea>(
+                        std::make_shared<Assembly::Indexed>(
+                            std::make_shared<Assembly::Reg>(Assembly::RegName::R8),
+                            std::make_shared<Assembly::Reg>(Assembly::RegName::R9),
+                            addPtr->getScale()),
+                        convertVal(addPtr->getDst())),
+                };
+            }
+            else
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        convertVal(addPtr->getPtr()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R8)),
+                    std::make_shared<Assembly::Mov>(
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        convertVal(addPtr->getIndex()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+                    std::make_shared<Assembly::Binary>(
+                        Assembly::BinaryOp::Mult,
+                        std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                        std::make_shared<Assembly::Imm>(addPtr->getScale()),
+                        std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+                    std::make_shared<Assembly::Lea>(
+                        std::make_shared<Assembly::Indexed>(
+                            std::make_shared<Assembly::Reg>(Assembly::RegName::R8),
+                            std::make_shared<Assembly::Reg>(Assembly::RegName::R9),
+                            1),
+                        convertVal(addPtr->getDst())),
+                };
+            }
+        }
+    }
     default:
         throw std::runtime_error("Internal Error: Invalid TACKY instruction");
     }
@@ -918,8 +1028,8 @@ CodeGen::convertTopLevel(const std::shared_ptr<TACKY::TopLevel> &topLevel)
         return std::make_shared<Assembly::StaticVariable>(
             staticVar->getName(),
             staticVar->isGlobal(),
-            Types::getAlignment(staticVar->getDataType()),
-            staticVar->getInit());
+            getVarAlignment(staticVar->getDataType()),
+            staticVar->getInits());
     }
     else
     {
@@ -942,9 +1052,9 @@ void CodeGen::convertSymbol(const std::string &name, const Symbols::Symbol &symb
     if (auto funAttr = Symbols::getFunAttr(symbol.attrs))
         _asmSymbolTable.addFun(name, funAttr->defined);
     else if (auto staticAttr = Symbols::getStaticAttr(symbol.attrs))
-        _asmSymbolTable.addVar(name, convertType(symbol.type), true);
+        _asmSymbolTable.addVar(name, convertVarType(symbol.type), true);
     else
-        _asmSymbolTable.addVar(name, convertType(symbol.type), false);
+        _asmSymbolTable.addVar(name, convertVarType(symbol.type), false);
 }
 
 std::shared_ptr<Assembly::Program>

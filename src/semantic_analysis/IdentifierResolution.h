@@ -24,6 +24,7 @@ public:
 
     IdMap copyIdentifierMap(const IdMap &idMap);
 
+    std::shared_ptr<AST::Initializer> resolveInitializer(const std::shared_ptr<AST::Initializer> &init, IdMap &idMap);
     std::shared_ptr<AST::ForInit> resolveForInit(const std::shared_ptr<AST::ForInit> &forInit, IdMap &idMap);
     std::optional<std::shared_ptr<AST::Expression>> resolveOptionalExp(const std::optional<std::shared_ptr<AST::Expression>> &optExp, IdMap &idMap);
     std::shared_ptr<AST::Expression> resolveExp(const std::shared_ptr<AST::Expression> &exp, IdMap &idMap);

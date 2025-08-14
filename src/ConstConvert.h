@@ -32,7 +32,7 @@ namespace ConstConvert
         if (Types::isDoubleType(targetType))
             return std::make_shared<Constants::Const>(Constants::ConstDouble(static_cast<double>(v)));
 
-        throw std::runtime_error("Internal error: invalid target type");
+        throw std::runtime_error("Internal error: cannot cast to non-scalar type");
     }
 
     inline std::shared_ptr<Constants::Const> convert(const Types::DataType &targetType, const std::shared_ptr<Constants::Const> &c)

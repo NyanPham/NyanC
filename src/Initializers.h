@@ -60,7 +60,16 @@ namespace Initializers
         std::string toString() const { return "DoubleInit(" + std::to_string(val) + ")"; }
     };
 
-    using StaticInit = std::variant<IntInit, LongInit, UIntInit, ULongInit, DoubleInit>;
+    struct ZeroInit
+    {
+        size_t byteCount;
+
+        ZeroInit() = default;
+        ZeroInit(size_t byteCount) : byteCount{byteCount} {}
+        std::string toString() const { return "ZeroInit(" + std::to_string(byteCount) + " bytes)"; }
+    };
+
+    using StaticInit = std::variant<IntInit, LongInit, UIntInit, ULongInit, DoubleInit, ZeroInit>;
 
     inline std::string toString(const StaticInit &staticInit)
     {
@@ -93,6 +102,11 @@ namespace Initializers
         return isVariant<DoubleInit>(staticInit);
     }
 
+    inline bool isZeroInit(const StaticInit &staticInit)
+    {
+        return isVariant<ZeroInit>(staticInit);
+    }
+
     inline const std::optional<IntInit> getIntInit(const StaticInit &staticInit)
     {
         return getVariant<IntInit>(staticInit);
@@ -118,20 +132,17 @@ namespace Initializers
         return getVariant<DoubleInit>(staticInit);
     }
 
-    inline StaticInit zero(const Types::DataType &type)
+    inline const std::optional<ZeroInit> getZeroInit(const StaticInit &staticInit)
     {
-        if (Types::isIntType(type))
-            return IntInit{0};
-        else if (Types::isLongType(type))
-            return LongInit{0};
-        else if (Types::isUIntType(type))
-            return UIntInit{0};
-        else if (Types::isULongType(type) || Types::isPointerType(type))
-            return ULongInit{0};
-        else if (Types::isDoubleType(type))
-            return DoubleInit{0.0};
-        else
-            throw std::runtime_error("Internal error: Zero doesn't make sense for function type");
+        return getVariant<ZeroInit>(staticInit);
+    }
+
+    inline std::vector<std::shared_ptr<StaticInit>> zero(const Types::DataType &type)
+    {
+        std::vector<std::shared_ptr<StaticInit>> result;
+        result.reserve(1);
+        result.emplace_back(std::make_shared<StaticInit>(ZeroInit(Types::getSize(type))));
+        return result;
     }
 
     inline bool isZero(const StaticInit &staticInit)
@@ -147,6 +158,8 @@ namespace Initializers
         else if (auto doubleInit = getDoubleInit(staticInit))
             // Note: consider all double non-zero since we don't know if it's zero or negative-zero
             return false;
+        else if (auto zeroInit = getZeroInit(staticInit))
+            return true;
         else
             throw std::runtime_error("Internal error: Invalid static initializer");
     }

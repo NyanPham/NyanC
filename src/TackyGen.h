@@ -11,8 +11,8 @@
 #include "Types.h"
 
 struct PlainOperand;
-struct DereferencePointer;
-using ExpResult = std::variant<PlainOperand, DereferencePointer>;
+struct DereferencedPointer;
+using ExpResult = std::variant<PlainOperand, DereferencedPointer>;
 
 class TackyGen
 {
@@ -34,6 +34,11 @@ public:
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForWhileLoop(const std::shared_ptr<AST::While> &whileLoop);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop);
 
+    std::vector<std::shared_ptr<TACKY::Instruction>> emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const std::string &name, ssize_t offset);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitSubscript(const std::shared_ptr<AST::Subscript> &subscript);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitPointerAddition(const Types::DataType &type, const std::shared_ptr<AST::Expression> &exp1, const std::shared_ptr<AST::Expression> &exp2);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitSubtractionFromPointer(const Types::DataType &type, const std::shared_ptr<AST::Expression> &ptrExp, const std::shared_ptr<AST::Expression> &indexExp);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitPointerDiff(const Types::DataType &type, const std::shared_ptr<AST::Expression> &exp1, const std::shared_ptr<AST::Expression> &exp2);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitDereference(const std::shared_ptr<AST::Dereference> &dereference);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitAddrOf(const std::shared_ptr<AST::AddrOf> &addrOf);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitAssignment(const std::shared_ptr<AST::Expression> &lhs, const std::shared_ptr<AST::Expression> &rhs);

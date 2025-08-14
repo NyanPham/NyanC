@@ -98,6 +98,12 @@ private:
         case TACKY::NodeType::UIntToDouble:
             visitUIntToDouble(static_cast<const TACKY::UIntToDouble &>(node), indent);
             break;
+        case TACKY::NodeType::AddPtr:
+            visitAddPtr(static_cast<const TACKY::AddPtr &>(node), indent);
+            break;
+        case TACKY::NodeType::CopyToOffset:
+            visitCopyToOffset(static_cast<const TACKY::CopyToOffset &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -156,8 +162,14 @@ private:
         std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
         std::cout << getIndent() << "global=" << staticVar.isGlobal() << ",\n";
         std::cout << getIndent() << "type=" << Types::dataTypeToString(staticVar.getDataType()) << ",\n";
-        std::cout << getIndent() << "init=" << Initializers::toString(staticVar.getInit()) << ",\n";
-
+        std::cout << getIndent() << "inits=[\n";
+        increaseIndent();
+        for (const auto &init : staticVar.getInits())
+        {
+            std::cout << getIndent() << Initializers::toString(*init) << ",\n";
+        }
+        decreaseIndent();
+        std::cout << getIndent() << "]\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -287,6 +299,37 @@ private:
         visit(*copy.getSrc(), false);
         std::cout << getIndent() << "dst=";
         visit(*copy.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitAddPtr(const TACKY::AddPtr &addPtr, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "AddPtr(\n";
+        increaseIndent();
+        std::cout << getIndent() << "ptr=";
+        visit(*addPtr.getPtr(), false);
+        std::cout << getIndent() << "index=";
+        visit(*addPtr.getIndex(), false);
+        std::cout << getIndent() << "scale=" << addPtr.getScale() << ",\n";
+        std::cout << getIndent() << "dst=";
+        visit(*addPtr.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitCopyToOffset(const TACKY::CopyToOffset &copyToOffset, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "CopyToOffset(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*copyToOffset.getSrc(), false);
+        std::cout << getIndent() << "dst=" << copyToOffset.getDst() << ",\n";
+        std::cout << getIndent() << "offset=" << copyToOffset.getOffset() << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

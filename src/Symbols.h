@@ -13,7 +13,7 @@
 namespace Symbols
 {
     /*
-    type initial_value = Tentative | Initial(static_init) | NoInitializer
+    type initial_value = Tentative | Initial(static_init*) | NoInitializer
     */
     struct Tentative
     {
@@ -25,13 +25,21 @@ namespace Symbols
 
     struct Initial
     {
-        Initializers::StaticInit staticInit;
+        std::vector<std::shared_ptr<Initializers::StaticInit>> staticInits;
 
-        Initial(Initializers::StaticInit staticInit) : staticInit{staticInit} {}
+        Initial(std::vector<std::shared_ptr<Initializers::StaticInit>> staticInits) : staticInits{staticInits} {}
 
         std::string toString() const
         {
-            return "Initial(" + Initializers::toString(staticInit) + ")";
+            std::string result = "Initial([";
+            for (size_t i = 0; i < staticInits.size(); ++i)
+            {
+                result += Initializers::toString(*staticInits[i]);
+                if (i + 1 < staticInits.size())
+                    result += ", ";
+            }
+            result += "])";
+            return result;
         }
     };
 
@@ -56,7 +64,7 @@ namespace Symbols
     }
 
     inline InitialValue makeTentative() { return Tentative{}; }
-    inline InitialValue makeInitial(const Initializers::StaticInit &init) { return Initial{init}; }
+    inline InitialValue makeInitial(const std::vector<std::shared_ptr<Initializers::StaticInit>> &inits) { return Initial{inits}; }
     inline InitialValue makeNoInitializer() { return NoInitializer(); }
 
     inline std::optional<Tentative> getTentative(const InitialValue &initValue)

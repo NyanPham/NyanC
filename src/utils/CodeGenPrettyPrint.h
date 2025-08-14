@@ -111,6 +111,12 @@ private:
         case Assembly::NodeType::Data:
             visitData(static_cast<const Assembly::Data &>(node), indent);
             break;
+        case Assembly::NodeType::PseudoMem:
+            visitPseudoMem(static_cast<const Assembly::PseudoMem &>(node), indent);
+            break;
+        case Assembly::NodeType::Indexed:
+            visitIndexed(static_cast<const Assembly::Indexed &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -165,9 +171,15 @@ private:
         increaseIndent();
         std::cout << getIndent() << "name=\"" << staticVar.getName() << "\",\n";
         std::cout << getIndent() << "global=\"" << staticVar.isGlobal() << "\",\n";
-        std::cout << getIndent() << "alignment=" << std::to_string(staticVar.getAlignment()) << "\",\n";
-        std::cout << getIndent() << "init=\"" << Initializers::toString(staticVar.getInit()) << "\",\n";
-
+        std::cout << getIndent() << "alignment=" << std::to_string(staticVar.getAlignment()) << ",\n";
+        std::cout << getIndent() << "inits=[\n";
+        increaseIndent();
+        for (const auto &init : staticVar.getInits())
+        {
+            std::cout << getIndent() << Initializers::toString(*init) << ",\n";
+        }
+        decreaseIndent();
+        std::cout << getIndent() << "]\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -459,6 +471,28 @@ private:
         if (indent)
             std::cout << getIndent();
         std::cout << "Data(" << data.getName() << ")\n";
+    }
+
+    void visitPseudoMem(const Assembly::PseudoMem &pmem, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "PseudoMem(name=" << pmem.getName() << ", offset=" << pmem.getOffset() << ")\n";
+    }
+
+    void visitIndexed(const Assembly::Indexed &indexed, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Indexed(\n";
+        increaseIndent();
+        std::cout << getIndent() << "base=";
+        visit(*indexed.getBase(), false);
+        std::cout << getIndent() << "index=";
+        visit(*indexed.getIndex(), false);
+        std::cout << getIndent() << "scale=" << indexed.getScale() << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
     }
 
     template <typename T>

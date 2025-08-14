@@ -19,10 +19,12 @@ EBNF for a subset of C:
 
 <program> ::= { <declaration> }
 <declaration> ::= <variable-declaration> | <function-declaration>
-<variable-declaration> ::= { <specifier> }+ <declarator> [ "=" <exp> ] ";"
+<variable-declaration> ::= { <specifier> }+ <declarator> [ "=" <initializer> ] ";"
 <function-declaration> ::= { <specifier> }+ <declarator> "(" <param-list> ")" (<block> | ";")
+<initializer> ::= <exp> | "{" <initializer> { "," <initializer> } [ "," ] "}"
 <declarator> ::= "*" <declarator> | <direct-declarator>
-<direct-declarator> ::= <simple-declarator> [ <param-list> ]
+<direct-declarator> ::= <simple-declarator> [ <declarator-suffix> ]
+<declarator-suffix> ::= <param-list> | { "[" <const> "]" }+
 <param-list> ::= "(" "void" ")" | "(" <param> { "," <param> } ")"
 <param> ::= { <type-specifier> }+ <declarator>
 <simple-declarator> ::= <identifier> | "(" <declarator> ")"
@@ -57,7 +59,8 @@ EBNF for a subset of C:
 <argument-list> ::= <exp> { "," <exp> }
 <abstract-declarator> ::= "*" [ <abstract-declarator> ]
     | <direct-abstract-declarator>
-<direct-abstract-declarator> ::= "(" <abstract-declarator> ")"
+<direct-abstract-declarator> ::= "(" <abstract-declarator> ")" { "[" <const> "]" }
+    | { "[" <const> "]" }+
 <unop> ::= "-" | "~" | "!" | "++" | "--" | "*" | "&"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
         | "&&" | "||"
@@ -80,10 +83,11 @@ EBNF for a subset of C:
 
 struct Ident;
 struct PointerDeclarator;
+struct ArrayDeclarator;
 struct FunDeclarator;
 struct Param;
 
-using Declarator = std::variant<Ident, PointerDeclarator, FunDeclarator>;
+using Declarator = std::variant<Ident, PointerDeclarator, ArrayDeclarator, FunDeclarator>;
 std::string declaratorToString(const Declarator &declarator);
 
 struct Param
@@ -112,6 +116,15 @@ struct PointerDeclarator
     std::string toString() const;
 };
 
+struct ArrayDeclarator
+{
+    std::shared_ptr<Declarator> declarator;
+    std::shared_ptr<Constants::Const> sizeConst;
+    ArrayDeclarator(const std::shared_ptr<Declarator> &declarator, const std::shared_ptr<Constants::Const> &sizeConst) : declarator{declarator}, sizeConst{sizeConst} {}
+
+    std::string toString() const;
+};
+
 struct FunDeclarator
 {
     std::vector<std::shared_ptr<Param>> params;
@@ -125,6 +138,11 @@ struct FunDeclarator
 std::string PointerDeclarator::toString() const
 {
     return "PointerDeclarator(" + declaratorToString(*declarator) + ")\n";
+}
+
+std::string ArrayDeclarator::toString() const
+{
+    return "ArrayDeclarator(" + declaratorToString(*declarator) + ", size: " + Constants::toString(*sizeConst) + ")\n";
 }
 
 std::string FunDeclarator::toString() const
@@ -154,6 +172,109 @@ std::string declaratorToString(const Declarator &declarator)
 /*
     Done Defining the Declarators
 */
+
+size_t
+Parser::constToDim(const std::shared_ptr<Constants::Const> &c)
+{
+    size_t i = 0;
+
+    if (auto constInt = Constants::getConstInt(*c))
+    {
+        i = static_cast<size_t>(constInt->val);
+    }
+    else if (auto constLong = Constants::getConstLong(*c))
+    {
+        i = static_cast<size_t>(constLong->val);
+    }
+    else if (auto constUInt = Constants::getConstUInt(*c))
+    {
+        i = static_cast<size_t>(constUInt->val);
+    }
+    else if (auto constULong = Constants::getConstULong(*c))
+    {
+        i = static_cast<size_t>(constULong->val);
+    }
+    else if (auto constDouble = Constants::getConstDouble(*c))
+    {
+        throw std::runtime_error("Array dimensions must have integer type");
+    }
+
+    if (i > 0)
+        return i;
+
+    throw std::runtime_error("Array dimensions must be greater than zero");
+}
+
+std::vector<std::shared_ptr<Constants::Const>>
+Parser::parseArrayDimensions()
+{
+    std::vector<std::shared_ptr<Constants::Const>> dimensions{};
+    auto nextToken{peekToken()};
+
+    while (nextToken.has_value() && nextToken->getType() == TokenType::OPEN_BRACKET)
+    {
+        takeToken();
+        auto constExp = parseConstant();
+        if (!constExp)
+            raiseError("a constant expression", "none");
+
+        dimensions.push_back(constExp->getConst());
+        expect(TokenType::CLOSE_BRACKET);
+        nextToken = peekToken();
+    }
+
+    return dimensions;
+}
+
+std::vector<std::shared_ptr<AST::Initializer>>
+Parser::parseInitList()
+{
+    auto initList = std::vector<std::shared_ptr<AST::Initializer>>{};
+
+    while (true)
+    {
+        auto nextInit = parseInitializer();
+        initList.push_back(nextInit);
+
+        auto nextTwoTokens = peekTokens(2);
+
+        if (nextTwoTokens[0]->getType() == TokenType::COMMA && nextTwoTokens[1]->getType() == TokenType::CLOSE_BRACE)
+        {
+            takeToken();
+            break;
+        }
+        else if (nextTwoTokens[0]->getType() == TokenType::COMMA)
+        {
+            takeToken();
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    return initList;
+}
+
+std::shared_ptr<AST::Initializer>
+Parser::parseInitializer()
+{
+    auto nextTok{peekToken()};
+    if (nextTok->getType() == TokenType::OPEN_BRACE)
+    {
+        takeToken();
+        auto inits = parseInitList();
+        expect(TokenType::CLOSE_BRACE);
+        return std::make_shared<AST::CompoundInit>(inits);
+    }
+    else
+    {
+        auto exp = parseExp();
+        if (!exp)
+            raiseError("an expression", "none");
+        return std::make_shared<AST::SingleInit>(exp);
+    }
+}
 
 std::shared_ptr<Declarator> Parser::parseSimpleDeclarator()
 {
@@ -202,6 +323,16 @@ Parser::parseDirectDeclarator()
     auto simpleDecl = parseSimpleDeclarator();
     switch (peekToken()->getType())
     {
+    case TokenType::OPEN_BRACKET:
+    {
+        auto arrayDimensions = parseArrayDimensions();
+        for (const auto &dim : arrayDimensions)
+        {
+            simpleDecl = std::make_shared<Declarator>(
+                ArrayDeclarator{simpleDecl, dim});
+        }
+        return simpleDecl;
+    }
     case TokenType::OPEN_PAREN:
     {
         auto params = parseParamList();
@@ -268,6 +399,12 @@ Parser::processDeclarator(const std::shared_ptr<Declarator> &decl, const std::sh
         auto derivedType = std::make_shared<Types::DataType>(Types::makePointerType(baseType));
         return processDeclarator(pointerDecl->declarator, derivedType);
     }
+    else if (auto arrayDecl = std::get_if<ArrayDeclarator>(&*decl))
+    {
+        auto dim = constToDim(arrayDecl->sizeConst);
+        auto derivedType = std::make_shared<Types::DataType>(Types::makeArrayType(baseType, dim));
+        return processDeclarator(arrayDecl->declarator, derivedType);
+    }
     else if (auto funDecl = std::get_if<FunDeclarator>(&*decl))
     {
         auto ident = std::get_if<Ident>(&*funDecl->declarator);
@@ -300,14 +437,22 @@ Abstract Declarator
 */
 
 struct AbstractPointer;
+struct AbstractArray;
 struct AbstractBase;
 
-using AbstractDeclarator = std::variant<AbstractPointer, AbstractBase>;
+using AbstractDeclarator = std::variant<AbstractPointer, AbstractArray, AbstractBase>;
 std::string abstractDeclaratorToString(const AbstractDeclarator &declarator);
 
 struct AbstractPointer
 {
     std::shared_ptr<AbstractDeclarator> abstractDeclarator;
+    std::string toString() const;
+};
+
+struct AbstractArray
+{
+    std::shared_ptr<AbstractDeclarator> abstractDeclarator;
+    std::shared_ptr<Constants::Const> sizeConst;
     std::string toString() const;
 };
 
@@ -319,6 +464,11 @@ struct AbstractBase
 std::string AbstractPointer::toString() const
 {
     return "AbstractPointer(" + abstractDeclaratorToString(*abstractDeclarator) + ")\n";
+}
+
+std::string AbstractArray::toString() const
+{
+    return "AbstractArray(" + abstractDeclaratorToString(*abstractDeclarator) + ", size: " + Constants::toString(*sizeConst) + ")\n";
 }
 
 std::string AbstractBase::toString() const
@@ -344,7 +494,7 @@ Parser::parseAbstractDeclarator()
 
         auto inner = std::shared_ptr<AbstractDeclarator>{nullptr};
 
-        if (nextTok->getType() == TokenType::STAR || nextTok->getType() == TokenType::OPEN_PAREN)
+        if (nextTok->getType() == TokenType::STAR || nextTok->getType() == TokenType::OPEN_PAREN || nextTok->getType() == TokenType::OPEN_BRACKET)
         {
             // there's an inner declarator
             inner = parseAbstractDeclarator();
@@ -369,10 +519,41 @@ Parser::parseAbstractDeclarator()
 std::shared_ptr<AbstractDeclarator>
 Parser::parseDirectAbstractDeclarator()
 {
-    expect(TokenType::OPEN_PAREN);
-    auto decl = parseAbstractDeclarator();
-    expect(TokenType::CLOSE_PAREN);
-    return decl;
+    switch (peekToken()->getType())
+    {
+    case TokenType::OPEN_PAREN:
+    {
+        takeToken();
+        auto abstrDecl = parseAbstractDeclarator();
+        expect(TokenType::CLOSE_PAREN);
+
+        // inner declarator is followed by possibly-empty list of aray dimension
+        auto arrayDimensions = parseArrayDimensions();
+        for (const auto &dim : arrayDimensions)
+        {
+            abstrDecl = std::make_shared<AbstractDeclarator>(
+                AbstractArray{abstrDecl, dim});
+        }
+
+        return abstrDecl;
+    }
+    case TokenType::OPEN_BRACKET:
+    {
+        auto arrayDimensions = parseArrayDimensions();
+        auto abstrDecl = std::make_shared<AbstractDeclarator>(AbstractBase{});
+        for (const auto &dim : arrayDimensions)
+        {
+            abstrDecl = std::make_shared<AbstractDeclarator>(
+                AbstractArray{abstrDecl, dim});
+        }
+        return abstrDecl;
+    }
+    default:
+    {
+        raiseError("an abstract declarator", tokenTypeToString(peekToken()->getType()));
+        return nullptr;
+    }
+    }
 }
 
 std::shared_ptr<Types::DataType>
@@ -381,6 +562,12 @@ Parser::processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &dec
     if (std::holds_alternative<AbstractBase>(*decl))
     {
         return baseType;
+    }
+    else if (auto abstractArray = std::get_if<AbstractArray>(&*decl))
+    {
+        auto dim = constToDim(abstractArray->sizeConst);
+        auto derivedType = std::make_shared<Types::DataType>(Types::makeArrayType(baseType, dim));
+        return processAbstractDeclarator(abstractArray->abstractDeclarator, derivedType);
     }
     else if (auto abstractPointer = std::get_if<AbstractPointer>(&*decl))
     {
@@ -1062,6 +1249,14 @@ std::shared_ptr<AST::Expression> Parser::parsePostfixHelper(std::shared_ptr<AST:
         auto incrExp{std::make_shared<AST::PostfixIncr>(primaryExp)};
         return parsePostfixHelper(incrExp);
     }
+    case TokenType::OPEN_BRACKET:
+    {
+        takeToken();
+        auto index{parseExp(0)};
+        expect(TokenType::CLOSE_BRACKET);
+        auto subscriptExp = std::make_shared<AST::Subscript>(primaryExp, index);
+        return parsePostfixHelper(subscriptExp);
+    }
     default:
         return primaryExp;
     }
@@ -1444,7 +1639,7 @@ std::shared_ptr<AST::VariableDeclaration> Parser::finishParsingVariableDeclarati
         return std::make_shared<AST::VariableDeclaration>(name, std::nullopt, varType, storageClass);
     case TokenType::EQUAL_SIGN:
     {
-        auto init = parseExp(0);
+        auto init = parseInitializer();
         expect(TokenType::SEMICOLON);
 
         return std::make_shared<AST::VariableDeclaration>(name, std::make_optional(init), varType, storageClass);

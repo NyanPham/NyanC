@@ -13,11 +13,12 @@
 /*
 program = Program(declaration*)
 declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
-variable_declaration = (identifier name, exp? init, type var_type, storage_class?)
+variable_declaration = (identifier name, initializer? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
-type = Int | Long | UInt | ULong
-    | Double
+initializer = SingleInit(exp) | CompoundInit(initializer* list)
+type = Int | Long | UInt | ULong | Double
     | FunType(type* params, type ret)
+    | Array(type elem_type, int size)
     | PointerType(type referenced)
 storage_class = Static | Extern
 block = Block(block_item*)
@@ -50,6 +51,7 @@ exp = Constant(const, type)
     | FunctionCall(identifier, exp* args, type)
     | Dereference(exp)
     | AddrOf(exp)
+    | Subscript(exp, exp, type)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -89,12 +91,16 @@ namespace AST
     class FunctionCall;
     class Dereference;
     class AddrOf;
+    class Subscript;
     class ForInit;
     class InitDecl;
     class InitExp;
     class Expression;
     class Statement;
     class Declaration;
+    class SingleInit;
+    class CompoundInit;
+    class Initializer;
     class FunctionDeclaration;
     class VariableDeclaration;
     class BlockItem;
@@ -105,6 +111,8 @@ namespace AST
         Program,
         VariableDeclaration,
         FunctionDeclaration,
+        SingleInit,
+        CompoundInit,
         Return,
         ExpressionStmt,
         If,
@@ -133,6 +141,7 @@ namespace AST
         FunctionCall,
         Dereference,
         AddrOf,
+        Subscript,
         InitDecl,
         InitExp,
     };
@@ -260,6 +269,41 @@ namespace AST
         virtual ~Statement() = default;
     };
 
+    class Initializer : public Node
+    {
+    public:
+        Initializer(NodeType type, std::optional<Types::DataType> dataType = std::nullopt) : Node(type), _dataType{dataType} {}
+        virtual ~Initializer() = default;
+
+        const std::optional<Types::DataType> &getDataType() const { return _dataType; }
+        void setDataType(const std::optional<Types::DataType> &dataType) { _dataType = dataType; }
+
+    private:
+        std::optional<Types::DataType> _dataType = std::nullopt;
+    };
+
+    class SingleInit : public Initializer
+    {
+    public:
+        SingleInit(std::shared_ptr<Expression> exp) : Initializer(NodeType::SingleInit), _exp{std::move(exp)} {}
+
+        auto &getExp() const { return _exp; }
+
+    private:
+        std::shared_ptr<Expression> _exp;
+    };
+
+    class CompoundInit : public Initializer
+    {
+    public:
+        CompoundInit(std::vector<std::shared_ptr<Initializer>> inits) : Initializer(NodeType::CompoundInit), _inits{std::move(inits)} {}
+
+        auto &getInits() const { return _inits; }
+
+    private:
+        std::vector<std::shared_ptr<Initializer>> _inits;
+    };
+
     class Declaration : public BlockItem
     {
     public:
@@ -270,19 +314,19 @@ namespace AST
     class VariableDeclaration : public Declaration
     {
     public:
-        VariableDeclaration(const std::string &name, std::optional<std::shared_ptr<Expression>> init, const Types::DataType &varType, std::optional<StorageClass> storageClass = std::nullopt)
+        VariableDeclaration(const std::string &name, std::optional<std::shared_ptr<Initializer>> init, const Types::DataType &varType, std::optional<StorageClass> storageClass = std::nullopt)
             : Declaration(NodeType::VariableDeclaration), _name{std::move(name)}, _init{std::move(init)}, _varType{varType}, _storageClass{storageClass}
         {
         }
 
         const std::string &getName() const { return _name; }
-        const std::optional<std::shared_ptr<Expression>> &getOptInit() const { return _init; }
+        const std::optional<std::shared_ptr<Initializer>> &getOptInit() const { return _init; }
         const Types::DataType &getVarType() const { return _varType; }
         const std::optional<StorageClass> &getOptStorageClass() const { return _storageClass; }
 
     private:
         std::string _name;
-        std::optional<std::shared_ptr<Expression>> _init;
+        std::optional<std::shared_ptr<Initializer>> _init;
         Types::DataType _varType;
         std::optional<StorageClass> _storageClass;
     };
@@ -461,6 +505,20 @@ namespace AST
 
     private:
         std::shared_ptr<Expression> _innerExp;
+    };
+
+    class Subscript : public Expression
+    {
+    public:
+        Subscript(const std::shared_ptr<Expression> &exp1, const std::shared_ptr<Expression> &exp2, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Subscript, dataType), _exp1{exp1}, _exp2{exp2} {}
+
+        auto getExp1() const { return _exp1; }
+        auto getExp2() const { return _exp2; }
+
+    private:
+        std::shared_ptr<Expression> _exp1;
+        std::shared_ptr<Expression> _exp2;
     };
 
     class Return : public Statement

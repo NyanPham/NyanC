@@ -18,8 +18,9 @@ namespace Types
     struct DoubleType;
     struct FunType;
     struct PointerType;
+    struct ArrayType;
 
-    using DataType = std::variant<IntType, LongType, UIntType, ULongType, DoubleType, PointerType, FunType>;
+    using DataType = std::variant<IntType, LongType, UIntType, ULongType, DoubleType, PointerType, ArrayType, FunType>;
 
     struct IntType
     {
@@ -131,10 +132,34 @@ namespace Types
         std::string toString() const;
     };
 
+    struct ArrayType
+    {
+        std::shared_ptr<DataType> elemType;
+        int size;
+
+        ArrayType(const std::shared_ptr<DataType> &elemType, int size) : elemType(std::move(elemType)), size{size} {}
+
+        int getSize() const { return size * Types::getSize(*elemType); }
+        int getAlignment() const { return Types::getAlignment(*elemType); }
+        bool isSigned() const { throw std::runtime_error("Internal error: signedness doesn't make sense for function type"); }
+
+        std::string toString() const;
+    };
+
     inline std::string PointerType::toString() const
     {
         std::string result = "PointerType(referencedType: ";
         result += dataTypeToString(*referencedType);
+        result += ")";
+        return result;
+    }
+
+    inline std::string ArrayType::toString() const
+    {
+        std::string result = "ArrayType(elemType: ";
+        result += dataTypeToString(*elemType);
+        result += ", size: ";
+        result += std::to_string(size);
         result += ")";
         return result;
     }
@@ -191,6 +216,11 @@ namespace Types
         return PointerType{referencedType};
     }
 
+    inline DataType makeArrayType(const std::shared_ptr<DataType> &elemType, int size)
+    {
+        return ArrayType{elemType, size};
+    }
+
     inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes,
                                 const std::shared_ptr<DataType> &retType)
     {
@@ -225,6 +255,11 @@ namespace Types
     inline std::optional<PointerType> getPointerType(const DataType &type)
     {
         return getVariant<PointerType>(type);
+    }
+
+    inline std::optional<ArrayType> getArrayType(const DataType &type)
+    {
+        return getVariant<ArrayType>(type);
     }
 
     inline std::optional<FunType> getFunType(const DataType &type)
@@ -262,6 +297,11 @@ namespace Types
         return isVariant<PointerType>(type);
     }
 
+    inline bool isArrayType(const DataType &type)
+    {
+        return isVariant<ArrayType>(type);
+    }
+
     inline bool isFunType(const DataType &type)
     {
         return isVariant<FunType>(type);
@@ -286,11 +326,15 @@ namespace Types
                             if (*left.paramTypes[i] != *right.paramTypes[i])
                                 return false;
                         }
-                        return *left.retType == *right.retType;
+                        return static_cast<bool>(*left.retType == *right.retType);
                     }
                     else if constexpr (std::is_same_v<LeftType, Types::PointerType>)
                     {
                         return static_cast<bool>(*left.referencedType == *right.referencedType);
+                    }
+                    else if constexpr (std::is_same_v<LeftType, Types::ArrayType>)
+                    {
+                        return static_cast<bool>(left.size == right.size && *left.elemType == *right.elemType);
                     }
                     else
                     {
@@ -303,6 +347,45 @@ namespace Types
                 }
             },
             lhs, rhs);
+    }
+
+    inline bool isArithmetic(const Types::DataType &type)
+    {
+        if (
+            Types::isIntType(type) ||
+            Types::isUIntType(type) ||
+            Types::isLongType(type) ||
+            Types::isULongType(type) ||
+            Types::isDoubleType(type))
+        {
+            return true;
+        }
+
+        if (Types::isFunType(type) || Types::isPointerType(type))
+        {
+            return false;
+        }
+
+        throw std::runtime_error("Internal error: unknown type");
+    }
+
+    inline bool isInteger(const Types::DataType &type)
+    {
+        if (
+            Types::isIntType(type) ||
+            Types::isUIntType(type) ||
+            Types::isLongType(type) ||
+            Types::isULongType(type))
+        {
+            return true;
+        }
+
+        if (Types::isFunType(type) || Types::isPointerType(type) || Types::isDoubleType(type))
+        {
+            return false;
+        }
+
+        return false;
     }
 }
 

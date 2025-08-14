@@ -18,13 +18,15 @@
 
 struct Ident;
 struct PointerDeclarator;
+struct ArrayDeclarator;
 struct FunDeclarator;
 struct Param;
 struct AbstractPointer;
+struct AbstractArray;
 struct AbstractBase;
 
-using Declarator = std::variant<Ident, PointerDeclarator, FunDeclarator>;
-using AbstractDeclarator = std::variant<AbstractPointer, AbstractBase>;
+using Declarator = std::variant<Ident, PointerDeclarator, ArrayDeclarator, FunDeclarator>;
+using AbstractDeclarator = std::variant<AbstractPointer, AbstractArray, AbstractBase>;
 
 class Parser
 {
@@ -42,6 +44,12 @@ public:
     AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConstant();
     std::string parseIdentifier();
+
+    std::vector<std::shared_ptr<AST::Initializer>> parseInitList();
+    std::shared_ptr<AST::Initializer> parseInitializer();
+
+    size_t constToDim(const std::shared_ptr<Constants::Const> &c);
+    std::vector<std::shared_ptr<Constants::Const>> parseArrayDimensions();
 
     std::shared_ptr<Declarator> parseSimpleDeclarator();
     std::shared_ptr<Declarator> parseDeclarator();
