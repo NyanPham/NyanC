@@ -476,6 +476,18 @@ private:
             return "G";
         case Assembly::CondCode::GE:
             return "GE";
+        case Assembly::CondCode::B:
+            return "B";
+        case Assembly::CondCode::BE:
+            return "BE";
+        case Assembly::CondCode::A:
+            return "A";
+        case Assembly::CondCode::AE:
+            return "AE";
+        case Assembly::CondCode::P:
+            return "P";
+        case Assembly::CondCode::NP:
+            return "NP";
         default:
             return "Unknown";
         }

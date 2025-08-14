@@ -36,7 +36,7 @@ instruction = Mov(asm_type, operand src, operand dst)
 unary_operator = Neg | Not | ShrOneOp
 binary_operator = Add | Sub | Mult | DivDouble | And | Or | Xor | Sal | Sar | Shl | Shr
 operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int) | Data(identifier)
-cond_code = E | NE | L | LE | G | GE | A | AE | B | BE
+cond_code = E | NE | L | LE | G | GE | A | AE | B | BE | P | NP
 reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP | XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7 | XMM14 | XMM15
 */
 
@@ -189,6 +189,8 @@ namespace Assembly
         AE,
         B,
         BE,
+        P,
+        NP,
     };
 
     enum class UnaryOp

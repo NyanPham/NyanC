@@ -18,6 +18,68 @@ std::shared_ptr<Assembly::Imm> zero()
     return std::make_shared<Assembly::Imm>(0);
 }
 
+// Helper function for double comparisons w/ support for NaN
+std::vector<std::shared_ptr<Assembly::Instruction>>
+CodeGen::convertDblComparison(TACKY::BinaryOp op, const std::shared_ptr<Assembly::AsmType> &dstType, std::shared_ptr<Assembly::Operand> &asmSrc1, std::shared_ptr<Assembly::Operand> &asmSrc2, const std::shared_ptr<Assembly::Operand> &asmDst)
+{
+    auto condCode = convertCondCode(op, false);
+    /*
+        If op is A or AE, can perform usual comparisons;
+            these are true if only some flags are 0, so they'll be false for unordered results.
+            If op is B or BE, just flip operands and use A or AE instead.
+        If op is E or NE, need to check for parity afterwards.
+    */
+    switch (condCode)
+    {
+    case Assembly::CondCode::B:
+    {
+        condCode = Assembly::CondCode::A;
+        std::swap(asmSrc1, asmSrc2);
+        break;
+    }
+    case Assembly::CondCode::BE:
+    {
+        condCode = Assembly::CondCode::AE;
+        std::swap(asmSrc1, asmSrc2);
+        break;
+    }
+    default:
+        break;
+    }
+
+    auto insts = std::vector<std::shared_ptr<Assembly::Instruction>>{
+        std::make_shared<Assembly::Cmp>(std::make_shared<Assembly::AsmType>(Assembly::Double()), asmSrc2, asmSrc1),
+        std::make_shared<Assembly::Mov>(dstType, zero(), asmDst),
+        std::make_shared<Assembly::SetCC>(condCode, asmDst),
+    };
+
+    auto parityInsts = std::vector<std::shared_ptr<Assembly::Instruction>>{};
+    if (condCode == Assembly::CondCode::E)
+    {
+        /*
+            zero out destination if parity flag is set,
+            indicating unordered result
+        */
+        parityInsts = std::vector<std::shared_ptr<Assembly::Instruction>>{
+            std::make_shared<Assembly::Mov>(dstType, zero(), std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+            std::make_shared<Assembly::SetCC>(Assembly::CondCode::NP, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+            std::make_shared<Assembly::Binary>(Assembly::BinaryOp::And, dstType, std::make_shared<Assembly::Reg>(Assembly::RegName::R9), asmDst),
+        };
+    }
+    else if (condCode == Assembly::CondCode::NE)
+    {
+        // set destination to 1 if parity flag is set, indicating ordered result
+        parityInsts = std::vector<std::shared_ptr<Assembly::Instruction>>{
+            std::make_shared<Assembly::Mov>(dstType, zero(), std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+            std::make_shared<Assembly::SetCC>(Assembly::CondCode::P, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+            std::make_shared<Assembly::Binary>(Assembly::BinaryOp::Or, dstType, std::make_shared<Assembly::Reg>(Assembly::RegName::R9), asmDst),
+        };
+    }
+
+    insts.insert(insts.end(), parityInsts.begin(), parityInsts.end());
+    return insts;
+}
+
 std::tuple<
     std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>,
     std::vector<std::shared_ptr<Assembly::Operand>>,
@@ -411,6 +473,13 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
                     std::make_shared<Assembly::Cmp>(srcType, asmSrc, std::make_shared<Assembly::Reg>(Assembly::RegName::XMM0)),
                     std::make_shared<Assembly::Mov>(dstType, zero(), asmDst),
                     std::make_shared<Assembly::SetCC>(Assembly::CondCode::E, asmDst),
+
+                    // cmp with NaN sets both ZF and PF, but !NaN should evaluate to 0,
+                    // so we'll calculate:
+                    // !x = ZF && !PF
+
+                    std::make_shared<Assembly::SetCC>(Assembly::CondCode::NP, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+                    std::make_shared<Assembly::Binary>(Assembly::BinaryOp::And, dstType, std::make_shared<Assembly::Reg>(Assembly::RegName::R9), asmDst),
                 };
             }
             else
@@ -471,6 +540,10 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         case TACKY::BinaryOp::GreaterThan:
         case TACKY::BinaryOp::GreaterOrEqual:
         {
+            if (Assembly::isAsmDouble(*srcType))
+            {
+                return convertDblComparison(binaryInst->getOp(), dstType, asmSrc1, asmSrc2, asmDst);
+            }
             auto isSigned = Assembly::isAsmDouble(*srcType)
                                 ? false
                                 : Types::isSigned(*tackyType(binaryInst->getSrc1()));
@@ -576,15 +649,26 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
 
         if (Assembly::isAsmDouble(*asmType))
         {
-            return {
+            auto compareToZero = std::vector<std::shared_ptr<Assembly::Instruction>>{
                 std::make_shared<Assembly::Binary>(
                     Assembly::BinaryOp::Xor,
                     std::make_shared<Assembly::AsmType>(Assembly::Double()),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::XMM0),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::XMM0)),
                 std::make_shared<Assembly::Cmp>(asmType, asmCond, std::make_shared<Assembly::Reg>(Assembly::RegName::XMM0)),
-                std::make_shared<Assembly::JmpCC>(Assembly::CondCode::E, jumpIfZeroInst->getTarget()),
             };
+
+            auto lbl = UniqueIds::makeLabel("nan.jmp.end");
+            auto conditionalJmp = std::vector<std::shared_ptr<Assembly::Instruction>>{
+                // Comparison to NaN sets ZF and PF flags;
+                // to treat NaN as nonzero, skip over je instruction if PF flag is set
+                std::make_shared<Assembly::JmpCC>(Assembly::CondCode::P, lbl),
+                std::make_shared<Assembly::JmpCC>(Assembly::CondCode::E, jumpIfZeroInst->getTarget()),
+                std::make_shared<Assembly::Label>(lbl),
+            };
+
+            compareToZero.insert(compareToZero.end(), conditionalJmp.begin(), conditionalJmp.end());
+            return compareToZero;
         }
 
         return {
@@ -609,6 +693,9 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
                     std::make_shared<Assembly::Reg>(Assembly::RegName::XMM0)),
                 std::make_shared<Assembly::Cmp>(asmType, asmCond, std::make_shared<Assembly::Reg>(Assembly::RegName::XMM0)),
                 std::make_shared<Assembly::JmpCC>(Assembly::CondCode::NE, jumpIfNotZeroInst->getTarget()),
+
+                // Also jump to target on NaN, which is nonzero
+                std::make_shared<Assembly::JmpCC>(Assembly::CondCode::P, jumpIfNotZeroInst->getTarget()),
             };
         }
 

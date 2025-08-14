@@ -276,6 +276,10 @@ std::string Emit::showCondCode(Assembly::CondCode condCode)
         return "b";
     case Assembly::CondCode::BE:
         return "be";
+    case Assembly::CondCode::P:
+        return "p";
+    case Assembly::CondCode::NP:
+        return "np";
     default:
         throw std::runtime_error("Internal Error: Unknown condition code!");
     }

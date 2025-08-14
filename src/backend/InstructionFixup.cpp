@@ -242,6 +242,34 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     {
         auto binary = std::dynamic_pointer_cast<Assembly::Binary>(inst);
 
+        // Binary operations on double require register as destination
+        if (
+            Assembly::isAsmDouble(*binary->getAsmType()))
+        {
+            if (binary->getDst()->getType() == Assembly::NodeType::Reg)
+            {
+                return {
+                    binary,
+                };
+            }
+
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                    binary->getDst(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                std::make_shared<Assembly::Binary>(
+                    binary->getOp(),
+                    std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                    binary->getSrc(),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15),
+                    binary->getDst()),
+            };
+        }
+
         switch (binary->getOp())
         {
         case Assembly::BinaryOp::Add:
@@ -250,34 +278,6 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         case Assembly::BinaryOp::Or:
         case Assembly::BinaryOp::Xor:
         {
-            // Binary operations on double require register as destination
-            if (
-                Assembly::isAsmDouble(*binary->getAsmType()))
-            {
-                if (binary->getDst()->getType() == Assembly::NodeType::Reg)
-                {
-                    return {
-                        binary,
-                    };
-                }
-
-                return {
-                    std::make_shared<Assembly::Mov>(
-                        std::make_shared<Assembly::AsmType>(Assembly::Double()),
-                        binary->getDst(),
-                        std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
-                    std::make_shared<Assembly::Binary>(
-                        binary->getOp(),
-                        std::make_shared<Assembly::AsmType>(Assembly::Double()),
-                        binary->getSrc(),
-                        std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15)),
-                    std::make_shared<Assembly::Mov>(
-                        std::make_shared<Assembly::AsmType>(Assembly::Double()),
-                        std::make_shared<Assembly::Reg>(Assembly::RegName::XMM15),
-                        binary->getDst()),
-                };
-            }
-
             // Add/Sub/And/Or/Xor can't take large immediates as source operands
             if (
                 Assembly::isAsmQuadword(*binary->getAsmType()) &&
