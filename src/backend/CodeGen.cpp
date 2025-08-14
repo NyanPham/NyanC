@@ -161,7 +161,7 @@ CodeGen::convertType(const Types::DataType &type)
 {
     if (Types::isIntType(type) || Types::isUIntType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Longword());
-    else if (Types::isLongType(type) || Types::isULongType(type))
+    else if (Types::isLongType(type) || Types::isULongType(type) || Types::isPointerType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Quadword());
     else if (Types::isDoubleType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Double());
@@ -201,7 +201,7 @@ CodeGen::passParams(const std::vector<std::shared_ptr<TACKY::Val>> &params)
     // first param passed on stack has index 0 and is passed at Stack(16)
     for (int i = 0; i < stackParams.size(); i++)
     {
-        auto stack = std::make_shared<Assembly::Stack>(16 + 8 * i);
+        auto stack = std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), 16 + 8 * i);
         auto [paramType, param] = stackParams[i];
         insts.push_back(std::make_shared<Assembly::Mov>(paramType, stack, param));
     }
@@ -633,6 +633,40 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
             };
         }
         }
+    }
+    case TACKY::NodeType::Load:
+    {
+        auto load = std::dynamic_pointer_cast<TACKY::Load>(inst);
+        auto asmSrcPtr = convertVal(load->getSrcPtr());
+        auto asmDst = convertVal(load->getDst());
+        auto asmType = getAsmType(load->getDst());
+
+        return {
+            std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), asmSrcPtr, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+            std::make_shared<Assembly::Mov>(asmType, std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::R9), 0), asmDst),
+        };
+    }
+    case TACKY::NodeType::Store:
+    {
+        auto store = std::dynamic_pointer_cast<TACKY::Store>(inst);
+        auto asmSrc = convertVal(store->getSrc());
+        auto asmType = getAsmType(store->getSrc());
+        auto asmDstPtr = convertVal(store->getDstPtr());
+
+        return {
+            std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), asmDstPtr, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
+            std::make_shared<Assembly::Mov>(asmType, asmSrc, std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::R9), 0)),
+        };
+    }
+    case TACKY::NodeType::GetAddress:
+    {
+        auto getAddress = std::dynamic_pointer_cast<TACKY::GetAddress>(inst);
+        auto asmSrc = convertVal(getAddress->getSrc());
+        auto asmDst = convertVal(getAddress->getDst());
+
+        return {
+            std::make_shared<Assembly::Lea>(asmSrc, asmDst),
+        };
     }
     case TACKY::NodeType::Jump:
     {

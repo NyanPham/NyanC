@@ -31,7 +31,7 @@ bool isMemoryOperand(const std::shared_ptr<Assembly::Operand> &operand)
 {
     switch (operand->getType())
     {
-    case Assembly::NodeType::Stack:
+    case Assembly::NodeType::Memory:
     case Assembly::NodeType::Data:
         return true;
     default:
@@ -42,6 +42,26 @@ bool isMemoryOperand(const std::shared_ptr<Assembly::Operand> &operand)
 bool isImmOperand(const std::shared_ptr<Assembly::Operand> &operand)
 {
     return operand->getType() == Assembly::NodeType::Imm;
+}
+
+bool isXmm(const std::shared_ptr<Assembly::Reg> &reg)
+{
+    switch (reg->getName())
+    {
+    case Assembly::RegName::XMM0:
+    case Assembly::RegName::XMM1:
+    case Assembly::RegName::XMM2:
+    case Assembly::RegName::XMM3:
+    case Assembly::RegName::XMM4:
+    case Assembly::RegName::XMM5:
+    case Assembly::RegName::XMM6:
+    case Assembly::RegName::XMM7:
+    case Assembly::RegName::XMM14:
+    case Assembly::RegName::XMM15:
+        return true;
+    default:
+        return false;
+    }
 }
 
 std::vector<std::shared_ptr<Assembly::Instruction>>
@@ -237,6 +257,23 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
                 inst,
             };
         }
+    }
+    case Assembly::NodeType::Lea:
+    {
+        // dst of lea must be a register
+        auto lea = std::dynamic_pointer_cast<Assembly::Lea>(inst);
+
+        if (isMemoryOperand(lea->getDst()))
+        {
+            return {
+                std::make_shared<Assembly::Lea>(lea->getSrc(), std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
+                std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), std::make_shared<Assembly::Reg>(Assembly::RegName::R11), lea->getDst()),
+            };
+        }
+
+        return {
+            inst,
+        };
     }
     case Assembly::NodeType::Binary:
     {
@@ -502,6 +539,22 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     case Assembly::NodeType::Push:
     {
         auto push = std::dynamic_pointer_cast<Assembly::Push>(inst);
+
+        if (auto reg = std::dynamic_pointer_cast<Assembly::Reg>(push->getOperand());
+            reg && isXmm(reg))
+        {
+            return {
+                std::make_shared<Assembly::Binary>(
+                    Assembly::BinaryOp::Sub,
+                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    std::make_shared<Assembly::Imm>(8),
+                    std::make_shared<Assembly::Reg>(Assembly::RegName::SP)),
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Double()),
+                    reg,
+                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::SP), 0)),
+            };
+        }
 
         if (isImmOperand(push->getOperand()) && isLarge(std::dynamic_pointer_cast<Assembly::Imm>(push->getOperand())->getValue()))
         {

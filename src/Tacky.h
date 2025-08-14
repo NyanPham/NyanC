@@ -24,6 +24,9 @@ instruction = Return(val)
     | Unary(unary_operator, val src, val dst)
     | Binary(binary_operator, val src1, val src2, val dst)
     | Copy(val src, val dst)
+    | GetAddress(val src, val dst)
+    | Load(val src_ptr, val dst)
+    | Store(val src, val dst_ptr)
     | Jump(identifier target)
     | JumpIfZero(val condition, identifier target)
     | JumpIfNotZero(val condition, identifier target)
@@ -81,6 +84,9 @@ namespace TACKY
         Unary,
         Binary,
         Copy,
+        GetAddress,
+        Load,
+        Store,
         Jump,
         JumpIfZero,
         JumpIfNotZero,
@@ -223,6 +229,51 @@ namespace TACKY
     private:
         std::shared_ptr<Val> _src;
         std::shared_ptr<Val> _dst;
+    };
+
+    class GetAddress : public Instruction
+    {
+    public:
+        GetAddress(std::shared_ptr<Val> src, std::shared_ptr<Val> dst)
+            : Instruction(NodeType::GetAddress), _src{std::move(src)}, _dst{std::move(dst)}
+        {
+        }
+        std::shared_ptr<Val> getSrc() const { return _src; }
+        std::shared_ptr<Val> getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class Load : public Instruction
+    {
+    public:
+        Load(std::shared_ptr<Val> srcPtr, std::shared_ptr<Val> dst)
+            : Instruction(NodeType::Load), _srcPtr{std::move(srcPtr)}, _dst{std::move(dst)}
+        {
+        }
+        std::shared_ptr<Val> getSrcPtr() const { return _srcPtr; }
+        std::shared_ptr<Val> getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Val> _srcPtr;
+        std::shared_ptr<Val> _dst;
+    };
+
+    class Store : public Instruction
+    {
+    public:
+        Store(std::shared_ptr<Val> src, std::shared_ptr<Val> dstPtr)
+            : Instruction(NodeType::Store), _src{std::move(src)}, _dstPtr{std::move(dstPtr)}
+        {
+        }
+        std::shared_ptr<Val> getSrc() const { return _src; }
+        std::shared_ptr<Val> getDstPtr() const { return _dstPtr; }
+
+    private:
+        std::shared_ptr<Val> _src;
+        std::shared_ptr<Val> _dstPtr;
     };
 
     class Jump : public Instruction

@@ -126,7 +126,7 @@ namespace Initializers
             return LongInit{0};
         else if (Types::isUIntType(type))
             return UIntInit{0};
-        else if (Types::isULongType(type))
+        else if (Types::isULongType(type) || Types::isPointerType(type))
             return ULongInit{0};
         else if (Types::isDoubleType(type))
             return DoubleInit{0.0};

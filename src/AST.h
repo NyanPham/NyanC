@@ -15,7 +15,10 @@ program = Program(declaration*)
 declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
 variable_declaration = (identifier name, exp? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
-type = Int | Long | UInt | ULong | Double | FunType(type* params, type ret)
+type = Int | Long | UInt | ULong
+    | Double
+    | FunType(type* params, type ret)
+    | PointerType(type referenced)
 storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
@@ -45,6 +48,8 @@ exp = Constant(const, type)
     | PostfixDecr(exp, type)
     | Conditional(exp condition, exp then, exp else, type)
     | FunctionCall(identifier, exp* args, type)
+    | Dereference(exp)
+    | AddrOf(exp)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -82,6 +87,8 @@ namespace AST
     class LabeledStatement;
     class Goto;
     class FunctionCall;
+    class Dereference;
+    class AddrOf;
     class ForInit;
     class InitDecl;
     class InitExp;
@@ -124,6 +131,8 @@ namespace AST
         PostfixDecr,
         Conditional,
         FunctionCall,
+        Dereference,
+        AddrOf,
         InitDecl,
         InitExp,
     };
@@ -430,6 +439,28 @@ namespace AST
     private:
         std::string _fnName;
         std::vector<std::shared_ptr<Expression>> _args;
+    };
+
+    class Dereference : public Expression
+    {
+    public:
+        Dereference(const std::shared_ptr<Expression> &exp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Dereference, dataType), _innerExp{exp} {}
+        auto getInnerExp() const { return _innerExp; }
+
+    private:
+        std::shared_ptr<Expression> _innerExp;
+    };
+
+    class AddrOf : public Expression
+    {
+    public:
+        AddrOf(const std::shared_ptr<Expression> &exp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::AddrOf, dataType), _innerExp{exp} {}
+        auto getInnerExp() const { return _innerExp; }
+
+    private:
+        std::shared_ptr<Expression> _innerExp;
     };
 
     class Return : public Statement

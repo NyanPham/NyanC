@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include "TypeChecker.h"
 #include "AST.h"
 #include "Types.h"
@@ -20,6 +22,113 @@ std::shared_ptr<AST::Expression> convertTo(const std::shared_ptr<AST::Expression
     castExp->setDataType(std::make_optional(tgtType));
 
     return castExp;
+}
+
+bool isPointer(const Types::DataType &type)
+{
+    return Types::isPointerType(type);
+}
+
+bool isArithmetic(const Types::DataType &type)
+{
+    if (
+        Types::isIntType(type) ||
+        Types::isUIntType(type) ||
+        Types::isLongType(type) ||
+        Types::isULongType(type) ||
+        Types::isDoubleType(type))
+    {
+        return true;
+    }
+
+    if (Types::isFunType(type) || Types::isPointerType(type))
+    {
+        return false;
+    }
+
+    throw std::runtime_error("Internal error: unknown type");
+}
+
+bool isInteger(const Types::DataType &type)
+{
+    if (
+        Types::isIntType(type) ||
+        Types::isUIntType(type) ||
+        Types::isLongType(type) ||
+        Types::isULongType(type))
+    {
+        return true;
+    }
+
+    if (Types::isFunType(type) || Types::isPointerType(type) || Types::isDoubleType(type))
+    {
+        return false;
+    }
+
+    return false;
+}
+
+bool isLvalue(const std::shared_ptr<AST::Expression> &exp)
+{
+    static const std::unordered_set<AST::NodeType> lvalueNodeTypes = {
+        AST::NodeType::Var,
+        AST::NodeType::Dereference,
+    };
+
+    return lvalueNodeTypes.count(exp->getType()) > 0;
+}
+
+bool isNullPointerConstant(const std::shared_ptr<AST::Expression> &exp)
+{
+    if (auto c = std::dynamic_pointer_cast<AST::Constant>(exp))
+    {
+        if (auto constInt = Constants::getConstInt(*c->getConst()))
+            return constInt->val == 0;
+        else if (auto constUInt = Constants::getConstUInt(*c->getConst()))
+            return constUInt->val == 0;
+        else if (auto constLong = Constants::getConstLong(*c->getConst()))
+            return constLong->val == 0;
+        else if (auto constULong = Constants::getConstULong(*c->getConst()))
+            return constULong->val == 0;
+        else
+            return false;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+Types::DataType getCommonPointerType(const std::shared_ptr<AST::Expression> &e1, const std::shared_ptr<AST::Expression> &e2)
+{
+    if (!e1->getDataType().has_value() || !e2->getDataType().has_value())
+    {
+        throw std::runtime_error("Internal error: expressions must be typechecked before getting the common pointer type");
+    }
+
+    if (e1->getDataType() == e2->getDataType())
+        return e1->getDataType().value();
+    else if (isNullPointerConstant(e1))
+        return e2->getDataType().value();
+    else if (isNullPointerConstant(e2))
+        return e1->getDataType().value();
+    else
+        throw std::runtime_error("Expressions have incompatible types");
+}
+
+std::shared_ptr<AST::Expression> convertByAssignment(const std::shared_ptr<AST::Expression> &exp, const Types::DataType &tgtType)
+{
+    if (!exp->getDataType().has_value())
+        throw std::runtime_error("Internal error: expression is not typechecked");
+
+    if (exp->getDataType().value() == tgtType)
+        return exp;
+    else if (isArithmetic(exp->getDataType().value()) && isArithmetic(tgtType))
+        return convertTo(exp, tgtType);
+    else if (isNullPointerConstant(exp) && isPointer(tgtType))
+        return convertTo(exp, tgtType);
+    else
+        throw std::runtime_error("Cannot convert type for assignment");
 }
 
 Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &t2)
@@ -51,25 +160,243 @@ Symbols::InitialValue toStaticInit(const Types::DataType &varType, const std::sh
     if (auto astConstant = std::dynamic_pointer_cast<AST::Constant>(e))
     {
         Initializers::StaticInit initVal;
-        auto convertedConstant = ConstConvert::convert(varType, astConstant->getConst());
 
-        if (auto constInt = Constants::getConstInt(*convertedConstant))
-            initVal = Initializers::IntInit{constInt->val};
-        else if (auto constLong = Constants::getConstLong(*convertedConstant))
-            initVal = Initializers::LongInit{constLong->val};
-        else if (auto constUInt = Constants::getConstUInt(*convertedConstant))
-            initVal = Initializers::UIntInit{constUInt->val};
-        else if (auto constULong = Constants::getConstULong(*convertedConstant))
-            initVal = Initializers::ULongInit{constULong->val};
-        else if (auto constDouble = Constants::getConstDouble(*convertedConstant))
-            initVal = Initializers::DoubleInit{constDouble->val};
+        if (isPointer(varType))
+        {
+            if (isNullPointerConstant(astConstant))
+                initVal = Initializers::ULongInit(0);
+            else
+                throw std::runtime_error("Static pointers can only be initialized with null pointer constants");
+        }
         else
-            throw std::runtime_error("Internal error: invalid constant type");
+        {
+            auto convertedConstant = ConstConvert::convert(varType, astConstant->getConst());
+
+            if (auto constInt = Constants::getConstInt(*convertedConstant))
+                initVal = Initializers::IntInit{constInt->val};
+            else if (auto constLong = Constants::getConstLong(*convertedConstant))
+                initVal = Initializers::LongInit{constLong->val};
+            else if (auto constUInt = Constants::getConstUInt(*convertedConstant))
+                initVal = Initializers::UIntInit{constUInt->val};
+            else if (auto constULong = Constants::getConstULong(*convertedConstant))
+                initVal = Initializers::ULongInit{constULong->val};
+            else if (auto constDouble = Constants::getConstDouble(*convertedConstant))
+                initVal = Initializers::DoubleInit{constDouble->val};
+            else
+                throw std::runtime_error("Internal error: invalid constant type");
+        }
 
         return Symbols::makeInitial(initVal);
     }
     else
         throw std::runtime_error("Internal error: invalid constant type");
+}
+
+std::shared_ptr<AST::Cast>
+TypeChecker::typeCheckCast(const std::shared_ptr<AST::Cast> &cast)
+{
+    auto targetType = cast->getTargetType();
+    auto typedInner = typeCheckExp(cast->getExp());
+
+    if (
+        (Types::isPointerType(targetType) && Types::isDoubleType(typedInner->getDataType().value())) ||
+        (Types::isDoubleType(targetType) && Types::isPointerType(typedInner->getDataType().value())))
+        throw std::runtime_error("Cannot cast between pointer and double");
+
+    auto castExp = std::make_shared<AST::Cast>(targetType, typedInner);
+    castExp->setDataType(std::make_optional(targetType));
+    return castExp;
+}
+
+std::shared_ptr<AST::Unary>
+TypeChecker::typeCheckNot(const std::shared_ptr<AST::Unary> &notUnary)
+{
+    if (notUnary->getOp() != AST::UnaryOp::Not)
+        throw std::runtime_error("Internal error: typeCheckNot called with non-Not operator");
+
+    auto typedInner = typeCheckExp(notUnary->getExp());
+    auto notExp = std::make_shared<AST::Unary>(AST::UnaryOp::Not, typedInner);
+    notExp->setDataType(std::make_optional(Types::makeIntType()));
+    return notExp;
+}
+
+std::shared_ptr<AST::Unary>
+TypeChecker::typeCheckComplement(const std::shared_ptr<AST::Unary> &complUnary)
+{
+    if (complUnary->getOp() != AST::UnaryOp::Complement)
+        throw std::runtime_error("Internal error: typeCheckComplement called with non-Complement operator");
+
+    auto typedInner = typeCheckExp(complUnary->getExp());
+    if (Types::isDoubleType(typedInner->getDataType().value()) || isPointer(typedInner->getDataType().value()))
+        throw std::runtime_error("Bitwise complement only valid for integer types");
+
+    auto complExp = std::make_shared<AST::Unary>(AST::UnaryOp::Complement, typedInner);
+    complExp->setDataType(typedInner->getDataType());
+    return complExp;
+}
+
+std::shared_ptr<AST::Unary>
+TypeChecker::typeCheckNegate(const std::shared_ptr<AST::Unary> &negUnary)
+{
+    if (negUnary->getOp() != AST::UnaryOp::Negate)
+        throw std::runtime_error("Internal error: typeCheckNegate called with non-Negate operator");
+
+    auto typedInner = typeCheckExp(negUnary->getExp());
+    if (isPointer(typedInner->getDataType().value()))
+        throw std::runtime_error("Cannot negate a pointer");
+
+    auto negExp = std::make_shared<AST::Unary>(AST::UnaryOp::Negate, typedInner);
+    negExp->setDataType(typedInner->getDataType());
+    return negExp;
+}
+
+std::shared_ptr<AST::Unary>
+TypeChecker::typeCheckIncrDecr(const std::shared_ptr<AST::Unary> &incrDecrUnary)
+{
+    if (isLvalue(incrDecrUnary->getExp()))
+    {
+        auto typedInner = typeCheckExp(incrDecrUnary->getExp());
+        auto typedExp = std::make_shared<AST::Unary>(incrDecrUnary->getOp(), typedInner);
+        typedExp->setDataType(typedInner->getDataType());
+        return typedExp;
+    }
+    else
+    {
+        throw std::runtime_error("Operand ++/-- must be an lvalue");
+    }
+    return nullptr;
+}
+
+std::shared_ptr<AST::Binary>
+TypeChecker::typeCheckLogical(const std::shared_ptr<AST::Binary> &logicalBinary)
+{
+    auto typedE1 = typeCheckExp(logicalBinary->getExp1());
+    auto typedE2 = typeCheckExp(logicalBinary->getExp2());
+    auto typedBinExp = std::make_shared<AST::Binary>(logicalBinary->getOp(), typedE1, typedE2);
+    typedBinExp->setDataType(std::make_optional(Types::makeIntType()));
+    return typedBinExp;
+}
+
+std::shared_ptr<AST::Binary>
+TypeChecker::typeCheckArithmetic(const std::shared_ptr<AST::Binary> &arithBinary)
+{
+    auto typedE1 = typeCheckExp(arithBinary->getExp1());
+    auto typedE2 = typeCheckExp(arithBinary->getExp2());
+
+    if (isPointer(typedE1->getDataType().value()) || isPointer(typedE2->getDataType().value()))
+    {
+        throw std::runtime_error("Arithmetic operations not permitted on pointers");
+    }
+    else
+    {
+        auto commonType = getCommonType(typedE1->getDataType().value(), typedE2->getDataType().value());
+        auto convertedE1 = convertTo(typedE1, commonType);
+        auto convertedE2 = convertTo(typedE2, commonType);
+        auto binaryExp = std::make_shared<AST::Binary>(arithBinary->getOp(), convertedE1, convertedE2);
+
+        static const std::unordered_set<AST::BinaryOp> opNotAllowedForDouble = {
+            AST::BinaryOp::Remainder,
+            AST::BinaryOp::BitwiseAnd,
+            AST::BinaryOp::BitwiseOr,
+            AST::BinaryOp::BitwiseXor,
+        };
+
+        static const std::unordered_set<AST::BinaryOp> opForCommonType = {
+            AST::BinaryOp::Add,
+            AST::BinaryOp::Subtract,
+            AST::BinaryOp::Multiply,
+            AST::BinaryOp::Divide,
+            AST::BinaryOp::Remainder,
+            AST::BinaryOp::BitwiseAnd,
+            AST::BinaryOp::BitwiseOr,
+            AST::BinaryOp::BitwiseXor,
+        };
+
+        if (Types::isDoubleType(commonType) && opNotAllowedForDouble.count(arithBinary->getOp()))
+        {
+            throw std::runtime_error("Can't apply %, &, |, ^ to double");
+        }
+
+        if (opForCommonType.count(arithBinary->getOp()))
+        {
+            binaryExp->setDataType(std::make_optional(commonType));
+            return binaryExp;
+        }
+
+        throw std::runtime_error("Internal error: operator in arithmetic binary should be typechecked elsewhere");
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<AST::Binary>
+TypeChecker::typeCheckComparison(const std::shared_ptr<AST::Binary> &comparison)
+{
+    auto typedE1 = typeCheckExp(comparison->getExp1());
+    auto typedE2 = typeCheckExp(comparison->getExp2());
+
+    auto commonType = (isPointer(typedE1->getDataType().value()) || isPointer(typedE2->getDataType().value()))
+                          ? getCommonPointerType(typedE1, typedE2)
+                          : getCommonType(typedE1->getDataType().value(), typedE2->getDataType().value());
+
+    auto convertedE1 = convertTo(typedE1, commonType);
+    auto convertedE2 = convertTo(typedE2, commonType);
+    auto binaryExp = std::make_shared<AST::Binary>(comparison->getOp(), convertedE1, convertedE2);
+    binaryExp->setDataType(std::make_optional(Types::makeIntType()));
+    return binaryExp;
+}
+
+std::shared_ptr<AST::Binary>
+TypeChecker::typeCheckBitShift(const std::shared_ptr<AST::Binary> &bitShiftBinary)
+{
+    auto typedE1 = typeCheckExp(bitShiftBinary->getExp1());
+    auto typedE2 = typeCheckExp(bitShiftBinary->getExp2());
+
+    if (!(isInteger(typedE1->getDataType().value()) && isInteger(typedE2->getDataType().value())))
+    {
+        throw std::runtime_error("Both operands of bitshift operation must be integers");
+    }
+    else
+    {
+        // Don't perform usual arithmetic conversions; result has type of left operand
+        auto typedBinExp = std::make_shared<AST::Binary>(bitShiftBinary->getOp(), typedE1, typedE2);
+        typedBinExp->setDataType(typedE1->getDataType());
+        return typedBinExp;
+    }
+}
+
+std::shared_ptr<AST::Dereference>
+TypeChecker::typeCheckDereference(const std::shared_ptr<AST::Dereference> &dereference)
+{
+    auto typedInner = typeCheckExp(dereference->getInnerExp());
+
+    if (auto pointerType = Types::getPointerType(typedInner->getDataType().value()))
+    {
+        auto derefExp = std::make_shared<AST::Dereference>(typedInner);
+        derefExp->setDataType(std::make_optional(*pointerType->referencedType));
+        return derefExp;
+    }
+    else
+    {
+        throw std::runtime_error("Tried to dereference non-pointer");
+    }
+}
+
+std::shared_ptr<AST::AddrOf>
+TypeChecker::typeCheckAddrOf(const std::shared_ptr<AST::AddrOf> &addrOf)
+{
+    if (addrOf->getInnerExp()->getType() == AST::NodeType::Dereference || addrOf->getInnerExp()->getType() == AST::NodeType::Var)
+    {
+        auto typedInner = typeCheckExp(addrOf->getInnerExp());
+        auto innerType = std::make_shared<Types::DataType>(typedInner->getDataType().value());
+        auto addrExp = std::make_shared<AST::AddrOf>(typedInner);
+        addrExp->setDataType(std::make_optional(Types::makePointerType(innerType)));
+        return addrExp;
+    }
+    else
+    {
+        throw std::runtime_error("Cannot take address of non-lvalue");
+    }
 }
 
 std::shared_ptr<AST::Var>
@@ -94,180 +421,129 @@ TypeChecker::typeCheckConstant(const std::shared_ptr<AST::Constant> &c)
     return e;
 }
 
-std::shared_ptr<AST::Unary>
-TypeChecker::typeCheckUnary(const std::shared_ptr<AST::Unary> &unary)
-{
-    auto typedInner = typeCheckExp(unary->getExp());
-    auto typedUnExp = std::make_shared<AST::Unary>(unary->getOp(), typedInner);
-
-    if (unary->getOp() == AST::UnaryOp::Not)
-    {
-        typedUnExp->setDataType(std::make_optional(Types::makeIntType()));
-        return typedUnExp;
-    }
-    else if (unary->getOp() == AST::UnaryOp::Complement && Types::isDoubleType(*typedInner->getDataType()))
-    {
-        throw std::runtime_error("Can't apply bitwise complement to double");
-    }
-    else
-    {
-        typedUnExp->setDataType(typedInner->getDataType());
-        return typedUnExp;
-    }
-}
-
-std::shared_ptr<AST::Binary>
-TypeChecker::typeCheckBinary(const std::shared_ptr<AST::Binary> &binary)
-{
-    auto typedE1 = typeCheckExp(binary->getExp1());
-    auto typedE2 = typeCheckExp(binary->getExp2());
-
-    if (binary->getOp() == AST::BinaryOp::BitShiftLeft || binary->getOp() == AST::BinaryOp::BitShiftRight)
-    {
-        if (Types::isDoubleType(*typedE1->getDataType()) || Types::isDoubleType(*typedE2->getDataType()))
-        {
-            throw std::runtime_error("Both operands of bitshift must have integer type");
-        }
-        else
-        {
-            // Don't perform usual arithmetic conversions; result has type of left operand
-            auto typedBinExp = std::make_shared<AST::Binary>(binary->getOp(), typedE1, typedE2);
-            typedBinExp->setDataType(typedE1->getDataType());
-            return typedBinExp;
-        }
-    }
-
-    if (binary->getOp() == AST::BinaryOp::And || binary->getOp() == AST::BinaryOp::Or)
-    {
-        auto typedBinExp = std::make_shared<AST::Binary>(binary->getOp(), typedE1, typedE2);
-        typedBinExp->setDataType(std::make_optional(Types::makeIntType()));
-        return typedBinExp;
-    }
-
-    if (!typedE1->getDataType().has_value() || !typedE2->getDataType().has_value())
-        throw std::runtime_error("Internal error: Binary expression operands have no data type");
-
-    auto t1 = typedE1->getDataType().value();
-    auto t2 = typedE2->getDataType().value();
-    auto commonType = getCommonType(t1, t2);
-    auto convertedE1 = convertTo(typedE1, commonType);
-    auto convertedE2 = convertTo(typedE2, commonType);
-    auto typedBinExp = std::make_shared<AST::Binary>(binary->getOp(), convertedE1, convertedE2);
-
-    if ((binary->getOp() == AST::BinaryOp::Remainder ||
-         binary->getOp() == AST::BinaryOp::BitwiseAnd ||
-         binary->getOp() == AST::BinaryOp::BitwiseOr ||
-         binary->getOp() == AST::BinaryOp::BitwiseXor) &&
-        Types::isDoubleType(commonType))
-    {
-        throw std::runtime_error("Can't apply % or bitwise operations to double");
-    }
-
-    if (binary->getOp() == AST::BinaryOp::Add ||
-        binary->getOp() == AST::BinaryOp::Subtract ||
-        binary->getOp() == AST::BinaryOp::Multiply ||
-        binary->getOp() == AST::BinaryOp::Divide ||
-        binary->getOp() == AST::BinaryOp::Remainder ||
-        binary->getOp() == AST::BinaryOp::BitwiseAnd ||
-        binary->getOp() == AST::BinaryOp::BitwiseOr ||
-        binary->getOp() == AST::BinaryOp::BitwiseXor)
-    {
-        typedBinExp->setDataType(std::make_optional(commonType));
-        return typedBinExp;
-    }
-
-    typedBinExp->setDataType(std::make_optional(Types::makeIntType()));
-    return typedBinExp;
-}
-
 std::shared_ptr<AST::Assignment>
 TypeChecker::typeCheckAssignment(const std::shared_ptr<AST::Assignment> &assignment)
 {
-    auto typedLhs = typeCheckExp(assignment->getLeftExp());
-    auto lhsType = typedLhs->getDataType().value();
-    auto typedRhs = typeCheckExp(assignment->getRightExp());
-    auto convertedRhs = convertTo(typedRhs, lhsType);
-    auto assignExp = std::make_shared<AST::Assignment>(typedLhs, convertedRhs);
-    assignExp->setDataType(std::make_optional(lhsType));
-    return assignExp;
+    if (isLvalue(assignment->getLeftExp()))
+    {
+        auto typedLhs = typeCheckExp(assignment->getLeftExp());
+        auto lhsType = typedLhs->getDataType().value();
+        auto typedRhs = typeCheckExp(assignment->getRightExp());
+        auto convertedRhs = convertByAssignment(typedRhs, lhsType);
+        auto assignExp = std::make_shared<AST::Assignment>(typedLhs, convertedRhs);
+        assignExp->setDataType(std::make_optional(lhsType));
+        return assignExp;
+    }
+    else
+    {
+        throw std::runtime_error("Left hand side of assignment is invalid lvalue");
+    }
 }
 
 std::shared_ptr<AST::CompoundAssignment>
 TypeChecker::typeCheckCompoundAssignment(const std::shared_ptr<AST::CompoundAssignment> &compoundAssign)
 {
-    auto typedLhs = typeCheckExp(compoundAssign->getLeftExp());
-    auto typedRhs = typeCheckExp(compoundAssign->getRightExp());
-
-    if (!typedLhs->getDataType().has_value() || !typedRhs->getDataType().has_value())
-        throw std::runtime_error("Compound assignment operands have no data type");
-
-    if (
-        (compoundAssign->getOp() == AST::BinaryOp::Remainder ||
-         compoundAssign->getOp() == AST::BinaryOp::BitwiseAnd ||
-         compoundAssign->getOp() == AST::BinaryOp::BitwiseOr ||
-         compoundAssign->getOp() == AST::BinaryOp::BitwiseXor ||
-         compoundAssign->getOp() == AST::BinaryOp::BitShiftLeft ||
-         compoundAssign->getOp() == AST::BinaryOp::BitShiftRight) &&
-        (Types::isDoubleType(*typedLhs->getDataType()) || Types::isDoubleType(*typedRhs->getDataType())))
+    if (isLvalue(compoundAssign->getLeftExp()))
     {
-        throw std::runtime_error("Operand of compound assignment doesn't support double operands");
-    }
+        auto typedLhs = typeCheckExp(compoundAssign->getLeftExp());
+        auto typedRhs = typeCheckExp(compoundAssign->getRightExp());
 
-    auto lhsType = typedLhs->getDataType().value();
-    auto rhsType = typedRhs->getDataType().value();
+        if (!typedLhs->getDataType().has_value() || !typedRhs->getDataType().has_value())
+            throw std::runtime_error("Compound assignment operands have no data type");
 
-    Types::DataType resultType;
-    std::shared_ptr<AST::Expression> convertedRhs;
+        auto lhsType = typedLhs->getDataType().value();
+        auto rhsType = typedRhs->getDataType().value();
 
-    if (compoundAssign->getOp() == AST::BinaryOp::BitShiftLeft || compoundAssign->getOp() == AST::BinaryOp::BitShiftRight)
-    {
-        resultType = lhsType;
-        convertedRhs = typedRhs;
+        if (
+            (compoundAssign->getOp() == AST::BinaryOp::Remainder ||
+             compoundAssign->getOp() == AST::BinaryOp::BitwiseAnd ||
+             compoundAssign->getOp() == AST::BinaryOp::BitwiseOr ||
+             compoundAssign->getOp() == AST::BinaryOp::BitwiseXor ||
+             compoundAssign->getOp() == AST::BinaryOp::BitShiftLeft ||
+             compoundAssign->getOp() == AST::BinaryOp::BitShiftRight) &&
+            (!isInteger(*typedLhs->getDataType()) || !isInteger(*typedRhs->getDataType())))
+        {
+            throw std::runtime_error("Operand of compound assignment only supports integer operands");
+        }
+
+        if (
+            (compoundAssign->getOp() == AST::BinaryOp::Multiply || compoundAssign->getOp() == AST::BinaryOp::Divide) &&
+            (isPointer(lhsType) || isPointer(rhsType)))
+        {
+            throw std::runtime_error("Operand of compound assignment does not support pointer operands");
+        }
+
+        Types::DataType resultType;
+        std::shared_ptr<AST::Expression> convertedRhs;
+
+        if (compoundAssign->getOp() == AST::BinaryOp::BitShiftLeft || compoundAssign->getOp() == AST::BinaryOp::BitShiftRight)
+        {
+            resultType = lhsType;
+            convertedRhs = typedRhs;
+        }
+        else
+        {
+            // We perform usual arithmetic conversions for every compound assignment operator
+            // EXCEPT Left/Right bitshift
+            auto commonType = getCommonType(lhsType, rhsType);
+            resultType = commonType;
+            convertedRhs = convertTo(typedRhs, commonType);
+        }
+
+        // IMPORTANT: this may involve several implicit casts:
+        // from RHS type to common type (represented w/ explicit convert_to)
+        // from LHS type to common type (NOT directly represented in AST)
+        // from common_type back to LHS type on assignment (NOT directly represented in AST)
+        // We cannot add Cast expressions for the last two because LHS should be evaluated only once,
+        // so we don't have two separate places to put Cast expression in this AST node. But we have
+        // enough type information to allow us to insert these casts during TACKY generation
+        auto typedCompoundAssign = std::make_shared<AST::CompoundAssignment>(compoundAssign->getOp(), typedLhs, convertedRhs, std::make_optional(resultType));
+        typedCompoundAssign->setDataType(std::make_optional(lhsType));
+        return typedCompoundAssign;
     }
     else
     {
-        // We perform usual arithmetic conversions for every compound assignment operator
-        // EXCEPT Left/Right bitshift
-        auto commonType = getCommonType(lhsType, rhsType);
-        resultType = commonType;
-        convertedRhs = convertTo(typedRhs, commonType);
+        throw std::runtime_error("Left-hand side of compound assignment must be an lvalue");
     }
-
-    // IMPORTANT: this may involve several implicit casts:
-    // from RHS type to common type (represented w/ explicit convert_to)
-    // from LHS type to common type (NOT directly represented in AST)
-    // from common_type back to LHS type on assignment (NOT directly represented in AST)
-    // We cannot add Cast expressions for the last two because LHS should be evaluated only once,
-    // so we don't have two separate places to put Cast expression in this AST node. But we have
-    // enough type information to allow us to insert these casts during TACKY generation
-    auto typedCompoundAssign = std::make_shared<AST::CompoundAssignment>(compoundAssign->getOp(), typedLhs, convertedRhs, std::make_optional(resultType));
-    typedCompoundAssign->setDataType(std::make_optional(lhsType));
-    return typedCompoundAssign;
 }
 
 std::shared_ptr<AST::PostfixDecr>
 TypeChecker::typeCheckPostfixDecr(const std::shared_ptr<AST::PostfixDecr> &postfixDecr)
 {
-    // Result has same value as e; no conversions required.
-    // We need to convert integer "1" to their common type, but that will always be the same type as e, at least w/ types we've added so far
+    if (isLvalue(postfixDecr->getExp()))
+    {
+        // Result has same value as e; no conversions required.
+        // We need to convert integer "1" to their common type, but that will always be the same type as e, at least w/ types we've added so far
 
-    auto typedExp = typeCheckExp(postfixDecr->getExp());
-    auto resultType = typedExp->getDataType().value();
-    auto typedPostfixDecr = std::make_shared<AST::PostfixDecr>(typedExp);
-    typedPostfixDecr->setDataType(std::make_optional(resultType));
-    return typedPostfixDecr;
+        auto typedExp = typeCheckExp(postfixDecr->getExp());
+        auto resultType = typedExp->getDataType().value();
+        auto typedPostfixDecr = std::make_shared<AST::PostfixDecr>(typedExp);
+        typedPostfixDecr->setDataType(std::make_optional(resultType));
+        return typedPostfixDecr;
+    }
+    else
+    {
+        throw std::runtime_error("Operand of postfix -- must be an lvalue");
+    }
 }
 
 std::shared_ptr<AST::PostfixIncr>
 TypeChecker::typeCheckPostfixIncr(const std::shared_ptr<AST::PostfixIncr> &postfixIncr)
 {
-    // Same deal as postfix decrement
+    if (isLvalue(postfixIncr->getExp()))
+    {
+        // Same deal as postfix decrement
 
-    auto typedExp = typeCheckExp(postfixIncr->getExp());
-    auto resultType = typedExp->getDataType().value();
-    auto typedPostfixIncr = std::make_shared<AST::PostfixIncr>(typedExp);
-    typedPostfixIncr->setDataType(std::make_optional(resultType));
-    return typedPostfixIncr;
+        auto typedExp = typeCheckExp(postfixIncr->getExp());
+        auto resultType = typedExp->getDataType().value();
+        auto typedPostfixIncr = std::make_shared<AST::PostfixIncr>(typedExp);
+        typedPostfixIncr->setDataType(std::make_optional(resultType));
+        return typedPostfixIncr;
+    }
+    else
+    {
+        throw std::runtime_error("Operand of postfix ++ must be an lvalue");
+    }
 }
 
 std::shared_ptr<AST::Conditional>
@@ -280,7 +556,10 @@ TypeChecker::typeCheckConditional(const std::shared_ptr<AST::Conditional> &condi
     if (!typedThen->getDataType().has_value() || !typedElse->getDataType().has_value())
         throw std::runtime_error("Conditional expression branches have no data type");
 
-    auto commonType = getCommonType(typedThen->getDataType().value(), typedElse->getDataType().value());
+    auto commonType = (isPointer(typedThen->getDataType().value()) || isPointer(typedElse->getDataType().value()))
+                          ? getCommonPointerType(typedThen, typedElse)
+                          : getCommonType(typedThen->getDataType().value(), typedElse->getDataType().value());
+
     auto convertedThen = convertTo(typedThen, commonType);
     auto convertedElse = convertTo(typedElse, commonType);
 
@@ -304,7 +583,7 @@ TypeChecker::typeCheckFunctionCall(const std::shared_ptr<AST::FunctionCall> &fun
         {
             auto paramType = fType->paramTypes[i];
             auto arg = funCall->getArgs()[i];
-            auto newArg = convertTo(typeCheckExp(arg), *paramType);
+            auto newArg = convertByAssignment(typeCheckExp(arg), *paramType);
             convertedArgs.push_back(newArg);
         }
 
@@ -331,18 +610,53 @@ TypeChecker::typeCheckExp(const std::shared_ptr<AST::Expression> &exp)
     }
     case AST::NodeType::Cast:
     {
-        auto cast = std::dynamic_pointer_cast<AST::Cast>(exp);
-        auto newCast = std::make_shared<AST::Cast>(cast->getTargetType(), typeCheckExp(cast->getExp()));
-        newCast->setDataType(std::make_optional(cast->getTargetType()));
-        return newCast;
+        return typeCheckCast(std::dynamic_pointer_cast<AST::Cast>(exp));
     }
     case AST::NodeType::Unary:
     {
-        return typeCheckUnary(std::dynamic_pointer_cast<AST::Unary>(exp));
+        auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
+        switch (unary->getOp())
+        {
+        case AST::UnaryOp::Not:
+            return typeCheckNot(unary);
+        case AST::UnaryOp::Complement:
+            return typeCheckComplement(unary);
+        case AST::UnaryOp::Negate:
+            return typeCheckNegate(unary);
+        default:
+            return typeCheckIncrDecr(unary);
+        }
     }
     case AST::NodeType::Binary:
     {
-        return typeCheckBinary(std::dynamic_pointer_cast<AST::Binary>(exp));
+        auto binary = std::dynamic_pointer_cast<AST::Binary>(exp);
+        switch (binary->getOp())
+        {
+        case AST::BinaryOp::And:
+        case AST::BinaryOp::Or:
+            return typeCheckLogical(binary);
+        case AST::BinaryOp::Add:
+        case AST::BinaryOp::Subtract:
+        case AST::BinaryOp::Multiply:
+        case AST::BinaryOp::Divide:
+        case AST::BinaryOp::Remainder:
+        case AST::BinaryOp::BitwiseAnd:
+        case AST::BinaryOp::BitwiseOr:
+        case AST::BinaryOp::BitwiseXor:
+            return typeCheckArithmetic(binary);
+        case AST::BinaryOp::Equal:
+        case AST::BinaryOp::NotEqual:
+        case AST::BinaryOp::GreaterThan:
+        case AST::BinaryOp::GreaterOrEqual:
+        case AST::BinaryOp::LessThan:
+        case AST::BinaryOp::LessOrEqual:
+            return typeCheckComparison(binary);
+        case AST::BinaryOp::BitShiftLeft:
+        case AST::BinaryOp::BitShiftRight:
+            return typeCheckBitShift(binary);
+        default:
+            throw std::runtime_error("Internal Error: Unknown binary operator!");
+        }
     }
     case AST::NodeType::Assignment:
     {
@@ -367,6 +681,14 @@ TypeChecker::typeCheckExp(const std::shared_ptr<AST::Expression> &exp)
     case AST::NodeType::FunctionCall:
     {
         return typeCheckFunctionCall(std::dynamic_pointer_cast<AST::FunctionCall>(exp));
+    }
+    case AST::NodeType::Dereference:
+    {
+        return typeCheckDereference(std::dynamic_pointer_cast<AST::Dereference>(exp));
+    }
+    case AST::NodeType::AddrOf:
+    {
+        return typeCheckAddrOf(std::dynamic_pointer_cast<AST::AddrOf>(exp));
     }
     default:
         throw std::runtime_error("Internal Error: Unknown type of expression!");
@@ -410,7 +732,7 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     case AST::NodeType::Return:
     {
         auto typedExp = typeCheckExp(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue());
-        return std::make_shared<AST::Return>(convertTo(typedExp, retType));
+        return std::make_shared<AST::Return>(convertByAssignment(typedExp, retType));
     }
     case AST::NodeType::ExpressionStmt:
     {
@@ -464,8 +786,8 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
         auto typedControl = typeCheckExp(switchStmt->getControl());
         auto typedBody = typeCheckStatement(switchStmt->getBody(), retType);
 
-        if (Types::isDoubleType(*typedControl->getDataType()))
-            throw std::runtime_error("Controlling expression in switch cannot be double");
+        if (!isInteger(typedControl->getDataType().value()))
+            throw std::runtime_error("Controlling expression in switch must have integer type");
 
         return std::make_shared<AST::Switch>(
             typedControl,
@@ -594,7 +916,7 @@ TypeChecker::typeCheckLocalVarDecl(const std::shared_ptr<AST::VariableDeclaratio
         _symbolTable.addAutomaticVar(varDecl->getName(), varDecl->getVarType());
         if (varDecl->getOptInit().has_value())
         {
-            auto newInit = convertTo(typeCheckExp(varDecl->getOptInit().value()), varDecl->getVarType());
+            auto newInit = convertByAssignment(typeCheckExp(varDecl->getOptInit().value()), varDecl->getVarType());
             return std::make_shared<AST::VariableDeclaration>(varDecl->getName(), newInit, varDecl->getVarType(), std::nullopt);
         }
 

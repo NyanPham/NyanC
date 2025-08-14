@@ -18,6 +18,7 @@ top_level = Function(identifier name, bool global, instruction* instructions)
 instruction = Mov(asm_type, operand src, operand dst)
     | Movsx(operand src, operand dst)
     | MovZeroExtend(operand src, operand dst)
+    | Lea(operand src, operand dst)
     | Cvttsd2si(asm_type, operand src, operand dst)
     | Cvtsi2sd(asm_type, operand src, operand dst)
     | Unary(unary_operator, asm_type, operand dst)
@@ -35,9 +36,9 @@ instruction = Mov(asm_type, operand src, operand dst)
     | Ret
 unary_operator = Neg | Not | ShrOneOp
 binary_operator = Add | Sub | Mult | DivDouble | And | Or | Xor | Sal | Sar | Shl | Shr
-operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Stack(int) | Data(identifier)
+operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Memory(reg, int) | Data(identifier)
 cond_code = E | NE | L | LE | G | GE | A | AE | B | BE | P | NP
-reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP | XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7 | XMM14 | XMM15
+reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP | BP | XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7 | XMM14 | XMM15
 */
 
 namespace Assembly
@@ -82,6 +83,7 @@ namespace Assembly
         Mov,
         Movsx,
         MovZeroExtend,
+        Lea,
         Cvttsd2si,
         Cvtsi2sd,
         Unary,
@@ -99,7 +101,7 @@ namespace Assembly
         Imm,
         Reg,
         Pseudo,
-        Stack,
+        Memory,
         Data,
     };
 
@@ -165,6 +167,7 @@ namespace Assembly
         R10,
         R11,
         SP,
+        BP,
         XMM0,
         XMM1,
         XMM2,
@@ -281,13 +284,17 @@ namespace Assembly
         std::string _name;
     };
 
-    class Stack : public Operand
+    class Memory : public Operand
     {
     public:
-        Stack(int offset) : Operand(NodeType::Stack), _offset{offset} {}
-        int getOffset() const { return _offset; }
+        Memory(std::shared_ptr<Reg> reg, int offset)
+            : Operand(NodeType::Memory), _reg{reg}, _offset{offset} {}
+
+        auto &getReg() const { return _reg; }
+        auto getOffset() const { return _offset; }
 
     private:
+        std::shared_ptr<Reg> _reg;
         int _offset;
     };
 
@@ -340,6 +347,22 @@ namespace Assembly
     public:
         MovZeroExtend(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
             : Instruction(NodeType::MovZeroExtend), _src{src}, _dst{dst}
+        {
+        }
+
+        auto &getSrc() const { return _src; }
+        auto &getDst() const { return _dst; }
+
+    private:
+        std::shared_ptr<Operand> _src;
+        std::shared_ptr<Operand> _dst;
+    };
+
+    class Lea : public Instruction
+    {
+    public:
+        Lea(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Lea), _src{src}, _dst{dst}
         {
         }
 

@@ -27,6 +27,8 @@ namespace ConstConvert
             return std::make_shared<Constants::Const>(Constants::ConstUInt(static_cast<uint32_t>(v)));
         if (Types::isULongType(targetType))
             return std::make_shared<Constants::Const>(Constants::ConstULong(static_cast<uint64_t>(v)));
+        if (Types::isPointerType(targetType))
+            return std::make_shared<Constants::Const>(Constants::ConstULong(static_cast<uint64_t>(v)));
         if (Types::isDoubleType(targetType))
             return std::make_shared<Constants::Const>(Constants::ConstDouble(static_cast<double>(v)));
 
@@ -48,6 +50,8 @@ namespace ConstConvert
                 return std::make_shared<Constants::Const>(Constants::ConstDouble(constDouble->val));
             else if (Types::isULongType(targetType))
                 return cast(static_cast<uint64_t>(constDouble->val), targetType);
+            else if (Types::isPointerType(targetType))
+                throw std::runtime_error("Internal error: cannot convert double to pointer");
             else
                 return cast(static_cast<int64_t>(constDouble->val), targetType);
         else

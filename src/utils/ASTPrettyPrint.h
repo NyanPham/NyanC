@@ -122,6 +122,12 @@ private:
         case AST::NodeType::InitExp:
             visitInitExp(static_cast<const AST::InitExp &>(node), indent);
             break;
+        case AST::NodeType::Dereference:
+            visitDereference(static_cast<const AST::Dereference &>(node), indent);
+            break;
+        case AST::NodeType::AddrOf:
+            visitAddrOf(static_cast<const AST::AddrOf &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -917,6 +923,42 @@ private:
         std::cout << getIndent() << "body=";
         visit(*defaultStmt.getBody(), false);
         std::cout << getIndent() << "id=\"" << defaultStmt.getId() << "\"\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitDereference(const AST::Dereference &deref, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Dereference(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        visit(*deref.getInnerExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (deref.getDataType().has_value())
+            std::cout << Types::dataTypeToString(deref.getDataType().value());
+        else
+            std::cout << "unchecked";
+        std::cout << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitAddrOf(const AST::AddrOf &addr, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "AddrOf(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        visit(*addr.getInnerExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (addr.getDataType().has_value())
+            std::cout << Types::dataTypeToString(addr.getDataType().value());
+        else
+            std::cout << "unchecked";
+        std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

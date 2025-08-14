@@ -157,7 +157,7 @@ The NyanC compiler processes C code in several stages:
   - [x] Unsigned Int.
   - [x] Unsigned Long.
   - [x] Double.
-  - [ ] Pointer.
+  - [x] Pointer.
   - [ ] Array.
   - [ ] Char, String.
   - [ ] Struct, Union

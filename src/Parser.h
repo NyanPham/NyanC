@@ -12,6 +12,20 @@
 #include "AST.h"
 #include "Types.h"
 
+/*
+    Defining the Declarators
+*/
+
+struct Ident;
+struct PointerDeclarator;
+struct FunDeclarator;
+struct Param;
+struct AbstractPointer;
+struct AbstractBase;
+
+using Declarator = std::variant<Ident, PointerDeclarator, FunDeclarator>;
+using AbstractDeclarator = std::variant<AbstractPointer, AbstractBase>;
+
 class Parser
 {
 public:
@@ -28,6 +42,18 @@ public:
     AST::BinaryOp parseBinop();
     std::shared_ptr<AST::Constant> parseConstant();
     std::string parseIdentifier();
+
+    std::shared_ptr<Declarator> parseSimpleDeclarator();
+    std::shared_ptr<Declarator> parseDeclarator();
+    std::shared_ptr<Declarator> parseDirectDeclarator();
+    std::vector<std::shared_ptr<Param>> parseParamList();
+    std::vector<std::shared_ptr<Param>> paramLoop();
+    std::shared_ptr<Param> parseParam();
+    std::tuple<std::string, std::shared_ptr<Types::DataType>, std::vector<std::string>> processDeclarator(const std::shared_ptr<Declarator> &decl, const std::shared_ptr<Types::DataType> &baseType);
+
+    std::shared_ptr<AbstractDeclarator> parseAbstractDeclarator();
+    std::shared_ptr<AbstractDeclarator> parseDirectAbstractDeclarator();
+    std::shared_ptr<Types::DataType> processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &decl, const std::shared_ptr<Types::DataType> &baseType);
 
     std::vector<Token> parseTypeSpecifierList();
     std::vector<Token> parseSpecifierList();
@@ -56,8 +82,8 @@ public:
     std::shared_ptr<AST::BlockItem> parseBlockItem();
     std::vector<std::shared_ptr<AST::Expression>> parseOptionalArgList();
     std::vector<std::shared_ptr<AST::Expression>> parseArgList();
-    std::vector<std::pair<Types::DataType, std::string>> parseParamList();
-    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &retType, std::optional<AST::StorageClass> storageClass);
+
+    std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &funType, std::vector<std::string> params, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name, const Types::DataType &varType, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> parseVariableDeclaration();
     std::shared_ptr<AST::FunctionDeclaration> parseFunctionDeclaration();

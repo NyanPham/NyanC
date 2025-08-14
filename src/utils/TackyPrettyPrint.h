@@ -47,6 +47,15 @@ private:
         case TACKY::NodeType::Copy:
             visitCopy(static_cast<const TACKY::Copy &>(node), indent);
             break;
+        case TACKY::NodeType::GetAddress:
+            visitGetAddress(static_cast<const TACKY::GetAddress &>(node), indent);
+            break;
+        case TACKY::NodeType::Load:
+            visitLoad(static_cast<const TACKY::Load &>(node), indent);
+            break;
+        case TACKY::NodeType::Store:
+            visitStore(static_cast<const TACKY::Store &>(node), indent);
+            break;
         case TACKY::NodeType::Jump:
             visitJump(static_cast<const TACKY::Jump &>(node), indent);
             break;
@@ -171,7 +180,20 @@ private:
 
         std::cout << "Unary(\n";
         increaseIndent();
-        std::cout << getIndent() << "op=" << (unary.getOp() == TACKY::UnaryOp::Complement ? "Complement" : "Negate") << ",\n";
+        std::cout << getIndent() << "op=";
+        switch (unary.getOp())
+        {
+        case TACKY::UnaryOp::Complement:
+            std::cout << "Complement";
+            break;
+        case TACKY::UnaryOp::Negate:
+            std::cout << "Negate";
+            break;
+        case TACKY::UnaryOp::Not:
+            std::cout << "Not";
+            break;
+        }
+        std::cout << ",\n";
         std::cout << getIndent() << "src=";
         visit(*unary.getSrc(), false);
         std::cout << getIndent() << "dst=";
@@ -265,6 +287,48 @@ private:
         visit(*copy.getSrc(), false);
         std::cout << getIndent() << "dst=";
         visit(*copy.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitGetAddress(const TACKY::GetAddress &getAddr, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "GetAddress(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*getAddr.getSrc(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*getAddr.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitLoad(const TACKY::Load &load, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Load(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src_ptr=";
+        visit(*load.getSrcPtr(), false);
+        std::cout << getIndent() << "dst=";
+        visit(*load.getDst(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitStore(const TACKY::Store &store, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Store(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=";
+        visit(*store.getSrc(), false);
+        std::cout << getIndent() << "dst_ptr=";
+        visit(*store.getDstPtr(), false);
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

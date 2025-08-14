@@ -62,12 +62,6 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::Assignment:
     {
         auto assignment = std::dynamic_pointer_cast<AST::Assignment>(exp);
-
-        if (assignment->getLeftExp()->getType() != AST::NodeType::Var)
-        {
-            throw std::runtime_error("Invalid lvalue!");
-        }
-
         return std::make_shared<AST::Assignment>(
             resolveExp(assignment->getLeftExp(), idMap),
             resolveExp(assignment->getRightExp(), idMap),
@@ -76,12 +70,6 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::CompoundAssignment:
     {
         auto compoundAssignment = std::dynamic_pointer_cast<AST::CompoundAssignment>(exp);
-
-        if (compoundAssignment->getLeftExp()->getType() != AST::NodeType::Var)
-        {
-            throw std::runtime_error("Invalid lvalue!");
-        }
-
         return std::make_shared<AST::CompoundAssignment>(
             compoundAssignment->getOp(),
             resolveExp(compoundAssignment->getLeftExp(), idMap),
@@ -91,12 +79,6 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::PostfixIncr:
     {
         auto postfixIncr = std::dynamic_pointer_cast<AST::PostfixIncr>(exp);
-
-        if (postfixIncr->getExp()->getType() != AST::NodeType::Var)
-        {
-            throw std::runtime_error("Invalid lvalue!");
-        }
-
         return std::make_shared<AST::PostfixIncr>(
             resolveExp(postfixIncr->getExp(), idMap),
             postfixIncr->getDataType());
@@ -104,12 +86,6 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::PostfixDecr:
     {
         auto postfixDecr = std::dynamic_pointer_cast<AST::PostfixDecr>(exp);
-
-        if (postfixDecr->getExp()->getType() != AST::NodeType::Var)
-        {
-            throw std::runtime_error("Invalid lvalue!");
-        }
-
         return std::make_shared<AST::PostfixDecr>(
             resolveExp(postfixDecr->getExp(), idMap),
             postfixDecr->getDataType());
@@ -142,12 +118,6 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::Unary:
     {
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
-
-        if ((unary->getOp() == AST::UnaryOp::Incr || unary->getOp() == AST::UnaryOp::Decr) && unary->getExp()->getType() != AST::NodeType::Var)
-        {
-            throw std::runtime_error("Operand of ++/-- must be an lvalue!");
-        }
-
         return std::make_shared<AST::Unary>(
             unary->getOp(),
             resolveExp(unary->getExp(), idMap),
@@ -199,6 +169,16 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
         {
             throw std::runtime_error("Undeclared function" + fnCall->getName());
         }
+    }
+    case AST::NodeType::Dereference:
+    {
+        auto dereference = std::dynamic_pointer_cast<AST::Dereference>(exp);
+        return std::make_shared<AST::Dereference>(resolveExp(dereference->getInnerExp(), idMap), dereference->getDataType());
+    }
+    case AST::NodeType::AddrOf:
+    {
+        auto addrOf = std::dynamic_pointer_cast<AST::AddrOf>(exp);
+        return std::make_shared<AST::AddrOf>(resolveExp(addrOf->getInnerExp(), idMap), addrOf->getDataType());
     }
     default:
         throw std::runtime_error("Internal error: Unknown expression!");

@@ -82,6 +82,8 @@ std::string Emit::showLongReg(const std::shared_ptr<Assembly::Reg> &reg)
         return "%r11d";
     case Assembly::RegName::SP:
         throw std::runtime_error("Internal error: no 32-bit RSP");
+    case Assembly::RegName::BP:
+        throw std::runtime_error("Internal error: no 32-bit RBP");
     default:
         throw std::runtime_error("Internal Error: Can't store longword in XMM register");
     }
@@ -104,9 +106,12 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
         return std::format("${}", std::to_string(imm->getValue()));
     }
 
-    if (auto stack = std::dynamic_pointer_cast<Assembly::Stack>(operand))
+    if (auto memory = std::dynamic_pointer_cast<Assembly::Memory>(operand))
     {
-        return std::format("{}(%rbp)", stack->getOffset());
+        if (memory->getOffset() == 0)
+            return std::format("({})", showQuadwordReg(memory->getReg()));
+        else
+            return std::format("{}({})", memory->getOffset(), showQuadwordReg(memory->getReg()));
     }
 
     if (auto data = std::dynamic_pointer_cast<Assembly::Data>(operand))
@@ -150,6 +155,8 @@ std::string Emit::showByteReg(const std::shared_ptr<Assembly::Reg> &reg)
         return "%r11b";
     case Assembly::RegName::SP:
         throw std::runtime_error("Internal error: no one-byte RSP");
+    case Assembly::RegName::BP:
+        throw std::runtime_error("Internal error: no one-byte RBP");
     default:
         throw std::runtime_error("Internal Error: can't store byte type in XMM register");
     }
@@ -189,6 +196,8 @@ std::string Emit::showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg)
         return "%r11";
     case Assembly::RegName::SP:
         return "%rsp";
+    case Assembly::RegName::BP:
+        return "%rbp";
     default:
         throw std::runtime_error("Internal Error: can't store quadword in XMM register");
     }
@@ -388,6 +397,11 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     {
         auto div = std::dynamic_pointer_cast<Assembly::Div>(inst);
         return std::format("\tdiv{}\t{}\n", suffix(div->getAsmType()), showOperand(div->getAsmType(), div->getOperand()));
+    }
+    case Assembly::NodeType::Lea:
+    {
+        auto lea = std::dynamic_pointer_cast<Assembly::Lea>(inst);
+        return std::format("\tleaq\t{}, {}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), lea->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), lea->getDst()));
     }
     case Assembly::NodeType::Cdq:
     {

@@ -45,14 +45,14 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
                 };
 
                 return {
-                    std::make_shared<Assembly::Stack>(newOffset),
+                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), newOffset),
                     newState,
                 };
             }
             else
             {
                 return {
-                    std::make_shared<Assembly::Stack>(it->second),
+                    std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), it->second),
                     state,
                 };
             }
@@ -108,6 +108,20 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
 
         return {
             newMovzx,
+            state2,
+        };
+    }
+    case Assembly::NodeType::Lea:
+    {
+        auto lea = std::dynamic_pointer_cast<Assembly::Lea>(inst);
+
+        auto [newSrc, state1] = replaceOperand(lea->getSrc(), state);
+        auto [newDst, state2] = replaceOperand(lea->getDst(), state1);
+
+        auto newLea = std::make_shared<Assembly::Lea>(newSrc, newDst);
+
+        return {
+            newLea,
             state2,
         };
     }

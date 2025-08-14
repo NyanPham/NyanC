@@ -17,8 +17,9 @@ namespace Types
     struct ULongType;
     struct DoubleType;
     struct FunType;
+    struct PointerType;
 
-    using DataType = std::variant<IntType, LongType, UIntType, ULongType, DoubleType, FunType>;
+    using DataType = std::variant<IntType, LongType, UIntType, ULongType, DoubleType, PointerType, FunType>;
 
     struct IntType
     {
@@ -70,12 +71,6 @@ namespace Types
         std::string toString() const { return "DoubleType"; }
     };
 
-    inline std::string dataTypeToString(const DataType &type)
-    {
-        return std::visit([](const auto &t)
-                          { return t.toString(); }, type);
-    }
-
     inline int getSize(const DataType &type)
     {
         return std::visit([](const auto &t)
@@ -93,6 +88,21 @@ namespace Types
         return std::visit([](const auto &t)
                           { return t.isSigned(); }, type);
     }
+
+    std::string dataTypeToString(const DataType &type);
+
+    struct PointerType
+    {
+        std::shared_ptr<DataType> referencedType;
+
+        PointerType(const std::shared_ptr<DataType> &type) : referencedType(std::move(type)) {}
+
+        int getSize() const { return 8; }
+        int getAlignment() const { return 8; }
+        bool isSigned() const { return false; }
+
+        std::string toString() const;
+    };
 
     struct FunType
     {
@@ -118,22 +128,38 @@ namespace Types
             throw std::runtime_error("Internal error: signedness doesn't make sense for function type");
         }
 
-        std::string toString() const
-        {
-            std::string result = "FunType(";
-            result += '[';
-            for (size_t i = 0; i < paramTypes.size(); ++i)
-            {
-                result += dataTypeToString(*paramTypes[i]);
-                if (i < paramTypes.size() - 1)
-                    result += ", ";
-            }
-            result += ']';
-
-            result += " -> " + dataTypeToString(*retType) + ")";
-            return result;
-        }
+        std::string toString() const;
     };
+
+    inline std::string PointerType::toString() const
+    {
+        std::string result = "PointerType(referencedType: ";
+        result += dataTypeToString(*referencedType);
+        result += ")";
+        return result;
+    }
+
+    inline std::string FunType::toString() const
+    {
+        std::string result = "FunType(";
+        result += '[';
+        for (size_t i = 0; i < paramTypes.size(); ++i)
+        {
+            result += dataTypeToString(*paramTypes[i]);
+            if (i < paramTypes.size() - 1)
+                result += ", ";
+        }
+        result += ']';
+
+        result += " -> " + dataTypeToString(*retType) + ")";
+        return result;
+    }
+
+    inline std::string dataTypeToString(const DataType &type)
+    {
+        return std::visit([](const auto &t)
+                          { return t.toString(); }, type);
+    }
 
     inline DataType makeIntType()
     {
@@ -160,8 +186,13 @@ namespace Types
         return DoubleType{};
     }
 
+    inline DataType makePointerType(const std::shared_ptr<DataType> &referencedType)
+    {
+        return PointerType{referencedType};
+    }
+
     inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes,
-                                std::shared_ptr<DataType> retType)
+                                const std::shared_ptr<DataType> &retType)
     {
         return FunType{paramTypes, retType};
     }
@@ -189,6 +220,11 @@ namespace Types
     inline std::optional<DoubleType> getDoubleType(const DataType &type)
     {
         return getVariant<DoubleType>(type);
+    }
+
+    inline std::optional<PointerType> getPointerType(const DataType &type)
+    {
+        return getVariant<PointerType>(type);
     }
 
     inline std::optional<FunType> getFunType(const DataType &type)
@@ -221,6 +257,11 @@ namespace Types
         return isVariant<DoubleType>(type);
     }
 
+    inline bool isPointerType(const DataType &type)
+    {
+        return isVariant<PointerType>(type);
+    }
+
     inline bool isFunType(const DataType &type)
     {
         return isVariant<FunType>(type);
@@ -246,6 +287,10 @@ namespace Types
                                 return false;
                         }
                         return *left.retType == *right.retType;
+                    }
+                    else if constexpr (std::is_same_v<LeftType, Types::PointerType>)
+                    {
+                        return static_cast<bool>(*left.referencedType == *right.referencedType);
                     }
                     else
                     {

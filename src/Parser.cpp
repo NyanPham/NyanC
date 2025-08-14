@@ -6,21 +6,26 @@
 #include <unordered_set>
 #include <algorithm>
 #include <limits>
+#include <variant>
 
 #include "Token.h"
 #include "Lexer.h"
-#include "Parser.h"
 #include "AST.h"
 #include "Types.h"
+#include "Parser.h"
 
 /*
 EBNF for a subset of C:
 
 <program> ::= { <declaration> }
 <declaration> ::= <variable-declaration> | <function-declaration>
-<variable-declaration> ::= { <specifier> }+ <identifier> [ "=" <exp> ] ";"
-<function-declaration> ::= { <specifier> }+ <identifier> "(" <param-list> ")" (<block> | ";")
-<param-list> ::= "void" | { <type-specifier> }+ <identifier> { "," { <type-specifier> }+  <identifier> }
+<variable-declaration> ::= { <specifier> }+ <declarator> [ "=" <exp> ] ";"
+<function-declaration> ::= { <specifier> }+ <declarator> "(" <param-list> ")" (<block> | ";")
+<declarator> ::= "*" <declarator> | <direct-declarator>
+<direct-declarator> ::= <simple-declarator> [ <param-list> ]
+<param-list> ::= "(" "void" ")" | "(" <param> { "," <param> } ")"
+<param> ::= { <type-specifier> }+ <declarator>
+<simple-declarator> ::= <identifier> | "(" <declarator> ")"
 <type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double"
 <specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
@@ -44,9 +49,16 @@ EBNF for a subset of C:
 <exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
 <factor> ::=  <unop> <factor> | <postfix-exp>
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
-<primary-exp> ::= <const> | <identifier> | "(" <exp> ")" | <identifier> "(" [ <argument-list> ] ")" | "(" { <type-specifier> }+ ")" <factor>
+<primary-exp> ::= <const>
+    | <identifier>
+    | "(" <exp> ")"
+    | <identifier> "(" [ <argument-list> ] ")"
+    | "(" { <type-specifier> }+ ")" [ <abstract-declarator> ] <factor>
 <argument-list> ::= <exp> { "," <exp> }
-<unop> ::= "-" | "~" | "!" | "++" | "--"
+<abstract-declarator> ::= "*" [ <abstract-declarator> ]
+    | <direct-abstract-declarator>
+<direct-abstract-declarator> ::= "(" <abstract-declarator> ")"
+<unop> ::= "-" | "~" | "!" | "++" | "--" | "*" | "&"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
         | "&&" | "||"
         | "==" | "!=" | "<" | "<="
@@ -60,6 +72,329 @@ EBNF for a subset of C:
 <uint> ::= ? An unsigned int token ?
 <ulong> ::= ? An unsigned int or unsigned long token ?
 <double> ::= ? A floating-point constant token ?
+*/
+
+/*
+    Defining the Declarators
+*/
+
+struct Ident;
+struct PointerDeclarator;
+struct FunDeclarator;
+struct Param;
+
+using Declarator = std::variant<Ident, PointerDeclarator, FunDeclarator>;
+std::string declaratorToString(const Declarator &declarator);
+
+struct Param
+{
+    std::shared_ptr<Types::DataType> type;
+    std::shared_ptr<Declarator> declarator;
+    std::string toString() const;
+};
+
+struct Ident
+{
+    std::string name;
+    Ident(const std::string &name) : name{name} {}
+
+    std::string toString() const
+    {
+        return "Ident(" + name + ")\n";
+    }
+};
+
+struct PointerDeclarator
+{
+    std::shared_ptr<Declarator> declarator;
+    PointerDeclarator(const std::shared_ptr<Declarator> &declarator) : declarator{declarator} {}
+
+    std::string toString() const;
+};
+
+struct FunDeclarator
+{
+    std::vector<std::shared_ptr<Param>> params;
+    std::shared_ptr<Declarator> declarator;
+    FunDeclarator(const std::vector<std::shared_ptr<Param>> &params, const std::shared_ptr<Declarator> &declarator)
+        : params{params}, declarator{declarator} {}
+
+    std::string toString() const;
+};
+
+std::string PointerDeclarator::toString() const
+{
+    return "PointerDeclarator(" + declaratorToString(*declarator) + ")\n";
+}
+
+std::string FunDeclarator::toString() const
+{
+    std::string result = "FunDeclarator(";
+    result += "declarator: " + declaratorToString(*declarator);
+    result += ", params: [";
+    for (int i = 0; i < params.size(); i++)
+    {
+        result += params[i]->toString();
+    }
+    result += "])\n";
+    return result;
+}
+
+std::string Param::toString() const
+{
+    return "Param(type: " + Types::dataTypeToString(type) + ", declarator: " + declaratorToString(*declarator) + ")\n";
+}
+
+std::string declaratorToString(const Declarator &declarator)
+{
+    return std::visit([](auto &&arg) -> std::string
+                      { return arg.toString(); }, declarator);
+}
+
+/*
+    Done Defining the Declarators
+*/
+
+std::shared_ptr<Declarator> Parser::parseSimpleDeclarator()
+{
+    auto nextTok{takeToken()};
+    switch (nextTok->getType())
+    {
+    case TokenType::OPEN_PAREN:
+    {
+        auto decl = parseDeclarator();
+        expect(TokenType::CLOSE_PAREN);
+        return decl;
+    }
+    case TokenType::IDENTIFIER:
+    {
+        return std::make_shared<Declarator>(Ident{std::get<std::string>(nextTok->getValue())});
+    }
+    default:
+        raiseError("a simple declarator", tokenTypeToString(nextTok->getType()));
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<Declarator>
+Parser::parseDeclarator()
+{
+    switch (peekToken()->getType())
+    {
+    case TokenType::STAR:
+    {
+        takeToken();
+        auto inner = parseDeclarator();
+        return std::make_shared<Declarator>(
+            PointerDeclarator{inner});
+    }
+    default:
+    {
+        return parseDirectDeclarator();
+    }
+    }
+}
+
+std::shared_ptr<Declarator>
+Parser::parseDirectDeclarator()
+{
+    auto simpleDecl = parseSimpleDeclarator();
+    switch (peekToken()->getType())
+    {
+    case TokenType::OPEN_PAREN:
+    {
+        auto params = parseParamList();
+        return std::make_shared<Declarator>(FunDeclarator{params, simpleDecl});
+    }
+    default:
+        return simpleDecl;
+    }
+}
+
+std::vector<std::shared_ptr<Param>>
+Parser::parseParamList()
+{
+    expect(TokenType::OPEN_PAREN);
+    auto params = std::vector<std::shared_ptr<Param>>{};
+
+    if (peekToken()->getType() == TokenType::KEYWORD_VOID)
+    {
+        takeToken();
+        params = {};
+    }
+    else
+    {
+        params = paramLoop();
+    }
+
+    expect(TokenType::CLOSE_PAREN);
+    return params;
+}
+
+std::vector<std::shared_ptr<Param>>
+Parser::paramLoop()
+{
+    auto params = std::vector<std::shared_ptr<Param>>{};
+    auto param = parseParam();
+    params.push_back(param);
+    while (peekToken()->getType() == TokenType::COMMA)
+    {
+        takeToken();
+        param = parseParam();
+        params.push_back(param);
+    }
+    return params;
+}
+
+std::shared_ptr<Param>
+Parser::parseParam()
+{
+    auto specifiers = parseTypeSpecifierList();
+    auto paramType = parseType(specifiers);
+    auto paramDecl = parseDeclarator();
+    return std::make_shared<Param>(std::make_shared<Types::DataType>(paramType), paramDecl);
+}
+
+std::tuple<std::string, std::shared_ptr<Types::DataType>, std::vector<std::string>>
+Parser::processDeclarator(const std::shared_ptr<Declarator> &decl, const std::shared_ptr<Types::DataType> &baseType)
+{
+    if (auto ident = std::get_if<Ident>(&*decl))
+    {
+        return std::make_tuple(ident->name, baseType, std::vector<std::string>{});
+    }
+    else if (auto pointerDecl = std::get_if<PointerDeclarator>(&*decl))
+    {
+        auto derivedType = std::make_shared<Types::DataType>(Types::makePointerType(baseType));
+        return processDeclarator(pointerDecl->declarator, derivedType);
+    }
+    else if (auto funDecl = std::get_if<FunDeclarator>(&*decl))
+    {
+        auto ident = std::get_if<Ident>(&*funDecl->declarator);
+
+        if (!ident)
+            throw std::runtime_error("Internal error: inner declarator of a function declarator must be an Ident");
+
+        auto paramNames = std::vector<std::string>{};
+        auto paramTypes = std::vector<std::shared_ptr<Types::DataType>>{};
+
+        for (const auto &param : funDecl->params)
+        {
+            auto [paramName, paramType, _] = processDeclarator(param->declarator, param->type);
+            if (Types::isFunType(*paramType))
+                throw std::runtime_error("Function pointers in parameters are not supported");
+
+            paramNames.push_back(paramName);
+            paramTypes.push_back(paramType);
+        }
+
+        auto funType = std::make_shared<Types::DataType>(Types::makeFunType(paramTypes, baseType));
+        return std::make_tuple(ident->name, funType, paramNames);
+    }
+    else
+        throw std::runtime_error("Internal error: unknown declarator");
+}
+
+/*
+Abstract Declarator
+*/
+
+struct AbstractPointer;
+struct AbstractBase;
+
+using AbstractDeclarator = std::variant<AbstractPointer, AbstractBase>;
+std::string abstractDeclaratorToString(const AbstractDeclarator &declarator);
+
+struct AbstractPointer
+{
+    std::shared_ptr<AbstractDeclarator> abstractDeclarator;
+    std::string toString() const;
+};
+
+struct AbstractBase
+{
+    std::string toString() const;
+};
+
+std::string AbstractPointer::toString() const
+{
+    return "AbstractPointer(" + abstractDeclaratorToString(*abstractDeclarator) + ")\n";
+}
+
+std::string AbstractBase::toString() const
+{
+    return "AbstractBase("
+           ")\n";
+}
+
+std::string abstractDeclaratorToString(const AbstractDeclarator &declarator)
+{
+    return std::visit([](auto &&arg) -> std::string
+                      { return arg.toString(); }, declarator);
+}
+
+std::shared_ptr<AbstractDeclarator>
+Parser::parseAbstractDeclarator()
+{
+    if (peekToken()->getType() == TokenType::STAR)
+    {
+        // it's a pointer declarator
+        takeToken();
+        auto nextTok{peekToken()};
+
+        auto inner = std::shared_ptr<AbstractDeclarator>{nullptr};
+
+        if (nextTok->getType() == TokenType::STAR || nextTok->getType() == TokenType::OPEN_PAREN)
+        {
+            // there's an inner declarator
+            inner = parseAbstractDeclarator();
+        }
+        else if (nextTok->getType() == TokenType::CLOSE_PAREN)
+        {
+            inner = std::make_shared<AbstractDeclarator>(AbstractBase{});
+        }
+        else
+        {
+            raiseError("an abstract declarator", tokenTypeToString(nextTok->getType()));
+        }
+
+        return std::make_shared<AbstractDeclarator>(AbstractPointer{inner});
+    }
+    else
+    {
+        return parseDirectAbstractDeclarator();
+    }
+}
+
+std::shared_ptr<AbstractDeclarator>
+Parser::parseDirectAbstractDeclarator()
+{
+    expect(TokenType::OPEN_PAREN);
+    auto decl = parseAbstractDeclarator();
+    expect(TokenType::CLOSE_PAREN);
+    return decl;
+}
+
+std::shared_ptr<Types::DataType>
+Parser::processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &decl, const std::shared_ptr<Types::DataType> &baseType)
+{
+    if (std::holds_alternative<AbstractBase>(*decl))
+    {
+        return baseType;
+    }
+    else if (auto abstractPointer = std::get_if<AbstractPointer>(&*decl))
+    {
+        auto derivedType = std::make_shared<Types::DataType>(Types::makePointerType(baseType));
+        return processAbstractDeclarator(abstractPointer->abstractDeclarator, derivedType);
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: unknown abstract declarator");
+    }
+}
+
+/*
+Done Abstract Declarator
 */
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
@@ -818,6 +1153,20 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
 
         return std::make_shared<AST::Unary>(op, innerExp);
     }
+    case TokenType::STAR:
+    {
+        takeToken();
+        auto innerExp{parseFactor()};
+
+        return std::make_shared<AST::Dereference>(innerExp);
+    }
+    case TokenType::AMPERSAND:
+    {
+        takeToken();
+        auto innerExp{parseFactor()};
+
+        return std::make_shared<AST::AddrOf>(innerExp);
+    }
     case TokenType::OPEN_PAREN:
     {
         if (nextTokens[1].has_value() && isTypeSpecifier(nextTokens[1].value()))
@@ -825,7 +1174,19 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
             // It's a cast, consume the "(", then parse the type specifiers
             takeToken();
             auto typeSpecifiers{parseTypeSpecifierList()};
-            auto targetType{parseType(typeSpecifiers)};
+            auto baseType{parseType(typeSpecifiers)};
+            Types::DataType targetType;
+
+            // check for optional abstract declarator
+            if (peekToken()->getType() == TokenType::CLOSE_PAREN)
+            {
+                targetType = baseType;
+            }
+            else
+            {
+                auto abstractDecl{parseAbstractDeclarator()};
+                targetType = *processAbstractDeclarator(abstractDecl, std::make_shared<Types::DataType>(baseType));
+            }
             expect(TokenType::CLOSE_PAREN);
             auto innerExp{parseFactor()};
 
@@ -1041,63 +1402,9 @@ std::vector<std::shared_ptr<AST::Expression>> Parser::parseArgList()
     return args;
 }
 
-std::vector<std::pair<Types::DataType, std::string>> Parser::parseParamList()
+std::shared_ptr<AST::FunctionDeclaration>
+Parser::finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &funType, std::vector<std::string> params, std::optional<AST::StorageClass> storageClass)
 {
-    auto specifiers{parseTypeSpecifierList()};
-    auto paramType{parseType(specifiers)};
-    auto nextParam{parseIdentifier()};
-
-    auto paramsWithTypes = (std::vector<std::pair<Types::DataType, std::string>>){{paramType, nextParam}};
-
-    auto nextToken{peekToken()};
-    while (nextToken.has_value())
-    {
-        if (nextToken->getType() == TokenType::COMMA)
-        {
-            takeToken();
-            auto specifiers{parseTypeSpecifierList()};
-            auto paramType{parseType(specifiers)};
-            auto nextParam{parseIdentifier()};
-            paramsWithTypes.push_back({paramType, nextParam});
-            nextToken = peekToken();
-        }
-        else
-            break;
-    }
-
-    return paramsWithTypes;
-}
-
-std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &retType, std::optional<AST::StorageClass> storageClass)
-{
-    expect(TokenType::OPEN_PAREN);
-    std::vector<std::pair<Types::DataType, std::string>> paramsWithTypes;
-
-    if (!peekToken().has_value())
-    {
-        throw std::runtime_error("Unexpected end of file while parsing function declaration");
-    }
-
-    if (peekToken()->getType() == TokenType::KEYWORD_VOID)
-    {
-        takeToken();
-        paramsWithTypes = {};
-    }
-    else if (peekToken()->getType() != TokenType::CLOSE_PAREN)
-    {
-        paramsWithTypes = parseParamList();
-    }
-
-    std::vector<std::shared_ptr<Types::DataType>> paramTypes;
-    std::vector<std::string> params;
-
-    for (const auto &paramPair : paramsWithTypes)
-    {
-        paramTypes.push_back(std::make_shared<Types::DataType>(paramPair.first));
-        params.push_back(paramPair.second);
-    }
-
-    expect(TokenType::CLOSE_PAREN);
     auto nextToken{peekToken()};
 
     if (!nextToken.has_value())
@@ -1122,7 +1429,6 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::finishParsingFunctionDeclarati
         raiseError("a function body or semicolon", "invalid token");
     }
 
-    auto funType = Types::makeFunType(paramTypes, std::make_shared<Types::DataType>(retType));
     return std::make_shared<AST::FunctionDeclaration>(name, params, body, funType, storageClass);
 }
 
@@ -1175,15 +1481,21 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
 std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
 {
     auto specifiers{parseSpecifierList()};
-    auto [type, storageClass] = parseTypeAndStorageClass(specifiers);
-    auto name{parseIdentifier()};
+    auto [baseTyp, storageClass] = parseTypeAndStorageClass(specifiers);
+    auto declarator{parseDeclarator()};
+    auto [name, typ, params] = processDeclarator(declarator, std::make_shared<Types::DataType>(baseTyp));
 
-    auto nextToken{peekToken()};
-
-    if (nextToken.has_value() && nextToken->getType() == TokenType::OPEN_PAREN)
-        return finishParsingFunctionDeclaration(name, type, storageClass);
+    if (Types::isFunType(*typ))
+    {
+        return finishParsingFunctionDeclaration(name, *typ, params, storageClass);
+    }
     else
-        return finishParsingVariableDeclaration(name, type, storageClass);
+    {
+        if (params.empty())
+            return finishParsingVariableDeclaration(name, *typ, storageClass);
+        else
+            throw std::runtime_error("Internal error: declarator has parameters but object type");
+    }
 }
 
 std::shared_ptr<AST::BlockItem> Parser::parseBlockItem()

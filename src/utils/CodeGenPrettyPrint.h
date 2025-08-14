@@ -51,6 +51,9 @@ private:
         case Assembly::NodeType::MovZeroExtend:
             visitMovZeroExtend(static_cast<const Assembly::MovZeroExtend &>(node), indent);
             break;
+        case Assembly::NodeType::Lea:
+            visitLea(static_cast<const Assembly::Lea &>(node), indent);
+            break;
         case Assembly::NodeType::Cvttsd2si:
             visitCvttsd2si(static_cast<const Assembly::Cvttsd2si &>(node), indent);
             break;
@@ -102,8 +105,8 @@ private:
         case Assembly::NodeType::Pseudo:
             visitPseudo(static_cast<const Assembly::Pseudo &>(node), indent);
             break;
-        case Assembly::NodeType::Stack:
-            visitStack(static_cast<const Assembly::Stack &>(node), indent);
+        case Assembly::NodeType::Memory:
+            visitMemory(static_cast<const Assembly::Memory &>(node), indent);
             break;
         case Assembly::NodeType::Data:
             visitData(static_cast<const Assembly::Data &>(node), indent);
@@ -213,6 +216,16 @@ private:
         increaseIndent();
         printMember("src", *movzx.getSrc());
         printMember("dst", *movzx.getDst());
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitLea(const Assembly::Lea &lea, bool indent = true)
+    {
+        std::cout << getIndent() << "Lea(\n";
+        increaseIndent();
+        printMember("src", *lea.getSrc());
+        printMember("dst", *lea.getDst());
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -434,11 +447,11 @@ private:
         std::cout << "Pseudo(" << pseudo.getName() << ")\n";
     }
 
-    void visitStack(const Assembly::Stack &stack, bool indent = true)
+    void visitMemory(const Assembly::Memory &mem, bool indent = true)
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "Stack(" << stack.getOffset() << ")\n";
+        std::cout << "Memory(reg=" << showRegName(mem.getReg()->getName()) << ", offset=" << mem.getOffset() << ")\n";
     }
 
     void visitData(const Assembly::Data &data, bool indent = true)
@@ -517,6 +530,8 @@ private:
             return "R11";
         case Assembly::RegName::SP:
             return "RSP";
+        case Assembly::RegName::BP:
+            return "BP";
         case Assembly::RegName::XMM0:
             return "XMM0";
         case Assembly::RegName::XMM1:
