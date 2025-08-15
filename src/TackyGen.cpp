@@ -8,6 +8,9 @@
 #include "UniqueIds.h"
 #include "ConstConvert.h"
 
+// use this as the "result" of void expressions that don't return a result
+auto dummyOperand = std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeIntZero()));
+
 ssize_t getPtrScale(const Types::DataType &type)
 {
     if (auto ptrType = Types::getPointerType(type))
@@ -44,6 +47,13 @@ std::string expResultToString(const ExpResult &expRes)
 {
     return std::visit([](const auto &v)
                       { return v.toString(); }, expRes);
+}
+
+std::shared_ptr<TACKY::Constant>
+TackyGen::evalSize(const Types::DataType &type)
+{
+    auto size = Types::getSize(type);
+    return std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeConstLong(size)));
 }
 
 std::string
@@ -271,8 +281,17 @@ TackyGen::emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop)
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
 TackyGen::emitFunCall(const std::shared_ptr<AST::FunctionCall> &fnCall)
 {
-    auto dstName = createTmp(fnCall->getDataType());
-    auto dst = std::make_shared<TACKY::Var>(dstName);
+    std::optional<std::shared_ptr<TACKY::Var>> dst = std::nullopt;
+
+    if (Types::isVoidType(*fnCall->getDataType()))
+    {
+        dst = std::nullopt;
+    }
+    else
+    {
+        auto dstName = createTmp(fnCall->getDataType());
+        dst = std::make_optional(std::make_shared<TACKY::Var>(dstName));
+    }
 
     std::vector<std::shared_ptr<TACKY::Instruction>> argInsts{};
     std::vector<std::shared_ptr<TACKY::Val>> argVal{};
@@ -288,9 +307,11 @@ TackyGen::emitFunCall(const std::shared_ptr<AST::FunctionCall> &fnCall)
     insts.insert(insts.end(), argInsts.begin(), argInsts.end());
     insts.push_back(std::make_shared<TACKY::FunCall>(fnCall->getName(), argVal, dst));
 
+    std::shared_ptr<TACKY::Val> dstVal = dst.has_value() ? std::static_pointer_cast<TACKY::Val>(dst.value()) : std::static_pointer_cast<TACKY::Val>(dummyOperand);
+
     return {
         insts,
-        std::make_shared<ExpResult>(PlainOperand{dst}),
+        std::make_shared<ExpResult>(PlainOperand{dstVal}),
     };
 }
 
@@ -305,18 +326,41 @@ TackyGen::emitConditionalExp(const std::shared_ptr<AST::Conditional> &conditiona
 
     auto e2Label = UniqueIds::makeLabel("conditional_else");
     auto endLabel = UniqueIds::makeLabel("conditional_end");
-    auto dstName = createTmp(conditional->getDataType());
-    auto dst = std::make_shared<TACKY::Var>(dstName);
 
+    std::shared_ptr<TACKY::Val> dst = nullptr;
+
+    if (Types::isVoidType(*conditional->getDataType()))
+    {
+        dst = dummyOperand;
+    }
+    else
+    {
+        auto dstName = createTmp(conditional->getDataType());
+        dst = std::make_shared<TACKY::Var>(dstName);
+    }
+
+    // common instructions
     insts.insert(insts.end(), evalCond.begin(), evalCond.end());
     insts.push_back(std::make_shared<TACKY::JumpIfZero>(v, e2Label));
     insts.insert(insts.end(), evalV1.begin(), evalV1.end());
-    insts.push_back(std::make_shared<TACKY::Copy>(v1, dst));
-    insts.push_back(std::make_shared<TACKY::Jump>(endLabel));
-    insts.push_back(std::make_shared<TACKY::Label>(e2Label));
-    insts.insert(insts.end(), evalV2.begin(), evalV2.end());
-    insts.push_back(std::make_shared<TACKY::Copy>(v2, dst));
-    insts.push_back(std::make_shared<TACKY::Label>(endLabel));
+
+    // remaining instructions
+    if (Types::isVoidType(*conditional->getDataType()))
+    {
+        insts.push_back(std::make_shared<TACKY::Jump>(endLabel));
+        insts.push_back(std::make_shared<TACKY::Label>(e2Label));
+        insts.insert(insts.end(), evalV2.begin(), evalV2.end());
+        insts.push_back(std::make_shared<TACKY::Label>(endLabel));
+    }
+    else
+    {
+        insts.push_back(std::make_shared<TACKY::Copy>(v1, dst));
+        insts.push_back(std::make_shared<TACKY::Jump>(endLabel));
+        insts.push_back(std::make_shared<TACKY::Label>(e2Label));
+        insts.insert(insts.end(), evalV2.begin(), evalV2.end());
+        insts.push_back(std::make_shared<TACKY::Copy>(v2, dst));
+        insts.push_back(std::make_shared<TACKY::Label>(endLabel));
+    }
 
     return {
         insts,
@@ -592,7 +636,7 @@ TackyGen::emitCastExp(const std::shared_ptr<AST::Cast> &cast)
     if (!optSrcType.has_value())
         throw std::runtime_error("Internal error: Cast to funtion type");
 
-    if (optSrcType.value() == cast->getTargetType())
+    if (optSrcType.value() == cast->getTargetType() || Types::isVoidType(cast->getTargetType()))
     {
         return {
             innerEval,
@@ -948,6 +992,20 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
     {
         return emitSubscript(std::dynamic_pointer_cast<AST::Subscript>(exp));
     }
+    case AST::NodeType::SizeOfT:
+    {
+        return {
+            std::vector<std::shared_ptr<TACKY::Instruction>>{},
+            std::make_shared<ExpResult>(PlainOperand(evalSize(*std::dynamic_pointer_cast<AST::SizeOfT>(exp)->getTypeName()))),
+        };
+    }
+    case AST::NodeType::SizeOf:
+    {
+        return {
+            std::vector<std::shared_ptr<TACKY::Instruction>>{},
+            std::make_shared<ExpResult>(PlainOperand(evalSize(*std::dynamic_pointer_cast<AST::SizeOf>(exp)->getInnerExp()->getDataType()))),
+        };
+    }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");
     }
@@ -1056,9 +1114,24 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
     {
     case AST::NodeType::Return:
     {
-        auto [insts, v] = emitTackyAndConvert(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue());
-        insts.push_back(std::make_shared<TACKY::Return>(v));
+        auto returnStmt = std::dynamic_pointer_cast<AST::Return>(stmt);
 
+        std::vector<std::shared_ptr<TACKY::Instruction>> insts{};
+        std::optional<std::shared_ptr<TACKY::Val>> val;
+
+        if (returnStmt->getOptValue().has_value())
+        {
+            auto [evalExp, v] = emitTackyAndConvert(returnStmt->getOptValue().value());
+            insts = evalExp;
+            val = std::make_optional(v);
+        }
+        else
+        {
+            insts = {};
+            val = std::nullopt;
+        }
+
+        insts.push_back(std::make_shared<TACKY::Return>(val));
         return insts;
     }
     case AST::NodeType::ExpressionStmt:

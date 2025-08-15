@@ -14,7 +14,7 @@ program = Program(top_level*)
 top_level = Function(identifier name, bool global, identifier* params, Instruction* instructions)
     | StaticVariable(identifier name, bool global, Types.t t, Initializers.static_init* init_list)
     | StaticConstant(identifier name, type t, Initializers.static_init init)
-instruction = Return(val)
+instruction = Return(val?)
     | SignExtend(val src, val dst)
     | Truncate(val src, val dst)
     | ZeroExtend(val src, val dst)
@@ -34,7 +34,7 @@ instruction = Return(val)
     | JumpIfZero(val condition, identifier target)
     | JumpIfNotZero(val condition, identifier target)
     | Label(identifier)
-    | FunCall(identifier fn_name, val* args, val dst)
+    | FunCall(identifier fn_name, val* args, val? dst)
 val = Constant(const) | Var(identifier)
 unary_operator = Complement | Negate | Not
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
@@ -379,27 +379,27 @@ namespace TACKY
     class FunCall : public Instruction
     {
     public:
-        FunCall(std::string fnName, std::vector<std::shared_ptr<TACKY::Val>> args, std::shared_ptr<TACKY::Val> dst)
+        FunCall(std::string fnName, std::vector<std::shared_ptr<TACKY::Val>> args, std::optional<std::shared_ptr<TACKY::Val>> dst = std::nullopt)
             : Instruction(NodeType::FunCall), _fnName{fnName}, _args{args}, _dst{dst} {}
 
-        const std::string &getFnName() const { return _fnName; }
-        const std::vector<std::shared_ptr<TACKY::Val>> &getArgs() const { return _args; }
-        const std::shared_ptr<TACKY::Val> &getDst() const { return _dst; }
+        auto &getFnName() const { return _fnName; }
+        auto &getArgs() const { return _args; }
+        auto &getOptDst() const { return _dst; }
 
     private:
         std::string _fnName;
         std::vector<std::shared_ptr<TACKY::Val>> _args;
-        std::shared_ptr<TACKY::Val> _dst;
+        std::optional<std::shared_ptr<TACKY::Val>> _dst;
     };
 
     class Return : public Instruction
     {
     public:
-        Return(std::shared_ptr<Val> value) : Instruction(NodeType::Return), _value{std::move(value)} {}
-        std::shared_ptr<Val> getValue() const { return _value; }
+        Return(std::optional<std::shared_ptr<Val>> value = std::nullopt) : Instruction(NodeType::Return), _value{std::move(value)} {}
+        auto &getOptValue() const { return _value; }
 
     private:
-        std::shared_ptr<Val> _value;
+        std::optional<std::shared_ptr<Val>> _value;
     };
 
     class SignExtend : public Instruction

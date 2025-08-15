@@ -189,7 +189,7 @@ CodeGen::convertType(const Types::DataType &type)
             Types::getSize(type),
             Types::getAlignment(type)));
     else
-        throw std::runtime_error("Internal error: converting function type to assembly");
+        throw std::runtime_error("Internal error: converting type to assembly");
 }
 
 std::shared_ptr<Assembly::AsmType>
@@ -436,16 +436,19 @@ CodeGen::convertFunCall(const std::shared_ptr<TACKY::FunCall> &fnCall)
                 std::make_shared<Assembly::Reg>(Assembly::RegName::SP)));
 
     // retrieve return value
-    auto asmDst = convertVal(fnCall->getDst());
-    auto asmDstType = getAsmType(fnCall->getDst());
-    auto returnReg = Assembly::isAsmDouble(*asmDstType)
-                         ? Assembly::RegName::XMM0
-                         : Assembly::RegName::AX;
+    if (fnCall->getOptDst().has_value())
+    {
+        auto asmDst = convertVal(fnCall->getOptDst().value());
+        auto asmDstType = getAsmType(fnCall->getOptDst().value());
+        auto returnReg = Assembly::isAsmDouble(*asmDstType)
+                             ? Assembly::RegName::XMM0
+                             : Assembly::RegName::AX;
 
-    insts.push_back(std::make_shared<Assembly::Mov>(
-        asmDstType,
-        std::make_shared<Assembly::Reg>(returnReg),
-        asmDst));
+        insts.push_back(std::make_shared<Assembly::Mov>(
+            asmDstType,
+            std::make_shared<Assembly::Reg>(returnReg),
+            asmDst));
+    }
 
     return insts;
 }
@@ -471,14 +474,23 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
     {
         auto returnInst = std::dynamic_pointer_cast<TACKY::Return>(inst);
 
-        auto asmType = getAsmType(returnInst->getValue());
-        auto asmVal = convertVal(returnInst->getValue());
-        auto returnReg = Assembly::isAsmDouble(*asmType) ? Assembly::RegName::XMM0 : Assembly::RegName::AX;
+        if (returnInst->getOptValue().has_value())
+        {
+            auto asmType = getAsmType(returnInst->getOptValue().value());
+            auto asmVal = convertVal(returnInst->getOptValue().value());
+            auto returnReg = Assembly::isAsmDouble(*asmType) ? Assembly::RegName::XMM0 : Assembly::RegName::AX;
 
-        return {
-            std::make_shared<Assembly::Mov>(asmType, asmVal, std::make_shared<Assembly::Reg>(returnReg)),
-            std::make_shared<Assembly::Ret>(),
-        };
+            return {
+                std::make_shared<Assembly::Mov>(asmType, asmVal, std::make_shared<Assembly::Reg>(returnReg)),
+                std::make_shared<Assembly::Ret>(),
+            };
+        }
+        else
+        {
+            return {
+                std::make_shared<Assembly::Ret>(),
+            };
+        }
     }
     case TACKY::NodeType::Unary:
     {

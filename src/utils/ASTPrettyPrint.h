@@ -131,6 +131,12 @@ public:
         case AST::NodeType::Subscript:
             visitSubscript(static_cast<const AST::Subscript &>(node), indent);
             break;
+        case AST::NodeType::SizeOfT:
+            visitSizeOfT(static_cast<const AST::SizeOfT &>(node), indent);
+            break;
+        case AST::NodeType::SizeOf:
+            visitSizeOf(static_cast<const AST::SizeOf &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -373,7 +379,14 @@ private:
             std::cout << getIndent();
         std::cout << "Return(\n";
         increaseIndent();
-        visit(*ret.getValue());
+        if (ret.getOptValue().has_value())
+        {
+            visit(*ret.getOptValue().value());
+        }
+        else
+        {
+            std::cout << getIndent() << "None\n";
+        }
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -1045,6 +1058,44 @@ private:
             std::cout << Types::dataTypeToString(sub.getDataType().value());
         else
             std::cout << "unchecked";
+        std::cout << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitSizeOfT(const AST::SizeOfT &sizeOfT, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "SizeOfT(typeName=" << Types::dataTypeToString(*sizeOfT.getTypeName());
+        if (sizeOfT.getDataType().has_value())
+        {
+            std::cout << ", dataType=" << Types::dataTypeToString(sizeOfT.getDataType().value());
+        }
+        else
+        {
+            std::cout << ", dataType=unchecked";
+        }
+        std::cout << ")\n";
+    }
+
+    void visitSizeOf(const AST::SizeOf &sizeOf, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "SizeOf(\n";
+        increaseIndent();
+        std::cout << getIndent() << "exp=";
+        visit(*sizeOf.getInnerExp(), false);
+        std::cout << getIndent() << "dataType=";
+        if (sizeOf.getDataType().has_value())
+        {
+            std::cout << Types::dataTypeToString(sizeOf.getDataType().value());
+        }
+        else
+        {
+            std::cout << "unchecked";
+        }
         std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";

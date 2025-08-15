@@ -66,6 +66,7 @@ public:
     std::shared_ptr<AbstractDeclarator> parseDirectAbstractDeclarator();
     std::shared_ptr<Types::DataType> processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &decl, const std::shared_ptr<Types::DataType> &baseType);
 
+    Types::DataType parseTypeName();
     std::vector<Token> parseTypeSpecifierList();
     std::vector<Token> parseSpecifierList();
     AST::StorageClass parseStorageClass(const Token &spec);
@@ -85,7 +86,8 @@ public:
     std::shared_ptr<AST::Expression> parsePostfixHelper(std::shared_ptr<AST::Expression> primary);
     std::shared_ptr<AST::Expression> parsePostfixExp();
     std::shared_ptr<AST::Expression> parsePrimaryExp();
-    std::shared_ptr<AST::Expression> parseFactor();
+    std::shared_ptr<AST::Expression> parseUnaryExp();
+    std::shared_ptr<AST::Expression> parseCastExp();
     std::shared_ptr<AST::Expression> parseExp(int minPrec = 0);
     AST::Block parseBlock();
     std::shared_ptr<AST::Statement> parseStatement();
@@ -120,6 +122,7 @@ private:
         TokenType::KEYWORD_UNSIGNED,
         TokenType::KEYWORD_STATIC,
         TokenType::KEYWORD_EXTERN,
+        TokenType::KEYWORD_VOID,
     };
 
     std::set<TokenType> _typeSpecifierTypes = {
@@ -129,6 +132,7 @@ private:
         TokenType::KEYWORD_DOUBLE,
         TokenType::KEYWORD_SIGNED,
         TokenType::KEYWORD_UNSIGNED,
+        TokenType::KEYWORD_VOID,
     };
 
     bool isTypeSpecifier(const Token &token)

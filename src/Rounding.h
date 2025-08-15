@@ -6,7 +6,6 @@
 
 namespace Rounding
 {
-
     // Rounds x up to the nearest multiple of n.
     inline int roundAwayFromZero(int n, int x)
     {
@@ -18,7 +17,6 @@ namespace Rounding
 
         return x + n - (x % n);
     }
-
 };
 
 #endif

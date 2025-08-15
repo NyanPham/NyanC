@@ -194,7 +194,14 @@ private:
             std::cout << getIndent();
         std::cout << "Return(\n";
         increaseIndent();
-        visit(*ret.getValue());
+        if (ret.getOptValue().has_value() && ret.getOptValue().value())
+        {
+            visit(*ret.getOptValue().value());
+        }
+        else
+        {
+            std::cout << getIndent() << "None";
+        }
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }
@@ -448,7 +455,15 @@ private:
         std::cout << getIndent() << "],\n";
 
         std::cout << getIndent() << "dst=";
-        visit(*fnCall.getDst(), false);
+        if (fnCall.getOptDst().has_value() && fnCall.getOptDst().value())
+        {
+            visit(*fnCall.getOptDst().value(), false);
+        }
+        else
+        {
+            std::cout << "None";
+        }
+        std::cout << "\n";
 
         decreaseIndent();
         std::cout << getIndent() << "),\n";

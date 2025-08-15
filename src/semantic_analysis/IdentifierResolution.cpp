@@ -154,8 +154,16 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             resolveExp(binary->getExp2(), idMap),
             binary->getDataType());
     }
+    case AST::NodeType::SizeOf:
+    {
+        auto sizeOf = std::dynamic_pointer_cast<AST::SizeOf>(exp);
+        return std::make_shared<AST::SizeOf>(
+            resolveExp(sizeOf->getInnerExp(), idMap),
+            sizeOf->getDataType());
+    }
     case AST::NodeType::Constant:
     case AST::NodeType::String:
+    case AST::NodeType::SizeOfT:
     {
         return exp;
     }
@@ -222,7 +230,14 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
     switch (stmt->getType())
     {
     case AST::NodeType::Return:
-        return std::make_shared<AST::Return>(resolveExp(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue(), idMap));
+    {
+        auto returnStmt = std::dynamic_pointer_cast<AST::Return>(stmt);
+        std::optional<std::shared_ptr<AST::Expression>> returnExp = returnStmt->getOptValue();
+        if (returnExp.has_value())
+            returnExp = std::make_optional(resolveExp(returnExp.value(), idMap));
+
+        return std::make_shared<AST::Return>(returnExp);
+    }
     case AST::NodeType::ExpressionStmt:
         return std::make_shared<AST::ExpressionStmt>(resolveExp(std::dynamic_pointer_cast<AST::ExpressionStmt>(stmt)->getExp(), idMap));
     case AST::NodeType::If:

@@ -10,6 +10,11 @@ class TypeChecker
 public:
     TypeChecker() = default;
 
+    void validateType(const std::shared_ptr<Types::DataType> &type);
+    std::shared_ptr<AST::Expression> typeCheckScalar(const std::shared_ptr<AST::Expression> &exp);
+    std::shared_ptr<AST::SizeOfT> typeCheckSizeOfT(const std::shared_ptr<AST::SizeOfT> &sizeOfT);
+    std::shared_ptr<AST::SizeOf> typeCheckSizeOf(const std::shared_ptr<AST::SizeOf> &sizeOf);
+
     std::shared_ptr<AST::String> typeCheckString(const std::shared_ptr<AST::String> &string);
     std::shared_ptr<AST::Initializer> typeCheckInit(const Types::DataType &targetType, const std::shared_ptr<AST::Initializer> &init);
     std::shared_ptr<AST::Initializer> makeZeroInit(const Types::DataType &type);

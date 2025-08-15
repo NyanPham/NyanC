@@ -75,6 +75,11 @@ Types::DataType getCommonPointerType(const std::shared_ptr<AST::Expression> &e1,
         return e2->getDataType().value();
     else if (isNullPointerConstant(e2))
         return e1->getDataType().value();
+    else if (
+        (
+            Types::isPointerType(e1->getDataType().value()) && Types::isVoidType(*Types::getPointerType(e1->getDataType().value())->referencedType) && Types::isPointerType(e2->getDataType().value())) ||
+        (Types::isPointerType(e2->getDataType().value()) && Types::isVoidType(*Types::getPointerType(e2->getDataType().value())->referencedType) && Types::isPointerType(e1->getDataType().value())))
+        return Types::makePointerType(std::make_shared<Types::DataType>(Types::makeVoidType()));
     else
         throw std::runtime_error("Expressions have incompatible types");
 }
@@ -90,6 +95,12 @@ std::shared_ptr<AST::Expression> convertByAssignment(const std::shared_ptr<AST::
         return convertTo(exp, tgtType);
     else if (isNullPointerConstant(exp) && Types::isPointerType(tgtType))
         return convertTo(exp, tgtType);
+    else if (
+        (Types::isPointerType(tgtType) && Types::isVoidType(*Types::getPointerType(tgtType)->referencedType) && Types::isPointerType(exp->getDataType().value())) ||
+        (Types::isPointerType(tgtType) && Types::isPointerType(exp->getDataType().value()) && Types::isVoidType(*Types::getPointerType(exp->getDataType().value())->referencedType)))
+    {
+        return convertTo(exp, tgtType);
+    }
     else
         throw std::runtime_error("Cannot convert type for assignment");
 }
@@ -177,9 +188,92 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
     {
         return scalar(std::make_shared<Constants::Const>(Constants::ConstDouble{0.0}));
     }
-    else
+    else // FunType or Void
     {
         throw std::runtime_error("Cannot create zero initializer for type: " + Types::dataTypeToString(type));
+    }
+}
+
+void TypeChecker::validateType(const std::shared_ptr<Types::DataType> &type)
+{
+    if (auto arrType = Types::getArrayType(*type))
+    {
+        if (Types::isComplete(*arrType->elemType))
+            validateType(arrType->elemType);
+        else
+            throw std::runtime_error("Array of incomplete type");
+    }
+    else if (auto ptrType = Types::getPointerType(*type))
+    {
+        validateType(ptrType->referencedType);
+    }
+    else if (auto fnType = Types::getFunType(*type))
+    {
+        for (auto &paramType : fnType->paramTypes)
+        {
+            validateType(paramType);
+        }
+
+        validateType(fnType->retType);
+    }
+    else if (
+        Types::isCharType(*type) ||
+        Types::isSCharType(*type) ||
+        Types::isUCharType(*type) ||
+        Types::isIntType(*type) ||
+        Types::isLongType(*type) ||
+        Types::isUIntType(*type) ||
+        Types::isULongType(*type) ||
+        Types::isDoubleType(*type) ||
+        Types::isVoidType(*type))
+    {
+        return;
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: invalid type to validate");
+    }
+}
+
+std::shared_ptr<AST::Expression>
+TypeChecker::typeCheckScalar(const std::shared_ptr<AST::Expression> &exp)
+{
+    auto typedExp = typeCheckAndConvert(exp);
+    if (Types::isScalar(typedExp->getDataType().value()))
+        return typedExp;
+    else
+        throw std::runtime_error("A scalar operand is required");
+}
+
+std::shared_ptr<AST::SizeOfT>
+TypeChecker::typeCheckSizeOfT(const std::shared_ptr<AST::SizeOfT> &sizeOfT)
+{
+    validateType(sizeOfT->getTypeName());
+    if (Types::isComplete(*sizeOfT->getTypeName()))
+    {
+        auto typeCheckedSizeOfT = std::make_shared<AST::SizeOfT>(sizeOfT->getTypeName());
+        typeCheckedSizeOfT->setDataType(std::make_optional(Types::makeULongType()));
+        return typeCheckedSizeOfT;
+    }
+    else
+    {
+        throw std::runtime_error("Can't apply sizeof to incomplete type");
+    }
+}
+
+std::shared_ptr<AST::SizeOf>
+TypeChecker::typeCheckSizeOf(const std::shared_ptr<AST::SizeOf> &sizeOf)
+{
+    auto typedInner = typeCheckExp(sizeOf->getInnerExp());
+    if (Types::isComplete(typedInner->getDataType().value()))
+    {
+        auto sizeOfExp = std::make_shared<AST::SizeOf>(typedInner);
+        sizeOfExp->setDataType(std::make_optional(Types::makeULongType()));
+        return sizeOfExp;
+    }
+    else
+    {
+        throw std::runtime_error("Can't apply sizeof to incomplete type");
     }
 }
 
@@ -267,15 +361,25 @@ std::shared_ptr<AST::Cast>
 TypeChecker::typeCheckCast(const std::shared_ptr<AST::Cast> &cast)
 {
     auto targetType = cast->getTargetType();
-    if (Types::isArrayType(targetType))
-        throw std::runtime_error("Cannot cast to array type");
-
+    validateType(std::make_shared<Types::DataType>(targetType));
     auto typedInner = typeCheckAndConvert(cast->getExp());
 
     if (
         (Types::isPointerType(targetType) && Types::isDoubleType(typedInner->getDataType().value())) ||
         (Types::isDoubleType(targetType) && Types::isPointerType(typedInner->getDataType().value())))
         throw std::runtime_error("Cannot cast between pointer and double");
+
+    if (Types::isVoidType(targetType))
+    {
+        auto castExp = std::make_shared<AST::Cast>(targetType, typedInner);
+        castExp->setDataType(std::make_optional(targetType));
+        return castExp;
+    }
+
+    if (!Types::isScalar(targetType))
+        throw std::runtime_error("Can only cast to scalar types or void");
+    else if (!Types::isScalar(typedInner->getDataType().value()))
+        throw std::runtime_error("Can only cast scalar expressions to non-void type");
 
     auto castExp = std::make_shared<AST::Cast>(targetType, typedInner);
     castExp->setDataType(std::make_optional(targetType));
@@ -288,7 +392,7 @@ TypeChecker::typeCheckNot(const std::shared_ptr<AST::Unary> &notUnary)
     if (notUnary->getOp() != AST::UnaryOp::Not)
         throw std::runtime_error("Internal error: typeCheckNot called with non-Not operator");
 
-    auto typedInner = typeCheckAndConvert(notUnary->getExp());
+    auto typedInner = typeCheckScalar(notUnary->getExp());
     auto notExp = std::make_shared<AST::Unary>(AST::UnaryOp::Not, typedInner);
     notExp->setDataType(std::make_optional(Types::makeIntType()));
     return notExp;
@@ -301,7 +405,7 @@ TypeChecker::typeCheckComplement(const std::shared_ptr<AST::Unary> &complUnary)
         throw std::runtime_error("Internal error: typeCheckComplement called with non-Complement operator");
 
     auto typedInner = typeCheckAndConvert(complUnary->getExp());
-    if (Types::isDoubleType(typedInner->getDataType().value()) || Types::isPointerType(typedInner->getDataType().value()))
+    if (!Types::isInteger(typedInner->getDataType().value()))
         throw std::runtime_error("Bitwise complement only valid for integer types");
 
     // promote character types to int
@@ -319,22 +423,26 @@ TypeChecker::typeCheckNegate(const std::shared_ptr<AST::Unary> &negUnary)
         throw std::runtime_error("Internal error: typeCheckNegate called with non-Negate operator");
 
     auto typedInner = typeCheckAndConvert(negUnary->getExp());
-    if (Types::isPointerType(typedInner->getDataType().value()))
-        throw std::runtime_error("Cannot negate a pointer");
 
-    // promote character types to int
-    typedInner = Types::isCharacter(typedInner->getDataType().value()) ? convertTo(typedInner, Types::makeIntType()) : typedInner;
+    if (Types::isArithmetic(typedInner->getDataType().value()))
+    {
+        // promote character types to int
+        typedInner = Types::isCharacter(typedInner->getDataType().value()) ? convertTo(typedInner, Types::makeIntType()) : typedInner;
 
-    auto negExp = std::make_shared<AST::Unary>(AST::UnaryOp::Negate, typedInner);
-    negExp->setDataType(typedInner->getDataType());
-    return negExp;
+        auto negExp = std::make_shared<AST::Unary>(AST::UnaryOp::Negate, typedInner);
+        negExp->setDataType(typedInner->getDataType());
+        return negExp;
+    }
+
+    throw std::runtime_error("Can only negate arithmetic types");
+    return nullptr;
 }
 
 std::shared_ptr<AST::Unary>
 TypeChecker::typeCheckIncrDecr(const std::shared_ptr<AST::Unary> &incrDecrUnary)
 {
     auto typedInner = typeCheckAndConvert(incrDecrUnary->getExp());
-    if (isLvalue(typedInner))
+    if (isLvalue(typedInner) && (Types::isArithmetic(typedInner->getDataType().value()) || Types::isCompletePointer(typedInner->getDataType().value())))
     {
         auto typedExp = std::make_shared<AST::Unary>(incrDecrUnary->getOp(), typedInner);
         typedExp->setDataType(typedInner->getDataType());
@@ -350,8 +458,8 @@ TypeChecker::typeCheckIncrDecr(const std::shared_ptr<AST::Unary> &incrDecrUnary)
 std::shared_ptr<AST::Binary>
 TypeChecker::typeCheckLogical(const std::shared_ptr<AST::Binary> &logicalBinary)
 {
-    auto typedE1 = typeCheckAndConvert(logicalBinary->getExp1());
-    auto typedE2 = typeCheckAndConvert(logicalBinary->getExp2());
+    auto typedE1 = typeCheckScalar(logicalBinary->getExp1());
+    auto typedE2 = typeCheckScalar(logicalBinary->getExp2());
     auto typedBinExp = std::make_shared<AST::Binary>(logicalBinary->getOp(), typedE1, typedE2);
     typedBinExp->setDataType(std::make_optional(Types::makeIntType()));
     return typedBinExp;
@@ -372,14 +480,14 @@ TypeChecker::typeCheckAddition(const std::shared_ptr<AST::Binary> &addition)
         addExp->setDataType(std::make_optional(commonType));
         return addExp;
     }
-    else if (Types::isPointerType(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
+    else if (Types::isCompletePointer(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
     {
         auto convertedE2 = convertTo(typedE2, Types::makeLongType());
         auto addExp = std::make_shared<AST::Binary>(AST::BinaryOp::Add, typedE1, convertedE2);
         addExp->setDataType(typedE1->getDataType());
         return addExp;
     }
-    else if (Types::isPointerType(typedE2->getDataType().value()) && Types::isInteger(typedE1->getDataType().value()))
+    else if (Types::isCompletePointer(typedE2->getDataType().value()) && Types::isInteger(typedE1->getDataType().value()))
     {
         auto convertedE1 = convertTo(typedE1, Types::makeLongType());
         auto addExp = std::make_shared<AST::Binary>(AST::BinaryOp::Add, convertedE1, typedE2);
@@ -407,14 +515,14 @@ TypeChecker::typeCheckSubtraction(const std::shared_ptr<AST::Binary> &subtractio
         subExp->setDataType(std::make_optional(commonType));
         return subExp;
     }
-    else if (Types::isPointerType(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
+    else if (Types::isCompletePointer(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
     {
         auto convertedE2 = convertTo(typedE2, Types::makeLongType());
         auto subExp = std::make_shared<AST::Binary>(AST::BinaryOp::Subtract, typedE1, convertedE2);
         subExp->setDataType(typedE1->getDataType());
         return subExp;
     }
-    else if (Types::isPointerType(typedE1->getDataType().value()) && typedE1->getDataType().value() == typedE2->getDataType().value())
+    else if (Types::isCompletePointer(typedE1->getDataType().value()) && typedE1->getDataType().value() == typedE2->getDataType().value())
     {
         auto subExp = std::make_shared<AST::Binary>(AST::BinaryOp::Subtract, typedE1, typedE2);
         subExp->setDataType(std::make_optional(Types::makeLongType()));
@@ -432,11 +540,7 @@ TypeChecker::typeCheckMultiplicative(const std::shared_ptr<AST::Binary> &multipl
     auto typedE1 = typeCheckAndConvert(multiplicative->getExp1());
     auto typedE2 = typeCheckAndConvert(multiplicative->getExp2());
 
-    if (Types::isPointerType(typedE1->getDataType().value()) || Types::isPointerType(typedE2->getDataType().value()))
-    {
-        throw std::runtime_error("Multiplicative operations not permitted on pointers");
-    }
-    else
+    if (Types::isArithmetic(typedE1->getDataType().value()) && Types::isArithmetic(typedE2->getDataType().value()))
     {
         auto commonType = getCommonType(typedE1->getDataType().value(), typedE2->getDataType().value());
         auto convertedE1 = convertTo(typedE1, commonType);
@@ -456,9 +560,11 @@ TypeChecker::typeCheckMultiplicative(const std::shared_ptr<AST::Binary> &multipl
         }
         else
         {
-            throw std::runtime_error("The op is not a multiplicative operator");
+            throw std::runtime_error("Can only multiply arithmetic types");
         }
     }
+
+    throw std::runtime_error("Multiplicative operations not permitted on pointers");
 }
 
 std::shared_ptr<AST::Binary>
@@ -473,9 +579,13 @@ TypeChecker::typeCheckEquality(const std::shared_ptr<AST::Binary> &equality)
     {
         commonType = getCommonPointerType(typedE1, typedE2);
     }
-    else
+    else if (Types::isArithmetic(typedE1->getDataType().value()) && Types::isArithmetic(typedE2->getDataType().value()))
     {
         commonType = getCommonType(typedE1->getDataType().value(), typedE2->getDataType().value());
+    }
+    else
+    {
+        throw std::runtime_error("Invalid operands for equality");
     }
 
     auto convertedE1 = convertTo(typedE1, commonType);
@@ -540,15 +650,16 @@ TypeChecker::typeCheckBitShift(const std::shared_ptr<AST::Binary> &bitShiftBinar
     auto typedE1 = typeCheckAndConvert(bitShiftBinary->getExp1());
     auto typedE2 = typeCheckAndConvert(bitShiftBinary->getExp2());
 
-    typedE1 = Types::isCharacter(typedE1->getDataType().value()) ? convertTo(typedE1, Types::makeIntType()) : typedE1;
-    typedE2 = Types::isCharacter(typedE2->getDataType().value()) ? convertTo(typedE2, Types::makeIntType()) : typedE2;
-
     if (!(Types::isInteger(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value())))
     {
         throw std::runtime_error("Both operands of bitshift operation must be integers");
     }
     else
     {
+        // promote borht operands from character to int type
+        typedE1 = Types::isCharacter(typedE1->getDataType().value()) ? convertTo(typedE1, Types::makeIntType()) : typedE1;
+        typedE2 = Types::isCharacter(typedE2->getDataType().value()) ? convertTo(typedE2, Types::makeIntType()) : typedE2;
+
         // Don't perform usual arithmetic conversions; result has type of left operand
         auto typedBinExp = std::make_shared<AST::Binary>(bitShiftBinary->getOp(), typedE1, typedE2);
         typedBinExp->setDataType(typedE1->getDataType());
@@ -561,7 +672,9 @@ TypeChecker::typeCheckDereference(const std::shared_ptr<AST::Dereference> &deref
 {
     auto typedInner = typeCheckAndConvert(dereference->getInnerExp());
 
-    if (auto pointerType = Types::getPointerType(typedInner->getDataType().value()))
+    if (Types::isPointerType(*typedInner->getDataType()) && Types::isVoidType(*Types::getPointerType(*typedInner->getDataType())->referencedType))
+        throw std::runtime_error("Can't dereference pointer to void");
+    else if (auto pointerType = Types::getPointerType(typedInner->getDataType().value()))
     {
         auto derefExp = std::make_shared<AST::Dereference>(typedInner);
         derefExp->setDataType(std::make_optional(*pointerType->referencedType));
@@ -600,13 +713,13 @@ TypeChecker::typeCheckSubscript(const std::shared_ptr<AST::Subscript> &subscript
     std::shared_ptr<AST::Expression> convertedE1;
     std::shared_ptr<AST::Expression> convertedE2;
 
-    if (Types::isPointerType(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
+    if (Types::isCompletePointer(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
     {
         ptrType = typedE1->getDataType().value();
         convertedE1 = typedE1;
         convertedE2 = convertTo(typedE2, Types::makeLongType());
     }
-    else if (Types::isPointerType(typedE2->getDataType().value()) && Types::isInteger(typedE1->getDataType().value()))
+    else if (Types::isCompletePointer(typedE2->getDataType().value()) && Types::isInteger(typedE1->getDataType().value()))
     {
         ptrType = typedE2->getDataType().value();
         convertedE1 = convertTo(typedE1, Types::makeLongType());
@@ -874,7 +987,7 @@ TypeChecker::typeCheckCompoundAssignment(const std::shared_ptr<AST::CompoundAssi
         // *= and /= only support arithmetic types
         if (
             (compoundAssign->getOp() == AST::BinaryOp::Multiply || compoundAssign->getOp() == AST::BinaryOp::Divide) &&
-            (Types::isPointerType(lhsType) || Types::isPointerType(rhsType)))
+            (!Types::isArithmetic(lhsType) || !Types::isArithmetic(rhsType)))
         {
             throw std::runtime_error("Operand of compound assignment does not support pointer operands");
         }
@@ -883,7 +996,7 @@ TypeChecker::typeCheckCompoundAssignment(const std::shared_ptr<AST::CompoundAssi
         if (
             (compoundAssign->getOp() == AST::BinaryOp::Add || compoundAssign->getOp() == AST::BinaryOp::Subtract) &&
             !(Types::isArithmetic(lhsType) && Types::isArithmetic(rhsType)) &&
-            !(Types::isPointerType(lhsType) && Types::isInteger(rhsType)))
+            !(Types::isCompletePointer(lhsType) && Types::isInteger(rhsType)))
         {
             throw std::runtime_error("Invalid types for +=/-=");
         }
@@ -932,7 +1045,7 @@ std::shared_ptr<AST::PostfixDecr>
 TypeChecker::typeCheckPostfixDecr(const std::shared_ptr<AST::PostfixDecr> &postfixDecr)
 {
     auto typedExp = typeCheckAndConvert(postfixDecr->getExp());
-    if (isLvalue(typedExp))
+    if (isLvalue(typedExp) && (Types::isArithmetic(typedExp->getDataType().value()) || Types::isCompletePointer(typedExp->getDataType().value())))
     {
         // Result has same value as e; no conversions required.
         // We need to convert integer "1" to their common type, but that will always be the same type as e, at least w/ types we've added so far
@@ -951,7 +1064,7 @@ std::shared_ptr<AST::PostfixIncr>
 TypeChecker::typeCheckPostfixIncr(const std::shared_ptr<AST::PostfixIncr> &postfixIncr)
 {
     auto typedExp = typeCheckAndConvert(postfixIncr->getExp());
-    if (isLvalue(typedExp))
+    if (isLvalue(typedExp) && (Types::isArithmetic(typedExp->getDataType().value()) || Types::isCompletePointer(typedExp->getDataType().value())))
     {
         // Same deal as postfix decrement
         auto resultType = typedExp->getDataType().value();
@@ -968,19 +1081,26 @@ TypeChecker::typeCheckPostfixIncr(const std::shared_ptr<AST::PostfixIncr> &postf
 std::shared_ptr<AST::Conditional>
 TypeChecker::typeCheckConditional(const std::shared_ptr<AST::Conditional> &conditional)
 {
-    auto typedCondition = typeCheckAndConvert(conditional->getCondition());
+    auto typedCondition = typeCheckScalar(conditional->getCondition());
     auto typedThen = typeCheckAndConvert(conditional->getThen());
     auto typedElse = typeCheckAndConvert(conditional->getElse());
 
-    auto commonType = (Types::isPointerType(typedThen->getDataType().value()) || Types::isPointerType(typedElse->getDataType().value()))
-                          ? getCommonPointerType(typedThen, typedElse)
-                          : getCommonType(typedThen->getDataType().value(), typedElse->getDataType().value());
+    Types::DataType resultType;
 
-    auto convertedThen = convertTo(typedThen, commonType);
-    auto convertedElse = convertTo(typedElse, commonType);
+    if (Types::isVoidType(typedThen->getDataType().value()) && Types::isVoidType(typedElse->getDataType().value()))
+        resultType = Types::makeVoidType();
+    else if (Types::isPointerType(typedThen->getDataType().value()) || Types::isPointerType(typedElse->getDataType().value()))
+        resultType = getCommonPointerType(typedThen, typedElse);
+    else if (Types::isArithmetic(typedThen->getDataType().value()) && Types::isArithmetic(typedElse->getDataType().value()))
+        resultType = getCommonType(typedThen->getDataType().value(), typedElse->getDataType().value());
+    else
+        throw std::runtime_error("Invalid operands for conditional");
+
+    auto convertedThen = convertTo(typedThen, resultType);
+    auto convertedElse = convertTo(typedElse, resultType);
 
     auto typedConditional = std::make_shared<AST::Conditional>(typedCondition, convertedThen, convertedElse);
-    typedConditional->setDataType(std::make_optional(commonType));
+    typedConditional->setDataType(std::make_optional(resultType));
     return typedConditional;
 }
 
@@ -1119,6 +1239,14 @@ TypeChecker::typeCheckExp(const std::shared_ptr<AST::Expression> &exp)
     {
         return typeCheckSubscript(std::dynamic_pointer_cast<AST::Subscript>(exp));
     }
+    case AST::NodeType::SizeOfT:
+    {
+        return typeCheckSizeOfT(std::dynamic_pointer_cast<AST::SizeOfT>(exp));
+    }
+    case AST::NodeType::SizeOf:
+    {
+        return typeCheckSizeOf(std::dynamic_pointer_cast<AST::SizeOf>(exp));
+    }
     default:
         throw std::runtime_error("Internal Error: Unknown type of expression!");
     }
@@ -1160,8 +1288,31 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     {
     case AST::NodeType::Return:
     {
-        auto typedExp = typeCheckAndConvert(std::dynamic_pointer_cast<AST::Return>(stmt)->getValue());
-        return std::make_shared<AST::Return>(convertByAssignment(typedExp, retType));
+        auto returnStmt = std::dynamic_pointer_cast<AST::Return>(stmt);
+
+        if (returnStmt->getOptValue().has_value())
+        {
+            if (Types::isVoidType(retType))
+            {
+                throw std::runtime_error("function with void return type cannot return a value");
+            }
+            else
+            {
+                auto typedExp = convertByAssignment(typeCheckAndConvert(returnStmt->getOptValue().value()), retType);
+                return std::make_shared<AST::Return>(typedExp);
+            }
+        }
+        else
+        {
+            if (Types::isVoidType(retType))
+            {
+                return std::make_shared<AST::Return>();
+            }
+            else
+            {
+                throw std::runtime_error("function with non-void return type must return a value");
+            }
+        }
     }
     case AST::NodeType::ExpressionStmt:
     {
@@ -1171,7 +1322,7 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     case AST::NodeType::If:
     {
         auto ifStmt = std::dynamic_pointer_cast<AST::If>(stmt);
-        auto newCond = typeCheckAndConvert(ifStmt->getCondition());
+        auto newCond = typeCheckScalar(ifStmt->getCondition());
         auto newThenCls = typeCheckStatement(ifStmt->getThenClause(), retType);
         auto newOptElseCls = std::optional<std::shared_ptr<AST::Statement>>{std::nullopt};
         if (ifStmt->getOptElseClause().has_value())
@@ -1213,12 +1364,13 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     {
         auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
         auto typedControl = typeCheckAndConvert(switchStmt->getControl());
-        // Perform integer promotions on controlling expression
-        typedControl = Types::isCharacter(typedControl->getDataType().value()) ? convertTo(typedControl, Types::makeIntType()) : typedControl;
-        auto typedBody = typeCheckStatement(switchStmt->getBody(), retType);
 
         if (!Types::isInteger(typedControl->getDataType().value()))
             throw std::runtime_error("Controlling expression in switch must have integer type");
+
+        // Perform integer promotions on controlling expression
+        typedControl = Types::isCharacter(typedControl->getDataType().value()) ? convertTo(typedControl, Types::makeIntType()) : typedControl;
+        auto typedBody = typeCheckStatement(switchStmt->getBody(), retType);
 
         return std::make_shared<AST::Switch>(
             typedControl,
@@ -1235,7 +1387,7 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     case AST::NodeType::While:
     {
         auto whileStmt = std::dynamic_pointer_cast<AST::While>(stmt);
-        auto newCond = typeCheckAndConvert(whileStmt->getCondition());
+        auto newCond = typeCheckScalar(whileStmt->getCondition());
         auto newBody = typeCheckStatement(whileStmt->getBody(), retType);
 
         return std::make_shared<AST::While>(newCond, newBody, whileStmt->getId());
@@ -1244,7 +1396,7 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     {
         auto doWhileStmt = std::dynamic_pointer_cast<AST::DoWhile>(stmt);
         auto newBody = typeCheckStatement(doWhileStmt->getBody(), retType);
-        auto newCond = typeCheckAndConvert(doWhileStmt->getCondition());
+        auto newCond = typeCheckScalar(doWhileStmt->getCondition());
 
         return std::make_shared<AST::DoWhile>(newBody, newCond, doWhileStmt->getId());
     }
@@ -1269,7 +1421,7 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
         auto newCond = std::optional<std::shared_ptr<AST::Expression>>{std::nullopt};
         if (forStmt->getOptCondition().has_value())
         {
-            newCond = std::make_optional(typeCheckAndConvert(forStmt->getOptCondition().value()));
+            newCond = std::make_optional(typeCheckScalar(forStmt->getOptCondition().value()));
         }
 
         auto newPost = std::optional<std::shared_ptr<AST::Expression>>{std::nullopt};
@@ -1300,6 +1452,11 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
 std::shared_ptr<AST::VariableDeclaration>
 TypeChecker::typeCheckLocalVarDecl(const std::shared_ptr<AST::VariableDeclaration> &varDecl)
 {
+    if (Types::isVoidType(varDecl->getVarType()))
+        throw std::runtime_error("No void declarations");
+    else
+        validateType(std::make_shared<Types::DataType>(varDecl->getVarType()));
+
     if (varDecl->getOptStorageClass().has_value())
     {
         switch (varDecl->getOptStorageClass().value())
@@ -1369,6 +1526,11 @@ TypeChecker::typeCheckLocalDecl(const std::shared_ptr<AST::Declaration> &decl)
 std::shared_ptr<AST::VariableDeclaration>
 TypeChecker::typeCheckFileScopeVarDecl(const std::shared_ptr<AST::VariableDeclaration> &varDecl)
 {
+    if (Types::isVoidType(varDecl->getVarType()))
+        throw std::runtime_error("void variables not allowed");
+    else
+        validateType(std::make_shared<Types::DataType>(varDecl->getVarType()));
+
     Symbols::InitialValue defaultInit =
         varDecl->getOptStorageClass().has_value() && varDecl->getOptStorageClass().value() == AST::StorageClass::Extern
             ? Symbols::makeNoInitializer()
@@ -1417,6 +1579,8 @@ TypeChecker::typeCheckFileScopeVarDecl(const std::shared_ptr<AST::VariableDeclar
 std::shared_ptr<AST::FunctionDeclaration>
 TypeChecker::typeCheckFunDecl(const std::shared_ptr<AST::FunctionDeclaration> &funDecl)
 {
+    validateType(std::make_shared<Types::DataType>(funDecl->getFunType()));
+
     auto _paramTypes = std::vector<std::shared_ptr<Types::DataType>>();
     auto _returnType = std::shared_ptr<Types::DataType>(nullptr);
     auto _funType = std::shared_ptr<Types::FunType>(nullptr);
@@ -1431,6 +1595,8 @@ TypeChecker::typeCheckFunDecl(const std::shared_ptr<AST::FunctionDeclaration> &f
             {
                 if (auto arrType = Types::getArrayType(*paramType))
                     _paramTypes.push_back(std::make_shared<Types::DataType>(Types::makePointerType(arrType->elemType)));
+                else if (Types::isVoidType(*paramType))
+                    throw std::runtime_error("No void params allowed");
                 else
                     _paramTypes.push_back(paramType);
             }

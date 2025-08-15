@@ -38,6 +38,7 @@ enum class TokenType
     KEYWORD_DEFAULT,
     KEYWORD_STATIC,
     KEYWORD_EXTERN,
+    KEYWORD_SIZEOF,
 
     // Punctuation
     OPEN_PAREN,

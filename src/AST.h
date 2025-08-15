@@ -16,7 +16,7 @@ declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
 variable_declaration = (identifier name, initializer? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
 initializer = SingleInit(exp) | CompoundInit(initializer* list)
-type = Char | SChar | UChar | Int | Long | UInt | ULong | Double
+type = Char | SChar | UChar | Int | Long | UInt | ULong | Double | Void
     | FunType(type* params, type ret)
     | Array(type elem_type, int size)
     | PointerType(type referenced)
@@ -24,7 +24,7 @@ storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
 for_init = InitDecl(variable_declaration) | InitExp(exp?)
-statement = Return(exp)
+statement = Return(exp?)
     | Expression(exp)
     | If(exp condition, statement then, statement? else)
     | Compound(block)
@@ -53,12 +53,14 @@ exp = Constant(const, type)
     | Dereference(exp)
     | AddrOf(exp)
     | Subscript(exp, exp, type)
+    | SizeOf(exp, type)
+    | SizeOfT(type, type)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
     | GreaterThan | GreaterOrEqual
     | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
-const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int) | ConstDouble(d)
+const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int) | ConstDouble(double)
     | ConstChar(int) | ConstUChar(int)
 */
 
@@ -95,6 +97,8 @@ namespace AST
     class Dereference;
     class AddrOf;
     class Subscript;
+    class SizeOfT;
+    class SizeOf;
     class ForInit;
     class InitDecl;
     class InitExp;
@@ -146,6 +150,8 @@ namespace AST
         Dereference,
         AddrOf,
         Subscript,
+        SizeOfT,
+        SizeOf,
         InitDecl,
         InitExp,
     };
@@ -537,15 +543,39 @@ namespace AST
         std::shared_ptr<Expression> _exp2;
     };
 
+    class SizeOfT : public Expression
+    {
+    public:
+        SizeOfT(const std::shared_ptr<Types::DataType> typeName, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::SizeOfT, dataType), _typeName{typeName} {}
+
+        auto &getTypeName() const { return _typeName; }
+
+    private:
+        std::shared_ptr<Types::DataType> _typeName;
+    };
+
+    class SizeOf : public Expression
+    {
+    public:
+        SizeOf(const std::shared_ptr<Expression> &innerExp, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::SizeOf, dataType), _innerExp{innerExp} {}
+
+        auto getInnerExp() const { return _innerExp; }
+
+    private:
+        std::shared_ptr<Expression> _innerExp;
+    };
+
     class Return : public Statement
     {
     public:
-        Return(std::shared_ptr<Expression> value)
+        Return(std::optional<std::shared_ptr<Expression>> value = std::nullopt)
             : Statement(NodeType::Return), _value{value} {}
-        std::shared_ptr<Expression> getValue() const { return _value; }
+        auto &getOptValue() const { return _value; }
 
     private:
-        std::shared_ptr<Expression> _value;
+        std::optional<std::shared_ptr<Expression>> _value;
     };
 
     class ExpressionStmt : public Statement

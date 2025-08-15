@@ -28,12 +28,12 @@ EBNF for a subset of C:
 <param-list> ::= "(" "void" ")" | "(" <param> { "," <param> } ")"
 <param> ::= { <type-specifier> }+ <declarator>
 <simple-declarator> ::= <identifier> | "(" <declarator> ")"
-<type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double" | "char"
+<type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double" | "char" | "void"
 <specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
 <for-init> ::= <variable-declaration> | [ <exp> ] ";"
-<statement> ::= "return" <exp> ";"
+<statement> ::= "return" [ <exp> ] ";"
             | <exp> ";"
             | "if" "(" <exp> ")" <statement> [ "else" <statement> ]
             | <block>
@@ -48,21 +48,25 @@ EBNF for a subset of C:
             | "switch" "(" <exp> ")" <statement>
             | "case" <exp> ":" <statement>
             | "default" ":" <statement>
-<exp> ::= <factor> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
-<factor> ::=  <unop> <factor> | <postfix-exp>
+<exp> ::= <cast-exp> | <exp> <binop> <exp> | <exp> "?" <exp> ":" <exp>
+<cast-exp> ::= "(" <type-name> ")" <cast-exp>
+    | <unary-exp>
+<unary-exp> ::= <unop> <cast-exp>
+    | "sizeof" <unary-exp>
+    | "sizeof" "(" <type-name> ")"
+    | <postfix-exp>
+<type-name> ::= { <type-specifier> }+ [ <abstract-declarator> ]
 <postfix-exp> ::= <primary-exp> { "++" | "--" }
 <primary-exp> ::= <const>
     | <identifier>
     | "(" <exp> ")"
-    | <identifier> "(" [ <argument-list> ] ")"
-    | "(" { <type-specifier> }+ ")" [ <abstract-declarator> ] <factor>
     | { <string> }+
+    | <identifier> "(" [ <argument-list> ] ")"
 <argument-list> ::= <exp> { "," <exp> }
 <abstract-declarator> ::= "*" [ <abstract-declarator> ]
     | <direct-abstract-declarator>
 <direct-abstract-declarator> ::= "(" <abstract-declarator> ")" { "[" <const> "]" }
-    | { "[" <const> "]" }+
-<unop> ::= "-" | "~" | "!" | "++" | "--" | "*" | "&"
+    | { "[" <const> "]" }+<unop> ::= "-" | "~" | "!" | "++" | "--" | "*" | "&"
 <binop> ::= "+" | "-" | "*" | "/" | "%"
         | "&&" | "||"
         | "==" | "!=" | "<" | "<="
@@ -356,10 +360,11 @@ Parser::parseParamList()
     expect(TokenType::OPEN_PAREN);
     auto params = std::vector<std::shared_ptr<Param>>{};
 
-    if (peekToken()->getType() == TokenType::KEYWORD_VOID)
+    auto nextToks{peekTokens(2)};
+
+    if (nextToks[0]->getType() == TokenType::KEYWORD_VOID && nextToks[1]->getType() == TokenType::CLOSE_PAREN)
     {
         takeToken();
-        params = {};
     }
     else
     {
@@ -368,6 +373,25 @@ Parser::parseParamList()
 
     expect(TokenType::CLOSE_PAREN);
     return params;
+}
+
+Types::DataType
+Parser::parseTypeName()
+{
+    auto typeSpecifiers{parseTypeSpecifierList()};
+    auto baseType{parseType(typeSpecifiers)};
+
+    /*
+        check for optional abstract declarator
+        note that <type-name> is always followed by close paren,
+        although that's not part of the grammar rule
+    */
+
+    if (peekToken().has_value() && peekToken()->getType() == TokenType::CLOSE_PAREN)
+        return baseType;
+
+    auto abstractDecl{parseAbstractDeclarator()};
+    return *processAbstractDeclarator(abstractDecl, std::make_shared<Types::DataType>(baseType));
 }
 
 std::vector<std::shared_ptr<Param>>
@@ -1155,6 +1179,8 @@ Types::DataType Parser::parseType(const std::vector<Token> &typeList)
 
     if (typeList.size() == 1)
     {
+        if (containsToken(typeList, TokenType::KEYWORD_VOID))
+            return Types::makeVoidType();
         if (containsToken(typeList, TokenType::KEYWORD_DOUBLE))
             return Types::makeDoubleType();
         if (containsToken(typeList, TokenType::KEYWORD_CHAR))
@@ -1174,6 +1200,7 @@ Types::DataType Parser::parseType(const std::vector<Token> &typeList)
         hasDuplicateTokenType(typeList) ||
         containsToken(typeList, TokenType::KEYWORD_DOUBLE) ||
         containsToken(typeList, TokenType::KEYWORD_CHAR) ||
+        containsToken(typeList, TokenType::KEYWORD_VOID) ||
         containsUnsignedAndSigned(typeList))
     {
         throw std::runtime_error("Invalid type specifier");
@@ -1431,9 +1458,28 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
     return nullptr;
 }
 
-std::shared_ptr<AST::Expression> Parser::parseFactor()
+std::shared_ptr<AST::Expression>
+Parser::parseCastExp()
 {
-    auto nextTokens{peekTokens(2)};
+    auto nextToks{peekTokens(2)};
+
+    if (nextToks[0]->getType() == TokenType::OPEN_PAREN && nextToks[1].has_value() && isTypeSpecifier(nextToks[1].value()))
+    {
+        // this is a cast expression
+        takeToken();
+        auto targetType{parseTypeName()};
+        expect(TokenType::CLOSE_PAREN);
+        auto innerExp{parseCastExp()};
+        return std::make_shared<AST::Cast>(targetType, innerExp);
+    }
+
+    return parseUnaryExp();
+}
+
+std::shared_ptr<AST::Expression>
+Parser::parseUnaryExp()
+{
+    auto nextTokens{peekTokens(3)};
 
     if (!nextTokens[0].has_value())
     {
@@ -1449,48 +1495,41 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
     case TokenType::DOUBLE_HYPHEN:
     {
         AST::UnaryOp op{parseUnop()};
-        std::shared_ptr<AST::Expression> innerExp{parseFactor()};
+        std::shared_ptr<AST::Expression> innerExp{parseCastExp()};
 
         return std::make_shared<AST::Unary>(op, innerExp);
     }
     case TokenType::STAR:
     {
         takeToken();
-        auto innerExp{parseFactor()};
+        auto innerExp{parseCastExp()};
 
         return std::make_shared<AST::Dereference>(innerExp);
     }
     case TokenType::AMPERSAND:
     {
         takeToken();
-        auto innerExp{parseFactor()};
+        auto innerExp{parseCastExp()};
 
         return std::make_shared<AST::AddrOf>(innerExp);
     }
-    case TokenType::OPEN_PAREN:
+    case TokenType::KEYWORD_SIZEOF:
     {
-        if (nextTokens[1].has_value() && isTypeSpecifier(nextTokens[1].value()))
+        if (nextTokens[1]->getType() == TokenType::OPEN_PAREN && nextTokens[2].has_value() && isTypeSpecifier(nextTokens[2].value()))
         {
-            // It's a cast, consume the "(", then parse the type specifiers
+            // this is a size of a type name
             takeToken();
-            auto typeSpecifiers{parseTypeSpecifierList()};
-            auto baseType{parseType(typeSpecifiers)};
-            Types::DataType targetType;
-
-            // check for optional abstract declarator
-            if (peekToken()->getType() == TokenType::CLOSE_PAREN)
-            {
-                targetType = baseType;
-            }
-            else
-            {
-                auto abstractDecl{parseAbstractDeclarator()};
-                targetType = *processAbstractDeclarator(abstractDecl, std::make_shared<Types::DataType>(baseType));
-            }
+            takeToken();
+            auto targetType{parseTypeName()};
             expect(TokenType::CLOSE_PAREN);
-            auto innerExp{parseFactor()};
-
-            return std::make_shared<AST::Cast>(targetType, innerExp);
+            return std::make_shared<AST::SizeOfT>(std::make_shared<Types::DataType>(targetType));
+        }
+        else
+        {
+            // size of an expression
+            takeToken();
+            auto innerExp{parseUnaryExp()};
+            return std::make_shared<AST::SizeOf>(innerExp);
         }
     }
     default:
@@ -1500,7 +1539,7 @@ std::shared_ptr<AST::Expression> Parser::parseFactor()
 
 std::shared_ptr<AST::Expression> Parser::parseExp(int minPrec)
 {
-    auto left{parseFactor()};
+    auto left{parseCastExp()};
     auto nextToken{peekToken()};
 
     while (nextToken.has_value() && isBinop(nextToken->getType()) && getPrecedence(nextToken->getType()) >= minPrec)
@@ -1563,8 +1602,7 @@ std::shared_ptr<AST::Statement> Parser::parseStatement()
     case TokenType::KEYWORD_RETURN:
     {
         takeToken();
-        auto retVal{parseExp(0)};
-        expect(TokenType::SEMICOLON);
+        auto retVal{parseOptionalExp(TokenType::SEMICOLON)};
 
         return std::make_shared<AST::Return>(retVal);
     }
