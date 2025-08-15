@@ -11,6 +11,22 @@
 
 namespace Constants
 {
+    struct ConstChar
+    {
+        int8_t val;
+
+        ConstChar(int8_t val) : val{val} {}
+        std::string toString() const { return "ConstChar(" + std::to_string(val) + ")"; }
+    };
+
+    struct ConstUChar
+    {
+        uint8_t val;
+
+        ConstUChar(uint8_t val) : val{val} {}
+        std::string toString() const { return "ConstUChar(" + std::to_string(val) + ")"; }
+    };
+
     struct ConstInt
     {
         int32_t val;
@@ -51,12 +67,22 @@ namespace Constants
         std::string toString() const { return "ConstDouble(" + std::to_string(val) + ")"; }
     };
 
-    using Const = std::variant<ConstInt, ConstLong, ConstUInt, ConstULong, ConstDouble>;
+    using Const = std::variant<ConstChar, ConstUChar, ConstInt, ConstLong, ConstUInt, ConstULong, ConstDouble>;
 
     inline std::string toString(const Const &c)
     {
         return std::visit([](const auto &obj)
                           { return obj.toString(); }, c);
+    }
+
+    inline Const makeConstChar(int8_t val)
+    {
+        return ConstChar{val};
+    }
+
+    inline Const makeConstUChar(uint8_t val)
+    {
+        return ConstUChar{val};
     }
 
     inline Const makeConstInt(int32_t val)
@@ -104,6 +130,16 @@ namespace Constants
         return ConstULong{0};
     }
 
+    inline bool isConstChar(const Const &c)
+    {
+        return isVariant<ConstChar>(c);
+    }
+
+    inline bool isConstUChar(const Const &c)
+    {
+        return isVariant<ConstUChar>(c);
+    }
+
     inline bool isConstInt(const Const &c)
     {
         return isVariant<ConstInt>(c);
@@ -127,6 +163,16 @@ namespace Constants
     inline bool isConstDouble(const Const &c)
     {
         return isVariant<ConstDouble>(c);
+    }
+
+    inline std::optional<ConstChar> getConstChar(const Const &c)
+    {
+        return getVariant<ConstChar>(c);
+    }
+
+    inline std::optional<ConstUChar> getConstUChar(const Const &c)
+    {
+        return getVariant<ConstUChar>(c);
     }
 
     inline std::optional<ConstInt> getConstInt(const Const &c)
@@ -156,6 +202,10 @@ namespace Constants
 
     inline Types::DataType typeOfConst(const Const &c)
     {
+        if (isConstChar(c))
+            return Types::makeSCharType();
+        if (isConstUChar(c))
+            return Types::makeUCharType();
         if (isConstInt(c))
             return Types::makeIntType();
         if (isConstLong(c))

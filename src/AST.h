@@ -16,7 +16,7 @@ declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
 variable_declaration = (identifier name, initializer? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
 initializer = SingleInit(exp) | CompoundInit(initializer* list)
-type = Int | Long | UInt | ULong | Double
+type = Char | SChar | UChar | Int | Long | UInt | ULong | Double
     | FunType(type* params, type ret)
     | Array(type elem_type, int size)
     | PointerType(type referenced)
@@ -40,6 +40,7 @@ statement = Return(exp)
     | LabeledStatement(indentifier label, statement)
     | Goto(identifier label)
 exp = Constant(const, type)
+    | String(string)
     | Var(identifier, type)
     | Unary(unary_operator, exp, type)
     | Binary(binary_operator, exp, exp, type)
@@ -58,12 +59,14 @@ binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | GreaterThan | GreaterOrEqual
     | BitwiseAnd | BitwiseXor | BitwiseOr | BitShiftLeft | BitShiftRight
 const = ConstInt(int) | ConstLong(int) | ConstUInt(int) | ConstULong(int) | ConstDouble(d)
+    | ConstChar(int) | ConstUChar(int)
 */
 
 namespace AST
 {
     class Node;
     class Constant;
+    class String;
     class Cast;
     class Var;
     class Assignment;
@@ -129,6 +132,7 @@ namespace AST
         LabeledStatement,
         Goto,
         Constant,
+        String,
         Cast,
         Unary,
         Binary,
@@ -341,6 +345,18 @@ namespace AST
 
     private:
         std::shared_ptr<Constants::Const> _c;
+    };
+
+    class String : public Expression
+    {
+    public:
+        String(const std::string &str, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::String, dataType), _str{str} {}
+
+        auto &getStr() const { return _str; }
+
+    private:
+        std::string _str;
     };
 
     class Cast : public Expression

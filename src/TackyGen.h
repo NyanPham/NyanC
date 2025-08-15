@@ -34,6 +34,7 @@ public:
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForWhileLoop(const std::shared_ptr<AST::While> &whileLoop);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForForLoop(const std::shared_ptr<AST::For> &forLoop);
 
+    std::vector<std::shared_ptr<TACKY::Instruction>> emitStringInit(const std::string &s, const std::string &dst, int offset);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const std::string &name, ssize_t offset);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitSubscript(const std::shared_ptr<AST::Subscript> &subscript);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitPointerAddition(const Types::DataType &type, const std::shared_ptr<AST::Expression> &exp1, const std::shared_ptr<AST::Expression> &exp2);
@@ -60,7 +61,7 @@ public:
     std::vector<std::shared_ptr<TACKY::Instruction>> emitVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem);
     std::optional<std::shared_ptr<TACKY::Function>> emitFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &funDef);
-    std::vector<std::shared_ptr<TACKY::StaticVariable>> convertSymbolsToTacky();
+    std::vector<std::shared_ptr<TACKY::TopLevel>> convertSymbolsToTacky();
     std::shared_ptr<TACKY::Program> gen(const std::shared_ptr<AST::Program> &prog);
 
 private:

@@ -30,6 +30,7 @@ bool isLvalue(const std::shared_ptr<AST::Expression> &exp)
         AST::NodeType::Var,
         AST::NodeType::Dereference,
         AST::NodeType::Subscript,
+        AST::NodeType::String,
     };
 
     return lvalueNodeTypes.count(exp->getType()) > 0;
@@ -95,23 +96,27 @@ std::shared_ptr<AST::Expression> convertByAssignment(const std::shared_ptr<AST::
 
 Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &t2)
 {
-    if (t1 == t2)
-        return t1;
+    auto type1 = Types::isCharacter(t1) ? Types::makeIntType() : t1;
+    auto type2 = Types::isCharacter(t2) ? Types::makeIntType() : t2;
 
-    if (Types::isDoubleType(t1) || Types::isDoubleType(t2))
+    if (type1 == type2)
+        return type1;
+
+    if (Types::isDoubleType(type1) || Types::isDoubleType(type2))
         return Types::makeDoubleType();
 
-    else if (Types::getSize(t1) == Types::getSize(t2))
+    if (Types::getSize(type1) == Types::getSize(type2))
     {
-        if (Types::isSigned(t1))
-            return t2;
+        if (Types::isSigned(type1))
+            return type2;
         else
-            return t1;
+            return type1;
     }
-    else if (Types::getSize(t1) > Types::getSize(t2))
-        return t1;
+
+    if (Types::getSize(type1) > Types::getSize(type2))
+        return type1;
     else
-        return t2;
+        return type2;
 }
 
 /*
@@ -144,6 +149,10 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
         compoundInit->setDataType(std::make_optional(type));
         return compoundInit;
     }
+    else if (Types::isCharType(type) || Types::isSCharType(type))
+    {
+        return scalar(std::make_shared<Constants::Const>(Constants::ConstChar(0)));
+    }
     else if (Types::isIntType(type))
     {
         return scalar(std::make_shared<Constants::Const>(Constants::ConstInt(0)));
@@ -151,6 +160,10 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
     else if (Types::isLongType(type))
     {
         return scalar(std::make_shared<Constants::Const>(Constants::ConstLong(0)));
+    }
+    else if (Types::isUCharType(type))
+    {
+        return scalar(std::make_shared<Constants::Const>(Constants::ConstUChar(0)));
     }
     else if (Types::isUIntType(type))
     {
@@ -170,16 +183,46 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
     }
 }
 
+std::shared_ptr<AST::String>
+TypeChecker::typeCheckString(const std::shared_ptr<AST::String> &string)
+{
+    auto e = std::make_shared<AST::String>(string->getStr());
+    e->setDataType(std::make_optional(Types::makeArrayType(std::make_shared<Types::DataType>(Types::makeCharType()), string->getStr().size() + 1)));
+    return e;
+}
+
 std::shared_ptr<AST::Initializer>
 TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_ptr<AST::Initializer> &init)
 {
     if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init))
     {
-        auto typeCheckedExp = typeCheckAndConvert(singleInit->getExp());
-        auto castExp = convertByAssignment(typeCheckedExp, targetType);
-        auto checkedSingleInit = std::make_shared<AST::SingleInit>(castExp);
-        checkedSingleInit->setDataType(std::make_optional(targetType));
-        return checkedSingleInit;
+        if (Types::isArrayType(targetType) && singleInit->getExp()->getType() == AST::NodeType::String)
+        {
+            auto arrType = Types::getArrayType(targetType);
+            auto string = std::dynamic_pointer_cast<AST::String>(singleInit->getExp());
+            if (!Types::isCharacter(*arrType->elemType))
+            {
+                throw std::runtime_error("Can't initialize non-character type with string literal");
+            }
+            else if (string->getStr().size() > arrType->size)
+            {
+                throw std::runtime_error("Too many characters in string literal");
+            }
+            else
+            {
+                auto typecheckedInit = std::make_shared<AST::SingleInit>(string);
+                typecheckedInit->setDataType(std::make_optional(targetType));
+                return typecheckedInit;
+            }
+        }
+        else
+        {
+            auto typeCheckedExp = typeCheckAndConvert(singleInit->getExp());
+            auto castExp = convertByAssignment(typeCheckedExp, targetType);
+            auto checkedSingleInit = std::make_shared<AST::SingleInit>(castExp);
+            checkedSingleInit->setDataType(std::make_optional(targetType));
+            return checkedSingleInit;
+        }
     }
     else if (auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init))
     {
@@ -261,6 +304,9 @@ TypeChecker::typeCheckComplement(const std::shared_ptr<AST::Unary> &complUnary)
     if (Types::isDoubleType(typedInner->getDataType().value()) || Types::isPointerType(typedInner->getDataType().value()))
         throw std::runtime_error("Bitwise complement only valid for integer types");
 
+    // promote character types to int
+    typedInner = Types::isCharacter(typedInner->getDataType().value()) ? convertTo(typedInner, Types::makeIntType()) : typedInner;
+
     auto complExp = std::make_shared<AST::Unary>(AST::UnaryOp::Complement, typedInner);
     complExp->setDataType(typedInner->getDataType());
     return complExp;
@@ -275,6 +321,9 @@ TypeChecker::typeCheckNegate(const std::shared_ptr<AST::Unary> &negUnary)
     auto typedInner = typeCheckAndConvert(negUnary->getExp());
     if (Types::isPointerType(typedInner->getDataType().value()))
         throw std::runtime_error("Cannot negate a pointer");
+
+    // promote character types to int
+    typedInner = Types::isCharacter(typedInner->getDataType().value()) ? convertTo(typedInner, Types::makeIntType()) : typedInner;
 
     auto negExp = std::make_shared<AST::Unary>(AST::UnaryOp::Negate, typedInner);
     negExp->setDataType(typedInner->getDataType());
@@ -491,6 +540,9 @@ TypeChecker::typeCheckBitShift(const std::shared_ptr<AST::Binary> &bitShiftBinar
     auto typedE1 = typeCheckAndConvert(bitShiftBinary->getExp1());
     auto typedE2 = typeCheckAndConvert(bitShiftBinary->getExp2());
 
+    typedE1 = Types::isCharacter(typedE1->getDataType().value()) ? convertTo(typedE1, Types::makeIntType()) : typedE1;
+    typedE2 = Types::isCharacter(typedE2->getDataType().value()) ? convertTo(typedE2, Types::makeIntType()) : typedE2;
+
     if (!(Types::isInteger(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value())))
     {
         throw std::runtime_error("Both operands of bitshift operation must be integers");
@@ -600,10 +652,59 @@ TypeChecker::typeCheckAndConvert(const std::shared_ptr<AST::Expression> &exp)
 std::vector<std::shared_ptr<Initializers::StaticInit>>
 TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, const std::shared_ptr<AST::Initializer> &init)
 {
-    if (Types::isArrayType(*varType) && init->getType() == AST::NodeType::SingleInit)
+    if (init->getType() == AST::NodeType::SingleInit && std::dynamic_pointer_cast<AST::SingleInit>(init)->getExp()->getType() == AST::NodeType::String)
+    {
+        if (Types::isArrayType(*varType))
+        {
+            auto arrType = Types::getArrayType(*varType);
+            auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init);
+            auto string = std::dynamic_pointer_cast<AST::String>(singleInit->getExp());
+
+            if (Types::isCharacter(*arrType->elemType))
+            {
+                auto n = arrType->size - (int)(string->getStr().size());
+
+                if (n == 0)
+                    return {
+                        std::make_shared<Initializers::StaticInit>(Initializers::StringInit{string->getStr(), false}),
+                    };
+                else if (n == 1)
+                    return {
+                        std::make_shared<Initializers::StaticInit>(Initializers::StringInit{string->getStr(), true}),
+                    };
+                else if (n > 1)
+                    return {
+                        std::make_shared<Initializers::StaticInit>(Initializers::StringInit{string->getStr(), true}),
+                        std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{static_cast<size_t>(n - 1)}),
+                    };
+                else
+                    throw std::runtime_error("string is too long for initialize");
+            }
+            else
+            {
+                throw std::runtime_error("Can't initailize array of non-character type with string literal");
+            }
+        }
+
+        if (Types::isPointerType(*varType) && Types::isCharType(*Types::getPointerType(*varType)->referencedType))
+        {
+            auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init);
+            auto string = std::dynamic_pointer_cast<AST::String>(singleInit->getExp());
+
+            auto strId = _symbolTable.addString(string->getStr());
+            return {
+                std::make_shared<Initializers::StaticInit>(Initializers::PointerInit(strId)),
+            };
+        }
+
+        throw std::runtime_error("String literal can only initialize char or decay to pointer");
+    }
+
+    else if (Types::isArrayType(*varType) && init->getType() == AST::NodeType::SingleInit)
     {
         throw std::runtime_error("Can't initialize array from scalar value");
     }
+
     else if (
         init->getType() == AST::NodeType::SingleInit &&
         [&]
@@ -627,7 +728,10 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
         {
             std::shared_ptr<Initializers::StaticInit> initVal = nullptr;
             auto convertedC = ConstConvert::convert(*varType, constExp->getConst());
-            if (auto constInt = Constants::getConstInt(*convertedC))
+
+            if (auto constChar = Constants::getConstChar(*convertedC))
+                initVal = std::make_shared<Initializers::StaticInit>(Initializers::CharInit{constChar->val});
+            else if (auto constInt = Constants::getConstInt(*convertedC))
             {
                 initVal = std::make_shared<Initializers::StaticInit>(Initializers::IntInit{constInt->val});
             }
@@ -635,6 +739,8 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
             {
                 initVal = std::make_shared<Initializers::StaticInit>(Initializers::LongInit{constLong->val});
             }
+            else if (auto constUChar = Constants::getConstUChar(*convertedC))
+                initVal = std::make_shared<Initializers::StaticInit>(Initializers::UCharInit{constUChar->val});
             else if (auto constUInt = Constants::getConstUInt(*convertedC))
             {
                 initVal = std::make_shared<Initializers::StaticInit>(Initializers::UIntInit{constUInt->val});
@@ -787,9 +893,10 @@ TypeChecker::typeCheckCompoundAssignment(const std::shared_ptr<AST::CompoundAssi
 
         if (compoundAssign->getOp() == AST::BinaryOp::BitShiftLeft || compoundAssign->getOp() == AST::BinaryOp::BitShiftRight)
         {
-            // Don't perform type conversion for >>= and <<=
+            // Apply integer type promotions to >>= and <<=, but don't convert to common type
+            lhsType = Types::isCharacter(lhsType) ? Types::makeIntType() : lhsType;
             resultType = lhsType;
-            convertedRhs = typedRhs;
+            convertedRhs = Types::isCharacter(typedRhs->getDataType().value()) ? convertTo(typedRhs, Types::makeIntType()) : typedRhs;
         }
         else if (Types::isPointerType(lhsType))
         {
@@ -917,6 +1024,10 @@ TypeChecker::typeCheckExp(const std::shared_ptr<AST::Expression> &exp)
     case AST::NodeType::Constant:
     {
         return typeCheckConstant(std::dynamic_pointer_cast<AST::Constant>(exp));
+    }
+    case AST::NodeType::String:
+    {
+        return typeCheckString(std::dynamic_pointer_cast<AST::String>(exp));
     }
     case AST::NodeType::Cast:
     {
@@ -1102,6 +1213,8 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     {
         auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
         auto typedControl = typeCheckAndConvert(switchStmt->getControl());
+        // Perform integer promotions on controlling expression
+        typedControl = Types::isCharacter(typedControl->getDataType().value()) ? convertTo(typedControl, Types::makeIntType()) : typedControl;
         auto typedBody = typeCheckStatement(switchStmt->getBody(), retType);
 
         if (!Types::isInteger(typedControl->getDataType().value()))

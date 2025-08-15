@@ -13,12 +13,18 @@ namespace ConstConvert
 {
     template <typename T,
               typename = std::enable_if_t<
+                  std::is_same_v<T, int8_t> ||
+                  std::is_same_v<T, uint8_t> ||
                   std::is_same_v<T, int32_t> ||
                   std::is_same_v<T, uint32_t> ||
                   std::is_same_v<T, int64_t> ||
                   std::is_same_v<T, uint64_t>>>
     inline std::shared_ptr<Constants::Const> cast(T v, const Types::DataType &targetType)
     {
+        if (Types::isCharType(targetType) || Types::isSCharType(targetType))
+            return std::make_shared<Constants::Const>(Constants::ConstChar(static_cast<int8_t>(v)));
+        if (Types::isUCharType(targetType))
+            return std::make_shared<Constants::Const>(Constants::ConstUChar(static_cast<uint8_t>(v)));
         if (Types::isIntType(targetType))
             return std::make_shared<Constants::Const>(Constants::ConstInt(static_cast<int32_t>(v)));
         if (Types::isLongType(targetType))
@@ -37,7 +43,11 @@ namespace ConstConvert
 
     inline std::shared_ptr<Constants::Const> convert(const Types::DataType &targetType, const std::shared_ptr<Constants::Const> &c)
     {
-        if (auto constInt = Constants::getConstInt(*c))
+        if (auto constChar = Constants::getConstChar(*c))
+            return cast(constChar->val, targetType);
+        else if (auto constUChar = Constants::getConstUChar(*c))
+            return cast(constUChar->val, targetType);
+        else if (auto constInt = Constants::getConstInt(*c))
             return cast(constInt->val, targetType);
         else if (auto constLong = Constants::getConstLong(*c))
             return cast(constLong->val, targetType);

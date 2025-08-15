@@ -10,7 +10,9 @@
 
 std::string Emit::suffix(const std::shared_ptr<Assembly::AsmType> &asmType)
 {
-    if (Assembly::isAsmLongword(*asmType))
+    if (Assembly::isAsmByte(*asmType))
+        return "b";
+    else if (Assembly::isAsmLongword(*asmType))
         return "l";
     else if (Assembly::isAsmQuadword(*asmType))
         return "q";
@@ -18,6 +20,24 @@ std::string Emit::suffix(const std::shared_ptr<Assembly::AsmType> &asmType)
         return "sd";
     else
         throw std::runtime_error("Internal error: found instrcution w/ non-scalar operand type");
+}
+
+std::string Emit::escape(const std::string &s)
+{
+    std::string result;
+    for (char c : s)
+    {
+        if (std::isalnum(static_cast<unsigned char>(c)))
+        {
+            result += c;
+        }
+        else
+        {
+            result += std::format("\\{:03o}", static_cast<unsigned char>(c));
+        }
+    }
+
+    return result;
 }
 
 std::string Emit::emitInit(const Initializers::StaticInit &init)
@@ -30,12 +50,23 @@ std::string Emit::emitInit(const Initializers::StaticInit &init)
         return std::format(".long {}", static_cast<uint32_t>(uIntInit->val));
     else if (auto uLongInit = Initializers::getULongInit(init))
         return std::format(".quad {}", static_cast<uint64_t>(uLongInit->val));
+    else if (auto charInit = Initializers::getCharInit(init))
+        return std::format(".byte {}", static_cast<int8_t>(charInit->val));
+    else if (auto ucharInit = Initializers::getUCharInit(init))
+        return std::format(".byte {}", static_cast<uint8_t>(ucharInit->val));
     else if (auto doubleInit = Initializers::getDoubleInit(init))
         return std::format(".quad {}", static_cast<double>(doubleInit->val));
 
     // a partly-initialized array can include a mix of zero and non-zero initializers
     else if (auto zeroInit = Initializers::getZeroInit(init))
         return std::format(".zero {}", zeroInit->byteCount);
+    else if (auto stringInit = Initializers::getStringInit(init))
+        if (stringInit->nullTerminated)
+            return std::format(".asciz {}", escape(stringInit->str));
+        else
+            return std::format(".ascii {}", escape(stringInit->str));
+    else if (auto pointerInit = Initializers::getPointerInit(init))
+        return std::format(".quad {}", showLocalLabel(pointerInit->label));
     else
         throw std::runtime_error("Internal error: Invalid StaticInit to emit init");
 }
@@ -88,7 +119,9 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
 {
     if (auto reg = std::dynamic_pointer_cast<Assembly::Reg>(operand))
     {
-        if (Assembly::isAsmLongword(*asmType))
+        if (Assembly::isAsmByte(*asmType))
+            return showByteReg(reg);
+        else if (Assembly::isAsmLongword(*asmType))
             return showLongReg(reg);
         else if (Assembly::isAsmQuadword(*asmType))
             return showQuadwordReg(reg);
@@ -421,7 +454,7 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
         else if (Assembly::isAsmQuadword(*cdq->getAsmType()))
             return "\tcdo\n";
         else
-            throw std::runtime_error("Internal error: can't apply cdq to non-integer type");
+            throw std::runtime_error("Internal error: can't apply cdq to a byte or non-integer type");
     }
     case Assembly::NodeType::Jmp:
     {
@@ -461,11 +494,19 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
         auto call = std::dynamic_pointer_cast<Assembly::Call>(inst);
         return std::format("\tcall\t{}\n", showFunName(call));
     }
+
     case Assembly::NodeType::Movsx:
     {
         auto movsx = std::dynamic_pointer_cast<Assembly::Movsx>(inst);
-        return std::format("\tmovslq \t{}, {}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Longword()), movsx->getSrc()), showOperand(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), movsx->getDst()));
+        return std::format("\tmovs{}{} \t{}, {}\n", suffix(movsx->getSrcType()), suffix(movsx->getDstType()), showOperand(movsx->getSrcType(), movsx->getSrc()), showOperand(movsx->getDstType(), movsx->getDst()));
     }
+
+    case Assembly::NodeType::MovZeroExtend:
+    {
+        auto movzx = std::dynamic_pointer_cast<Assembly::MovZeroExtend>(inst);
+        return std::format("\tmovz{}{} \t{}, {}\n", suffix(movzx->getSrcType()), suffix(movzx->getDstType()), showOperand(movzx->getSrcType(), movzx->getSrc()), showOperand(movzx->getDstType(), movzx->getDst()));
+    }
+
     case Assembly::NodeType::Cvtsi2sd:
     {
         auto cvt = std::dynamic_pointer_cast<Assembly::Cvtsi2sd>(inst);
@@ -480,10 +521,6 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
     {
         return "\tmovq\t%rbp, %rsp\n\tpopq\t%rbp\n\tret\n";
     }
-    case Assembly::NodeType::MovZeroExtend:
-    {
-        throw std::runtime_error("Internal error: MovZeroExtend should have been removed in instruction rewrite pass");
-    }
     default:
     {
         throw std::runtime_error("Unknown instruction type");
@@ -493,7 +530,7 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
 
 std::string Emit::emitConstant(const std::string &name, size_t alignement, const Initializers::StaticInit &init)
 {
-    // Targeting Linux  Os
+    // Targeting Linux
     auto constant_section_name = ".section .rodata";
     auto contents = std::format("\t{}\n\t{} {}\n{}:\n\t{}\n", constant_section_name, alignDirective(), alignement, showLocalLabel(name), emitInit(init));
     return contents;

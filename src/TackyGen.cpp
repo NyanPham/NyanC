@@ -344,7 +344,7 @@ TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expres
 
     // evaluate inner to get ExpResult
     auto [innerEval, lval] = emitTackyForExp(exp);
-    
+
     /*  Helper to construct Binary or AddPtr instruction from operands, depending on type
         Note that dst is destination of this instruction rather than the whole expression
         (i.e. it's the lvalue we're updating, or a temporary we'll then store to that lvalue)
@@ -846,6 +846,16 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
             std::make_shared<ExpResult>(PlainOperand(std::make_shared<TACKY::Var>(std::dynamic_pointer_cast<AST::Var>(exp)->getName()))),
         };
     }
+    case AST::NodeType::String:
+    {
+        auto string = std::dynamic_pointer_cast<AST::String>(exp);
+        auto strId = _symbolTable.addString(string->getStr());
+
+        return {
+            {},
+            std::make_shared<ExpResult>(PlainOperand(std::make_shared<TACKY::Var>(strId))),
+        };
+    }
     case AST::NodeType::Unary:
     {
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
@@ -1148,10 +1158,81 @@ TackyGen::emitTackyForStatement(const std::shared_ptr<AST::Statement> &stmt)
 }
 
 std::vector<std::shared_ptr<TACKY::Instruction>>
+TackyGen::emitStringInit(const std::string &s, const std::string &dst, int offset)
+{
+    std::vector<std::shared_ptr<TACKY::Instruction>> insts;
+    size_t len_s = s.size();
+    size_t i = 0;
+
+    while (i < len_s)
+    {
+        if (len_s - i >= 8)
+        {
+            // Pack 8 chars into a 64-bit integer (little-endian)
+            uint64_t l = 0;
+            for (int j = 0; j < 8; ++j)
+            {
+                l |= (static_cast<uint64_t>(static_cast<unsigned char>(s[i + j])) << (8 * j));
+            }
+            insts.push_back(
+                std::make_shared<TACKY::CopyToOffset>(
+                    std::make_shared<TACKY::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstLong(static_cast<int64_t>(l)))),
+                    dst,
+                    offset + static_cast<int>(i)));
+            i += 8;
+        }
+        else if (len_s - i >= 4)
+        {
+            // Pack 4 chars into a 32-bit integer (little-endian)
+            uint32_t val = 0;
+            for (int j = 0; j < 4; ++j)
+            {
+                val |= (static_cast<uint32_t>(static_cast<unsigned char>(s[i + j])) << (8 * j));
+            }
+            insts.push_back(
+                std::make_shared<TACKY::CopyToOffset>(
+                    std::make_shared<TACKY::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<int32_t>(val)))),
+                    dst,
+                    offset + static_cast<int>(i)));
+            i += 4;
+        }
+        else
+        {
+            // Single char
+            int8_t c = static_cast<int8_t>(s[i]);
+            insts.push_back(
+                std::make_shared<TACKY::CopyToOffset>(
+                    std::make_shared<TACKY::Constant>(
+                        std::make_shared<Constants::Const>(Constants::makeConstChar(c))),
+                    dst,
+                    offset + static_cast<int>(i)));
+            i += 1;
+        }
+    }
+
+    return insts;
+}
+
+std::vector<std::shared_ptr<TACKY::Instruction>>
 TackyGen::emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const std::string &name, ssize_t offset)
 {
     if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init))
     {
+        if (singleInit->getExp()->getType() == AST::NodeType::String && Types::isArrayType(singleInit->getDataType().value()))
+        {
+            auto string = std::dynamic_pointer_cast<AST::String>(singleInit->getExp());
+            auto arrayType = Types::getArrayType(singleInit->getDataType().value());
+
+            auto str = string->getStr();
+            auto arraySize = arrayType->size;
+            auto strLen = str.size();
+            auto paddingLen = arraySize - strLen;
+            std::string paddedStr = str + std::string(paddingLen, '\0');
+            return emitStringInit(paddedStr, name, offset);
+        }
+
         auto [evalInit, v] = emitTackyAndConvert(singleInit->getExp());
         evalInit.push_back(std::make_shared<TACKY::CopyToOffset>(v, name, offset));
         return evalInit;
@@ -1208,6 +1289,11 @@ TackyGen::emitVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &va
     {
         if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(varDecl->getOptInit().value()))
         {
+            if (singleInit->getExp()->getType() == AST::NodeType::String && Types::isArrayType(singleInit->getDataType().value()))
+            {
+                return emitCompoundInit(singleInit, varDecl->getName(), 0);
+            }
+
             // Treat declaration with initializer as assignment
             auto lhs = std::make_shared<AST::Var>(varDecl->getName());
             lhs->setDataType(std::make_optional(varDecl->getVarType()));
@@ -1265,10 +1351,10 @@ TackyGen::emitFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fn
     return std::nullopt;
 }
 
-std::vector<std::shared_ptr<TACKY::StaticVariable>>
+std::vector<std::shared_ptr<TACKY::TopLevel>>
 TackyGen::convertSymbolsToTacky()
 {
-    std::vector<std::shared_ptr<TACKY::StaticVariable>> staticVars{};
+    std::vector<std::shared_ptr<TACKY::TopLevel>> staticVars{};
 
     for (const auto &[name, symbol] : _symbolTable.getAllSymbols())
     {
@@ -1297,6 +1383,14 @@ TackyGen::convertSymbolsToTacky()
                 // staticAttrs is a NoInitializer, do nothing
             }
         }
+        else if (auto constAttr = Symbols::getConstAttr(symbol.attrs))
+        {
+            staticVars.push_back(
+                std::make_shared<TACKY::StaticConstant>(
+                    name,
+                    symbol.type,
+                    constAttr->init));
+        }
         else
         {
             // Do nothing
@@ -1321,7 +1415,7 @@ TackyGen::gen(const std::shared_ptr<AST::Program> &prog)
         }
     }
 
-    auto tackyVarDefs = std::vector<std::shared_ptr<TACKY::StaticVariable>>{convertSymbolsToTacky()};
+    auto tackyVarDefs = std::vector<std::shared_ptr<TACKY::TopLevel>>{convertSymbolsToTacky()};
 
     auto tackyDefs = std::vector<std::shared_ptr<TACKY::TopLevel>>{};
     std::copy(tackyVarDefs.begin(), tackyVarDefs.end(), std::back_inserter(tackyDefs));

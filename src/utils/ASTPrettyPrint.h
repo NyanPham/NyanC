@@ -37,6 +37,9 @@ public:
         case AST::NodeType::Constant:
             visitConstant(static_cast<const AST::Constant &>(node), indent);
             break;
+        case AST::NodeType::String:
+            visitString(static_cast<const AST::String &>(node), indent);
+            break;
         case AST::NodeType::Unary:
             visitUnary(static_cast<const AST::Unary &>(node), indent);
             break;
@@ -387,6 +390,22 @@ private:
         else
         {
             std::cout << "unchecked";
+        }
+        std::cout << ")\n";
+    }
+
+    void visitString(const AST::String &strNode, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "String(\"" << strNode.getStr() << "\"";
+        if (strNode.getDataType().has_value())
+        {
+            std::cout << ", " << Types::dataTypeToString(strNode.getDataType().value());
+        }
+        else
+        {
+            std::cout << ", unchecked";
         }
         std::cout << ")\n";
     }

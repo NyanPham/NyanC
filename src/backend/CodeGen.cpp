@@ -157,7 +157,7 @@ std::string CodeGen::addConstant(double dbl, size_t alignment)
     return name;
 }
 
-std::shared_ptr<Types::DataType>
+std::shared_ptr<Types::DataType> // note: this reports the type of ConstChar as SChar instead of Char, doesn't matter in this context
 CodeGen::tackyType(const std::shared_ptr<TACKY::Val> &operand)
 {
     if (auto constant = std::dynamic_pointer_cast<TACKY::Constant>(operand))
@@ -180,6 +180,8 @@ CodeGen::convertType(const Types::DataType &type)
         return std::make_shared<Assembly::AsmType>(Assembly::Longword());
     else if (Types::isLongType(type) || Types::isULongType(type) || Types::isPointerType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Quadword());
+    else if (Types::isCharType(type) || Types::isSCharType(type) || Types::isUCharType(type))
+        return std::make_shared<Assembly::AsmType>(Assembly::Byte());
     else if (Types::isDoubleType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Double());
     else if (Types::isArrayType(type))
@@ -235,7 +237,11 @@ CodeGen::convertVal(const std::shared_ptr<TACKY::Val> &val)
 {
     if (auto constant = std::dynamic_pointer_cast<TACKY::Constant>(val))
     {
-        if (auto constInt = Constants::getConstInt(*constant->getConst()))
+        if (auto constChar = Constants::getConstChar(*constant->getConst()))
+            return std::make_shared<Assembly::Imm>(constChar->val);
+        else if (auto constUChar = Constants::getConstUChar(*constant->getConst()))
+            return std::make_shared<Assembly::Imm>(constUChar->val);
+        else if (auto constInt = Constants::getConstInt(*constant->getConst()))
             return std::make_shared<Assembly::Imm>(constInt->val);
         else if (auto constLong = Constants::getConstLong(*constant->getConst()))
             return std::make_shared<Assembly::Imm>(constLong->val);
@@ -635,11 +641,12 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
             }
             else
             {
+                // NOTE: only lower byte of CX is used.
                 auto RegCX = std::make_shared<Assembly::Reg>(Assembly::RegName::CX);
 
                 return {
                     std::make_shared<Assembly::Mov>(asmType, asmSrc1, asmDst),
-                    std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Longword()), asmSrc2, RegCX),
+                    std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Byte()), asmSrc2, RegCX),
                     std::make_shared<Assembly::Binary>(asmOp, asmType, RegCX, asmDst),
                 };
             }
@@ -779,7 +786,7 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmDst = convertVal(signExtend->getDst());
 
         return {
-            std::make_shared<Assembly::Movsx>(asmSrc, asmDst),
+            std::make_shared<Assembly::Movsx>(getAsmType(signExtend->getSrc()), getAsmType(signExtend->getDst()), asmSrc, asmDst),
         };
     }
     case TACKY::NodeType::Truncate:
@@ -790,7 +797,7 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmDst = convertVal(truncate->getDst());
 
         return {
-            std::make_shared<Assembly::Mov>(std::make_shared<Assembly::AsmType>(Assembly::Longword()), asmSrc, asmDst),
+            std::make_shared<Assembly::Mov>(getAsmType(truncate->getDst()), asmSrc, asmDst),
         };
     }
     case TACKY::NodeType::ZeroExtend:
@@ -801,7 +808,7 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmDst = convertVal(zeroExt->getDst());
 
         return {
-            std::make_shared<Assembly::MovZeroExtend>(asmSrc, asmDst),
+            std::make_shared<Assembly::MovZeroExtend>(getAsmType(zeroExt->getSrc()), getAsmType(zeroExt->getDst()), asmSrc, asmDst),
         };
     }
     case TACKY::NodeType::IntToDouble:
@@ -811,6 +818,18 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmSrc = convertVal(int2Dbl->getSrc());
         auto asmDst = convertVal(int2Dbl->getDst());
         auto t = getAsmType(int2Dbl->getSrc());
+
+        if (Assembly::isAsmByte(*t))
+        {
+            auto byteType = std::make_shared<Assembly::AsmType>(Assembly::Byte());
+            auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+            auto r9 = std::make_shared<Assembly::Reg>(Assembly::RegName::R9);
+
+            return {
+                std::make_shared<Assembly::Movsx>(byteType, longwordType, asmSrc, r9),
+                std::make_shared<Assembly::Cvtsi2sd>(longwordType, r9, asmDst),
+            };
+        }
 
         return {
             std::make_shared<Assembly::Cvtsi2sd>(t, asmSrc, asmDst),
@@ -824,6 +843,18 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmDst = convertVal(cvt->getDst());
         auto t = getAsmType(cvt->getDst());
 
+        if (Assembly::isAsmByte(*t))
+        {
+            auto byteType = std::make_shared<Assembly::AsmType>(Assembly::Byte());
+            auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+            auto r9 = std::make_shared<Assembly::Reg>(Assembly::RegName::R9);
+
+            return {
+                std::make_shared<Assembly::Cvttsd2si>(longwordType, asmSrc, r9),
+                std::make_shared<Assembly::Mov>(byteType, r9, asmDst),
+            };
+        }
+
         return {
             std::make_shared<Assembly::Cvttsd2si>(t, asmSrc, asmDst),
         };
@@ -835,11 +866,26 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmSrc = convertVal(cvt->getSrc());
         auto asmDst = convertVal(cvt->getDst());
 
-        if (Types::isUIntType(*tackyType(cvt->getSrc())))
+        if (Types::isUCharType(*tackyType(cvt->getSrc())))
         {
+            auto byteType = std::make_shared<Assembly::AsmType>(Assembly::Byte());
+            auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+            auto r9 = std::make_shared<Assembly::Reg>(Assembly::RegName::R9);
+
             return {
-                std::make_shared<Assembly::MovZeroExtend>(asmSrc, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
-                std::make_shared<Assembly::Cvtsi2sd>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), std::make_shared<Assembly::Reg>(Assembly::RegName::R9), asmDst),
+                std::make_shared<Assembly::MovZeroExtend>(byteType, longwordType, asmSrc, r9),
+                std::make_shared<Assembly::Cvtsi2sd>(longwordType, r9, asmDst),
+            };
+        }
+        else if (Types::isUIntType(*tackyType(cvt->getSrc())))
+        {
+            auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+            auto quadwordType = std::make_shared<Assembly::AsmType>(Assembly::Quadword());
+            auto r9 = std::make_shared<Assembly::Reg>(Assembly::RegName::R9);
+
+            return {
+                std::make_shared<Assembly::MovZeroExtend>(longwordType, quadwordType, asmSrc, r9),
+                std::make_shared<Assembly::Cvtsi2sd>(quadwordType, r9, asmDst),
             };
         }
         else
@@ -873,11 +919,26 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
         auto asmSrc = convertVal(cvt->getSrc());
         auto asmDst = convertVal(cvt->getDst());
 
-        if (Types::isUIntType(*tackyType(cvt->getDst())))
+        if (Types::isUCharType(*tackyType(cvt->getDst())))
         {
+            auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+            auto byteType = std::make_shared<Assembly::AsmType>(Assembly::Byte());
+            auto r9 = std::make_shared<Assembly::Reg>(Assembly::RegName::R9);
+
             return {
-                std::make_shared<Assembly::Cvttsd2si>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), asmSrc, std::make_shared<Assembly::Reg>(Assembly::RegName::R9)),
-                std::make_shared<Assembly::MovZeroExtend>(std::make_shared<Assembly::Reg>(Assembly::RegName::R9), asmDst),
+                std::make_shared<Assembly::Cvttsd2si>(longwordType, asmSrc, r9),
+                std::make_shared<Assembly::Mov>(byteType, r9, asmDst),
+            };
+        }
+        else if (Types::isUIntType(*tackyType(cvt->getDst())))
+        {
+            auto quadwordType = std::make_shared<Assembly::AsmType>(Assembly::Quadword());
+            auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+            auto r9 = std::make_shared<Assembly::Reg>(Assembly::RegName::R9);
+
+            return {
+                std::make_shared<Assembly::Cvttsd2si>(quadwordType, asmSrc, r9),
+                std::make_shared<Assembly::Mov>(longwordType, r9, asmDst),
             };
         }
         else
@@ -1031,6 +1092,13 @@ CodeGen::convertTopLevel(const std::shared_ptr<TACKY::TopLevel> &topLevel)
             getVarAlignment(staticVar->getDataType()),
             staticVar->getInits());
     }
+    else if (auto staticConst = std::dynamic_pointer_cast<TACKY::StaticConstant>(topLevel))
+    {
+        return std::make_shared<Assembly::StaticConstant>(
+            staticConst->getName(),
+            getVarAlignment(staticConst->getDataType()),
+            *staticConst->getInit());
+    }
     else
     {
         throw std::runtime_error("Internal Error: Invalid TACKY top level");
@@ -1051,6 +1119,8 @@ void CodeGen::convertSymbol(const std::string &name, const Symbols::Symbol &symb
 {
     if (auto funAttr = Symbols::getFunAttr(symbol.attrs))
         _asmSymbolTable.addFun(name, funAttr->defined);
+    else if (auto constAttr = Symbols::getConstAttr(symbol.attrs))
+        _asmSymbolTable.addConstant(name, convertType(symbol.type));
     else if (auto staticAttr = Symbols::getStaticAttr(symbol.attrs))
         _asmSymbolTable.addVar(name, convertVarType(symbol.type), true);
     else

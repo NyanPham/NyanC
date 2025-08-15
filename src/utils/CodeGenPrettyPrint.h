@@ -216,6 +216,8 @@ private:
     {
         std::cout << getIndent() << "Movsx(\n";
         increaseIndent();
+        printAsmType(*movsx.getSrcType());
+        printAsmType(*movsx.getDstType());
         printMember("src", *movsx.getSrc());
         printMember("dst", *movsx.getDst());
         decreaseIndent();
@@ -226,6 +228,8 @@ private:
     {
         std::cout << getIndent() << "MovZeroExtend(\n";
         increaseIndent();
+        printAsmType(*movzx.getSrcType());
+        printAsmType(*movzx.getDstType());
         printMember("src", *movzx.getSrc());
         printMember("dst", *movzx.getDst());
         decreaseIndent();

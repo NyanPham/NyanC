@@ -12,6 +12,7 @@
 /*
 program = Program(top_level*)
 asm_type =
+    | Byte
     | Longword
     | Quadword
     | Double
@@ -20,8 +21,8 @@ top_level = Function(identifier name, bool global, instruction* instructions)
     | StaticVariable(identifier name, bool global, int alignment, static_init* inits)
     | StaticConstant(identifier name, int alignment, static_init init)
 instruction = Mov(asm_type, operand src, operand dst)
-    | Movsx(operand src, operand dst)
-    | MovZeroExtend(operand src, operand dst)
+    | Movsx(asm_type src_type, asm_type dst_type, operand src, operand dst)
+    | MovZeroExtend(asm_type src_type, asm_type dst_type, operand src, operand dst)
     | Lea(operand src, operand dst)
     | Cvttsd2si(asm_type, operand src, operand dst)
     | Cvtsi2sd(asm_type, operand src, operand dst)
@@ -115,6 +116,13 @@ namespace Assembly
 
     // We use structs and variant to represent AsmType.
     // We could use enums, but types might have fields later on, like pointer, array, struct types, similar to FunType in Types.h
+    struct Byte
+    {
+        Byte() {}
+
+        std::string toString() const { return "Byte"; }
+    };
+
     struct Longword
     {
         Longword() {}
@@ -146,7 +154,7 @@ namespace Assembly
         std::string toString() const { return "ByteArray(int=" + std::to_string(size) + ", alignment=" + std::to_string(alignment) + ")"; }
     };
 
-    using AsmType = std::variant<Longword, Quadword, Double, ByteArray>;
+    using AsmType = std::variant<Byte, Longword, Quadword, Double, ByteArray>;
 
     inline std::string asmTypeToString(const AsmType &type)
     {
@@ -154,10 +162,16 @@ namespace Assembly
                           { return t.toString(); }, type);
     }
 
+    inline bool isAsmByte(const AsmType &type) { return isVariant<Byte>(type); }
     inline bool isAsmLongword(const AsmType &type) { return isVariant<Longword>(type); }
     inline bool isAsmQuadword(const AsmType &type) { return isVariant<Quadword>(type); }
     inline bool isAsmDouble(const AsmType &type) { return isVariant<Double>(type); }
     inline bool isAsmByteArray(const AsmType &type) { return isVariant<ByteArray>(type); }
+
+    inline std::optional<Byte> getByte(const AsmType &type)
+    {
+        return getVariant<Byte>(type);
+    }
 
     inline std::optional<Longword> getLongword(const AsmType &type)
     {
@@ -383,15 +397,19 @@ namespace Assembly
     class Movsx : public Instruction
     {
     public:
-        Movsx(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
-            : Instruction(NodeType::Movsx), _src{src}, _dst{dst}
+        Movsx(std::shared_ptr<AsmType> srcType, std::shared_ptr<AsmType> dstType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::Movsx), _srcType{srcType}, _dstType{dstType}, _src{src}, _dst{dst}
         {
         }
 
+        auto &getSrcType() const { return _srcType; }
+        auto &getDstType() const { return _dstType; }
         auto &getSrc() const { return _src; }
         auto &getDst() const { return _dst; }
 
     private:
+        std::shared_ptr<AsmType> _srcType;
+        std::shared_ptr<AsmType> _dstType;
         std::shared_ptr<Operand> _src;
         std::shared_ptr<Operand> _dst;
     };
@@ -399,15 +417,19 @@ namespace Assembly
     class MovZeroExtend : public Instruction
     {
     public:
-        MovZeroExtend(std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
-            : Instruction(NodeType::MovZeroExtend), _src{src}, _dst{dst}
+        MovZeroExtend(std::shared_ptr<AsmType> srcType, std::shared_ptr<AsmType> dstType, std::shared_ptr<Operand> src, std::shared_ptr<Operand> dst)
+            : Instruction(NodeType::MovZeroExtend), _srcType{srcType}, _dstType{dstType}, _src{src}, _dst{dst}
         {
         }
 
+        auto &getSrcType() const { return _srcType; }
+        auto &getDstType() const { return _dstType; }
         auto &getSrc() const { return _src; }
         auto &getDst() const { return _dst; }
 
     private:
+        std::shared_ptr<AsmType> _srcType;
+        std::shared_ptr<AsmType> _dstType;
         std::shared_ptr<Operand> _src;
         std::shared_ptr<Operand> _dst;
     };

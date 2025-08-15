@@ -28,7 +28,7 @@ EBNF for a subset of C:
 <param-list> ::= "(" "void" ")" | "(" <param> { "," <param> } ")"
 <param> ::= { <type-specifier> }+ <declarator>
 <simple-declarator> ::= <identifier> | "(" <declarator> ")"
-<type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double"
+<type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double" | "char"
 <specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
@@ -56,6 +56,7 @@ EBNF for a subset of C:
     | "(" <exp> ")"
     | <identifier> "(" [ <argument-list> ] ")"
     | "(" { <type-specifier> }+ ")" [ <abstract-declarator> ] <factor>
+    | { <string> }+
 <argument-list> ::= <exp> { "," <exp> }
 <abstract-declarator> ::= "*" [ <abstract-declarator> ]
     | <direct-abstract-declarator>
@@ -68,9 +69,11 @@ EBNF for a subset of C:
         | ">" | ">="
         | "&" | "^" | "|" | "<<" | ">>"
         | "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-<const> ::= <int> | <long> | <uint> | <ulong> | <double>
+<const> ::= <int> | <long> | <uint> | <ulong> | <double> | <char>
 <identifier> ::= ? An identifier token ?
+<string> ::= ? A string token ?
 <int> ::= ? An integer token ?
+<char> ::= ? A char token ?
 <long> ::= ? An int or long token ?
 <uint> ::= ? An unsigned int token ?
 <ulong> ::= ? An unsigned int or unsigned long token ?
@@ -197,6 +200,10 @@ Parser::constToDim(const std::shared_ptr<Constants::Const> &c)
     else if (auto constDouble = Constants::getConstDouble(*c))
     {
         throw std::runtime_error("Array dimensions must have integer type");
+    }
+    else if (Constants::isConstChar(*c) || Constants::isConstUChar(*c))
+    {
+        throw std::runtime_error("Internal error, we're not using these yet");
     }
 
     if (i > 0)
@@ -589,6 +596,86 @@ void Parser::raiseError(const std::string &expected, const std::string &actual)
     throw ParseError("expected " + expected + " but got " + actual);
 }
 
+std::string Parser::unescape(const std::string &str)
+{
+    std::string result;
+    size_t i = 0;
+    size_t length = str.length();
+
+    while (i < length)
+    {
+        if (str[i] == '\\')
+        {
+            if (i + 1 >= length)
+            {
+                throw std::runtime_error("Internal error: not a valid escape sequence; should have been rejected during lexing");
+            }
+            char next_char = str[i + 1];
+            switch (next_char)
+            {
+            case '\'':
+                result.push_back('\'');
+                break;
+            case '"':
+                result.push_back('"');
+                break;
+            case '?':
+                result.push_back('?');
+                break;
+            case '\\':
+                result.push_back('\\');
+                break;
+            case 'a':
+                result.push_back('\a'); // bell (alert)
+                break;
+            case 'b':
+                result.push_back('\b'); // backspace
+                break;
+            case 'f':
+                result.push_back('\f'); // formfeed
+                break;
+            case 'n':
+                result.push_back('\n'); // newline
+                break;
+            case 'r':
+                result.push_back('\r'); // carriage return
+                break;
+            case 't':
+                result.push_back('\t'); // horizontal tab
+                break;
+            case 'v':
+                result.push_back('\v'); // vertical tab
+                break;
+            default:
+                throw std::runtime_error("Internal error: not a valid escape sequence; should have been rejected during lexing");
+            }
+            i += 2;
+        }
+        else
+        {
+            result.push_back(str[i]);
+            i++;
+        }
+    }
+
+    return result;
+}
+
+std::string Parser::parseStringLiteral()
+{
+    std::string result = "";
+    auto nextTok{peekToken()};
+
+    while (nextTok.has_value() && nextTok->getType() == TokenType::STRING_LITERAL)
+    {
+        takeToken();
+        result += unescape(std::get<std::string>(nextTok->getValue()));
+        nextTok = peekToken();
+    }
+
+    return result;
+}
+
 int Parser::getPrecedence(TokenType tokenType)
 {
     switch (tokenType)
@@ -904,26 +991,23 @@ std::shared_ptr<AST::Constant> Parser::parseConstant()
     constexpr uint32_t MAX_UINT32 = std::numeric_limits<uint32_t>::max();
     constexpr uint64_t MAX_UINT64 = std::numeric_limits<uint64_t>::max();
 
-    const std::set<TokenType> constTokenTypes = {
-        TokenType::CONST_INT,
-        TokenType::CONST_LONG,
-        TokenType::CONST_UINT,
-        TokenType::CONST_ULONG,
-        TokenType::CONST_DOUBLE,
-    };
-
     std::optional<Token> tokenOpt = takeToken();
     if (!tokenOpt)
     {
         raiseError("a constant", "empty token");
-        return nullptr; // unreachable if raiseError exits.
+        return nullptr;
     }
 
     Token token = tokenOpt.value();
 
-    if (!constTokenTypes.count(token.getType()))
+    if (std::holds_alternative<std::string>(token.getValue()))
     {
-        raiseError("a constant", tokenTypeToString(token.getType()));
+        auto sPrime = unescape(std::get<std::string>(token.getValue()));
+        if (sPrime.size() == 1)
+            return std::make_shared<AST::Constant>(
+                std::make_shared<Constants::Const>(Constants::makeConstInt(static_cast<uint8_t>(sPrime[0]))));
+        else
+            throw std::runtime_error("Internal error: Character token contains multiple characters, lexer should have rejected this");
     }
 
     if (std::holds_alternative<long double>(token.getValue()))
@@ -1069,13 +1153,27 @@ Types::DataType Parser::parseType(const std::vector<Token> &typeList)
     bool containsUnsignedAndSigned(const std::vector<Token> &tokens);
     bool containsToken(const std::vector<Token> &tokens, TokenType type);
 
-    if (typeList.size() == 1 && containsToken(typeList, TokenType::KEYWORD_DOUBLE))
-        return Types::makeDoubleType();
+    if (typeList.size() == 1)
+    {
+        if (containsToken(typeList, TokenType::KEYWORD_DOUBLE))
+            return Types::makeDoubleType();
+        if (containsToken(typeList, TokenType::KEYWORD_CHAR))
+            return Types::makeCharType();
+    }
+
+    if (typeList.size() == 2)
+    {
+        if (containsToken(typeList, TokenType::KEYWORD_CHAR) && containsToken(typeList, TokenType::KEYWORD_SIGNED))
+            return Types::makeSCharType();
+        if (containsToken(typeList, TokenType::KEYWORD_CHAR) && containsToken(typeList, TokenType::KEYWORD_UNSIGNED))
+            return Types::makeUCharType();
+    }
 
     if (
         typeList.empty() ||
         hasDuplicateTokenType(typeList) ||
         containsToken(typeList, TokenType::KEYWORD_DOUBLE) ||
+        containsToken(typeList, TokenType::KEYWORD_CHAR) ||
         containsUnsignedAndSigned(typeList))
     {
         throw std::runtime_error("Invalid type specifier");
@@ -1279,6 +1377,7 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
 
     switch (nextToken->getType())
     {
+    case TokenType::CONST_CHAR:
     case TokenType::CONST_INT:
     case TokenType::CONST_LONG:
     case TokenType::CONST_UINT:
@@ -1309,6 +1408,12 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
         {
             return std::make_shared<AST::Var>(id);
         }
+    }
+
+    case TokenType::STRING_LITERAL:
+    {
+        auto strExp{parseStringLiteral()};
+        return std::make_shared<AST::String>(strExp);
     }
 
     case TokenType::OPEN_PAREN:

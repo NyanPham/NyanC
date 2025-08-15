@@ -89,6 +89,8 @@ namespace AssemblySymbols
             auto entry = get(varName);
             if (auto *obj = std::get_if<Obj>(&entry))
             {
+                if (Assembly::isAsmByte(obj->asmType))
+                    return 1;
                 if (Assembly::isAsmLongword(obj->asmType))
                     return 4;
                 if (Assembly::isAsmQuadword(obj->asmType) || Assembly::isAsmDouble(obj->asmType))
@@ -108,6 +110,8 @@ namespace AssemblySymbols
             auto entry = get(varName);
             if (auto *obj = std::get_if<Obj>(&entry))
             {
+                if (Assembly::isAsmByte(obj->asmType))
+                    return 1;
                 if (Assembly::isAsmLongword(obj->asmType))
                     return 4;
                 if (Assembly::isAsmQuadword(obj->asmType) || Assembly::isAsmDouble(obj->asmType))

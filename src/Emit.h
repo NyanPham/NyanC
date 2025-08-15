@@ -19,6 +19,7 @@ public:
     Emit(AssemblySymbols::AsmSymbolTable &asmSymbolTable) : _asmSymbolTable{asmSymbolTable} {};
 
     std::string suffix(const std::shared_ptr<Assembly::AsmType> &asmType);
+    std::string escape(const std::string &s);
     std::string emitInit(const Initializers::StaticInit &init);
     std::string alignDirective();
     std::string emitGlobalDirective(bool global, const std::string &label);

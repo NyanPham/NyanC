@@ -36,6 +36,9 @@ public:
         _lexer.defineTokenDefs();
     }
 
+    std::string unescape(const std::string &str);
+    std::string parseStringLiteral();
+
     int getPrecedence(TokenType tokenType);
     bool isBinop(TokenType tokenType);
     std::optional<AST::BinaryOp> getCompoundOperator(std::optional<Token> token);
@@ -109,6 +112,7 @@ private:
     Lexer _lexer;
     std::optional<Token> _currToken;
     std::set<TokenType> _specifierTypes = {
+        TokenType::KEYWORD_CHAR,
         TokenType::KEYWORD_INT,
         TokenType::KEYWORD_LONG,
         TokenType::KEYWORD_DOUBLE,
@@ -119,6 +123,7 @@ private:
     };
 
     std::set<TokenType> _typeSpecifierTypes = {
+        TokenType::KEYWORD_CHAR,
         TokenType::KEYWORD_INT,
         TokenType::KEYWORD_LONG,
         TokenType::KEYWORD_DOUBLE,

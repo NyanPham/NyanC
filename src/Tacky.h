@@ -13,6 +13,7 @@
 program = Program(top_level*)
 top_level = Function(identifier name, bool global, identifier* params, Instruction* instructions)
     | StaticVariable(identifier name, bool global, Types.t t, Initializers.static_init* init_list)
+    | StaticConstant(identifier name, type t, Initializers.static_init init)
 instruction = Return(val)
     | SignExtend(val src, val dst)
     | Truncate(val src, val dst)
@@ -49,6 +50,7 @@ namespace TACKY
     class TopLevel;
     class Function;
     class StaticVariable;
+    class StaticConstant;
     class Instruction;
     class Return;
     class SignExtend;
@@ -80,6 +82,7 @@ namespace TACKY
         Program,
         Function,
         StaticVariable,
+        StaticConstant,
         Return,
         SignExtend,
         Truncate,
@@ -508,6 +511,24 @@ namespace TACKY
         bool _global;
         Types::DataType _dataType;
         std::vector<std::shared_ptr<Initializers::StaticInit>> _inits;
+    };
+
+    class StaticConstant : public TopLevel
+    {
+    public:
+        StaticConstant(const std::string &name, const Types::DataType &t, const std::shared_ptr<Initializers::StaticInit> &init)
+            : TopLevel(NodeType::StaticConstant), _name{std::move(name)}, _dataType{t}, _init{init}
+        {
+        }
+
+        const std::string &getName() const { return _name; }
+        auto &getDataType() const { return _dataType; }
+        auto &getInit() const { return _init; }
+
+    private:
+        std::string _name;
+        Types::DataType _dataType;
+        std::shared_ptr<Initializers::StaticInit> _init;
     };
 
     class Function : public TopLevel

@@ -135,7 +135,7 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
         auto [newSrc, state1] = replaceOperand(movsx->getSrc(), state);
         auto [newDst, state2] = replaceOperand(movsx->getDst(), state1);
 
-        auto newMovsx = std::make_shared<Assembly::Movsx>(newSrc, newDst);
+        auto newMovsx = std::make_shared<Assembly::Movsx>(movsx->getSrcType(), movsx->getDstType(), newSrc, newDst);
 
         return {
             newMovsx,
@@ -149,7 +149,7 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
         auto [newSrc, state1] = replaceOperand(movzx->getSrc(), state);
         auto [newDst, state2] = replaceOperand(movzx->getDst(), state1);
 
-        auto newMovzx = std::make_shared<Assembly::MovZeroExtend>(newSrc, newDst);
+        auto newMovzx = std::make_shared<Assembly::MovZeroExtend>(movzx->getSrcType(), movzx->getDstType(), newSrc, newDst);
 
         return {
             newMovzx,

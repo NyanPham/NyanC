@@ -155,6 +155,7 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             binary->getDataType());
     }
     case AST::NodeType::Constant:
+    case AST::NodeType::String:
     {
         return exp;
     }

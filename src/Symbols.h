@@ -8,6 +8,7 @@
 
 #include "Types.h"
 #include "Initializers.h"
+#include "UniqueIds.h"
 #include "./utils/VariantHelper.h"
 
 namespace Symbols
@@ -101,6 +102,7 @@ namespace Symbols
     type identifier_attrs =
         | FunAttr(bool defined, bool global)
         | StaticAttr(initial_value init, bool global)
+        | ConstAttr(Initializers.static_init init)
         | LocalAttr
     */
 
@@ -124,12 +126,21 @@ namespace Symbols
         bool global;
 
         StaticAttr() = default;
-        StaticAttr(InitialValue init, bool global)
+        StaticAttr(const InitialValue &init, bool global)
             : init{init}, global{global}
         {
         }
 
         std::string toString() const { return "StaticAttr(init=" + initialValueToString(init) + ", global=" + std::to_string(global) + ")"; }
+    };
+
+    struct ConstAttr
+    {
+        std::shared_ptr<Initializers::StaticInit> init;
+
+        ConstAttr() = default;
+        ConstAttr(const std::shared_ptr<Initializers::StaticInit> &init) : init{init} {}
+        std::string toString() const { return "ConstAttr(init=" + Initializers::toString(*init) + ")"; }
     };
 
     struct LocalAttr
@@ -138,7 +149,7 @@ namespace Symbols
         std::string toString() const { return "LocalAttr()"; }
     };
 
-    using IdentifierAttrs = std::variant<FunAttr, StaticAttr, LocalAttr>;
+    using IdentifierAttrs = std::variant<FunAttr, StaticAttr, ConstAttr, LocalAttr>;
 
     inline std::string identifierAttrsToString(const IdentifierAttrs &attrs)
     {
@@ -147,7 +158,8 @@ namespace Symbols
     }
 
     inline IdentifierAttrs makeFunAttr(bool defined, bool global) { return FunAttr{defined, global}; }
-    inline IdentifierAttrs makeStaticAttr(InitialValue init, bool global) { return StaticAttr{init, global}; }
+    inline IdentifierAttrs makeStaticAttr(const InitialValue &init, bool global) { return StaticAttr{init, global}; }
+    inline IdentifierAttrs makeConstAttr(const std::shared_ptr<Initializers::StaticInit> &init) { return ConstAttr{init}; }
     inline IdentifierAttrs makeLocalAttr() { return LocalAttr{}; }
 
     inline std::optional<FunAttr> getFunAttr(const IdentifierAttrs &attrs)
@@ -158,6 +170,11 @@ namespace Symbols
     inline std::optional<StaticAttr> getStaticAttr(const IdentifierAttrs &attrs)
     {
         return getVariant<StaticAttr>(attrs);
+    }
+
+    inline std::optional<ConstAttr> getConstAttr(const IdentifierAttrs &attrs)
+    {
+        return getVariant<ConstAttr>(attrs);
     }
 
     inline std::optional<LocalAttr> getLocalAttr(const IdentifierAttrs &attrs)
@@ -173,6 +190,11 @@ namespace Symbols
     inline bool isStaticAttr(const IdentifierAttrs &attrs)
     {
         return isVariant<StaticAttr>(attrs);
+    }
+
+    inline bool isConstAttr(const IdentifierAttrs &attrs)
+    {
+        return isVariant<ConstAttr>(attrs);
     }
 
     inline bool isLocalAttr(const IdentifierAttrs &attrs)
@@ -233,13 +255,29 @@ namespace Symbols
             };
         }
 
+        std::string addString(const std::string &str)
+        {
+            auto strId = UniqueIds::makeNamedTemporary("string");
+            auto type = Types::makeArrayType(
+                std::make_shared<Types::DataType>(Types::makeCharType()),
+                str.size() + 1);
+
+            symbols[strId] = Symbol{
+                .type = type,
+                .attrs = makeConstAttr(std::make_shared<Initializers::StaticInit>(Initializers::StringInit(str, true))),
+            };
+
+            return strId;
+        }
+
         bool isGlobal(const std::string &name)
         {
             auto attrs = get(name).attrs;
 
             return std::visit([](const auto &attr) -> bool
                               {
-                if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, LocalAttr>) {
+                if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, LocalAttr> ||
+                              std::is_same_v<std::decay_t<decltype(attr)>, ConstAttr>) {
                     return false;
                 } else if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, StaticAttr>) {
                     return attr.global;

@@ -10,6 +10,26 @@
 
 namespace Initializers
 {
+    struct CharInit
+    {
+        int8_t val;
+
+        CharInit() = default;
+        CharInit(int8_t val) : val{val} {}
+
+        std::string toString() const { return "CharInit(" + std::to_string(val) + ")"; }
+    };
+
+    struct UCharInit
+    {
+        uint8_t val;
+
+        UCharInit() = default;
+        UCharInit(uint8_t val) : val{val} {}
+
+        std::string toString() const { return "UCharInit(" + std::to_string(val) + ")"; }
+    };
+
     struct IntInit
     {
         int32_t val;
@@ -69,12 +89,41 @@ namespace Initializers
         std::string toString() const { return "ZeroInit(" + std::to_string(byteCount) + " bytes)"; }
     };
 
-    using StaticInit = std::variant<IntInit, LongInit, UIntInit, ULongInit, DoubleInit, ZeroInit>;
+    struct StringInit
+    {
+        std::string str;
+        bool nullTerminated;
+
+        StringInit() = default;
+        StringInit(const std::string &str, bool nullTerminated) : str{str}, nullTerminated{nullTerminated} {}
+        std::string toString() const { return "StringInit(string=" + str + ", nullTerminated=" + (nullTerminated ? "true" : "false") + ")"; }
+    };
+
+    struct PointerInit
+    {
+        std::string label;
+
+        PointerInit() = default;
+        PointerInit(const std::string &label) : label{label} {}
+        std::string toString() const { return "PointerInit(label=" + label + ")"; }
+    };
+
+    using StaticInit = std::variant<CharInit, UCharInit, IntInit, LongInit, UIntInit, ULongInit, DoubleInit, ZeroInit, StringInit, PointerInit>;
 
     inline std::string toString(const StaticInit &staticInit)
     {
         return std::visit([](const auto &obj)
                           { return obj.toString(); }, staticInit);
+    }
+
+    inline bool isCharInit(const StaticInit &staticInit)
+    {
+        return isVariant<CharInit>(staticInit);
+    }
+
+    inline bool isUCharInit(const StaticInit &staticInit)
+    {
+        return isVariant<UCharInit>(staticInit);
     }
 
     inline bool isIntInit(const StaticInit &staticInit)
@@ -107,6 +156,26 @@ namespace Initializers
         return isVariant<ZeroInit>(staticInit);
     }
 
+    inline bool isStringInit(const StaticInit &staticInit)
+    {
+        return isVariant<StringInit>(staticInit);
+    }
+
+    inline bool isPointerInit(const StaticInit &staticInit)
+    {
+        return isVariant<PointerInit>(staticInit);
+    }
+
+    inline std::optional<CharInit> getCharInit(const StaticInit &staticInit)
+    {
+        return getVariant<CharInit>(staticInit);
+    }
+
+    inline std::optional<UCharInit> getUCharInit(const StaticInit &staticInit)
+    {
+        return getVariant<UCharInit>(staticInit);
+    }
+
     inline const std::optional<IntInit> getIntInit(const StaticInit &staticInit)
     {
         return getVariant<IntInit>(staticInit);
@@ -137,6 +206,16 @@ namespace Initializers
         return getVariant<ZeroInit>(staticInit);
     }
 
+    inline std::optional<StringInit> getStringInit(const StaticInit &staticInit)
+    {
+        return getVariant<StringInit>(staticInit);
+    }
+
+    inline std::optional<PointerInit> getPointerInit(const StaticInit &staticInit)
+    {
+        return getVariant<PointerInit>(staticInit);
+    }
+
     inline std::vector<std::shared_ptr<StaticInit>> zero(const Types::DataType &type)
     {
         std::vector<std::shared_ptr<StaticInit>> result;
@@ -147,7 +226,11 @@ namespace Initializers
 
     inline bool isZero(const StaticInit &staticInit)
     {
-        if (auto intInit = getIntInit(staticInit))
+        if (auto charInit = getCharInit(staticInit))
+            return charInit->val == 0;
+        else if (auto ucharInit = getUCharInit(staticInit))
+            return ucharInit->val == 0;
+        else if (auto intInit = getIntInit(staticInit))
             return intInit->val == 0;
         else if (auto longInit = getLongInit(staticInit))
             return longInit->val == 0;
@@ -160,6 +243,10 @@ namespace Initializers
             return false;
         else if (auto zeroInit = getZeroInit(staticInit))
             return true;
+        else if (auto pointerInit = getPointerInit(staticInit))
+            return false;
+        else if (auto stringInit = getStringInit(staticInit))
+            return false;
         else
             throw std::runtime_error("Internal error: Invalid static initializer");
     }

@@ -11,6 +11,9 @@
 
 namespace Types
 {
+    struct Char;
+    struct SChar;
+    struct UChar;
     struct IntType;
     struct LongType;
     struct UIntType;
@@ -20,7 +23,48 @@ namespace Types
     struct PointerType;
     struct ArrayType;
 
-    using DataType = std::variant<IntType, LongType, UIntType, ULongType, DoubleType, PointerType, ArrayType, FunType>;
+    using DataType = std::variant<
+        Char,
+        SChar,
+        UChar,
+        IntType,
+        LongType,
+        UIntType,
+        ULongType,
+        DoubleType,
+        PointerType,
+        ArrayType,
+        FunType>;
+
+    struct Char
+    {
+        Char() {}
+
+        int getSize() const { return 1; }
+        int getAlignment() const { return 1; }
+        bool isSigned() const { return true; }
+        std::string toString() const { return "Char"; }
+    };
+
+    struct SChar
+    {
+        SChar() {}
+
+        int getSize() const { return 1; }
+        int getAlignment() const { return 1; }
+        bool isSigned() const { return true; }
+        std::string toString() const { return "SChar"; }
+    };
+
+    struct UChar
+    {
+        UChar() {}
+
+        int getSize() const { return 1; }
+        int getAlignment() const { return 1; }
+        bool isSigned() const { return false; }
+        std::string toString() const { return "UChar"; }
+    };
 
     struct IntType
     {
@@ -186,6 +230,21 @@ namespace Types
                           { return t.toString(); }, type);
     }
 
+    inline DataType makeCharType()
+    {
+        return Char{};
+    }
+
+    inline DataType makeSCharType()
+    {
+        return SChar{};
+    }
+
+    inline DataType makeUCharType()
+    {
+        return UChar{};
+    }
+
     inline DataType makeIntType()
     {
         return IntType{};
@@ -227,6 +286,21 @@ namespace Types
         return FunType{paramTypes, retType};
     }
 
+    inline std::optional<Char> getCharType(const DataType &type)
+    {
+        return getVariant<Char>(type);
+    }
+
+    inline std::optional<SChar> getSCharType(const DataType &type)
+    {
+        return getVariant<SChar>(type);
+    }
+
+    inline std::optional<UChar> getUCharType(const DataType &type)
+    {
+        return getVariant<UChar>(type);
+    }
+
     inline std::optional<IntType> getIntType(const DataType &type)
     {
         return getVariant<IntType>(type);
@@ -265,6 +339,21 @@ namespace Types
     inline std::optional<FunType> getFunType(const DataType &type)
     {
         return getVariant<FunType>(type);
+    }
+
+    inline bool isCharType(const DataType &type)
+    {
+        return isVariant<Char>(type);
+    }
+
+    inline bool isSCharType(const DataType &type)
+    {
+        return isVariant<SChar>(type);
+    }
+
+    inline bool isUCharType(const DataType &type)
+    {
+        return isVariant<UChar>(type);
     }
 
     inline bool isIntType(const DataType &type)
@@ -356,7 +445,10 @@ namespace Types
             Types::isUIntType(type) ||
             Types::isLongType(type) ||
             Types::isULongType(type) ||
-            Types::isDoubleType(type))
+            Types::isDoubleType(type) ||
+            Types::isCharType(type) ||
+            Types::isSCharType(type) ||
+            Types::isUCharType(type))
         {
             return true;
         }
@@ -372,6 +464,9 @@ namespace Types
     inline bool isInteger(const Types::DataType &type)
     {
         if (
+            Types::isCharType(type) ||
+            Types::isSCharType(type) ||
+            Types::isUCharType(type) ||
             Types::isIntType(type) ||
             Types::isUIntType(type) ||
             Types::isLongType(type) ||
@@ -380,12 +475,12 @@ namespace Types
             return true;
         }
 
-        if (Types::isFunType(type) || Types::isPointerType(type) || Types::isDoubleType(type))
-        {
-            return false;
-        }
-
         return false;
+    }
+
+    inline bool isCharacter(const Types::DataType &type)
+    {
+        return getSize(type) == 1;
     }
 }
 

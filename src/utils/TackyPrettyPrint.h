@@ -35,6 +35,9 @@ private:
         case TACKY::NodeType::StaticVariable:
             visitStaticVariable(static_cast<const TACKY::StaticVariable &>(node));
             break;
+        case TACKY::NodeType::StaticConstant:
+            visitStaticConstant(static_cast<const TACKY::StaticConstant &>(node));
+            break;
         case TACKY::NodeType::Return:
             visitReturn(static_cast<const TACKY::Return &>(node), indent);
             break;
@@ -170,6 +173,17 @@ private:
         }
         decreaseIndent();
         std::cout << getIndent() << "]\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitStaticConstant(const TACKY::StaticConstant &staticConst)
+    {
+        std::cout << getIndent() << "StaticConstant(\n";
+        increaseIndent();
+        std::cout << getIndent() << "name=\"" << staticConst.getName() << "\",\n";
+        std::cout << getIndent() << "type=" << Types::dataTypeToString(staticConst.getDataType()) << ",\n";
+        std::cout << getIndent() << "init=" << Initializers::toString(*staticConst.getInit()) << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

@@ -16,6 +16,7 @@
 Token convertIdentifer(const std::string &str, size_t &pos)
 {
     static const std::unordered_map<std::string, TokenType> keywords = {
+        {"char", TokenType::KEYWORD_CHAR},
         {"int", TokenType::KEYWORD_INT},
         {"long", TokenType::KEYWORD_LONG},
         {"signed", TokenType::KEYWORD_SIGNED},
@@ -47,7 +48,29 @@ Token convertIdentifer(const std::string &str, size_t &pos)
     return Token(TokenType::IDENTIFIER, str, pos);
 }
 
-Token convertInt(const std::string &str, size_t &pos)
+Token lexChar(const std::string &str, size_t &pos)
+{
+    if (str.size() < 3 || str.front() != '\'' || str.back() != '\'')
+    {
+        throw LexError("Invalid character literal at position " + std::to_string(pos));
+    }
+
+    std::string value = str.substr(1, str.size() - 2);
+    return Token(TokenType::CONST_CHAR, value, pos);
+}
+
+Token lexString(const std::string &str, size_t &pos)
+{
+    if (str.size() < 2 || str.front() != '\"' || str.back() != '\"')
+    {
+        throw LexError("Invalid string literal at position " + std::to_string(pos));
+    }
+
+    std::string value = str.substr(1, str.size() - 2);
+    return Token(TokenType::STRING_LITERAL, value, pos);
+}
+
+Token lexInt(const std::string &str, size_t &pos)
 {
     size_t len = str.length();
     size_t numLen = len;
@@ -64,7 +87,7 @@ Token convertInt(const std::string &str, size_t &pos)
     return Token(TokenType::CONST_INT, std::stoull(numStr), pos);
 }
 
-Token convertLong(const std::string &str, size_t &pos)
+Token lexLong(const std::string &str, size_t &pos)
 {
     size_t len = str.length();
     size_t numLen = len;
@@ -79,7 +102,7 @@ Token convertLong(const std::string &str, size_t &pos)
     return Token(TokenType::CONST_LONG, std::stoull(numStr), pos);
 }
 
-Token convertUInt(const std::string &str, size_t &pos)
+Token lexUInt(const std::string &str, size_t &pos)
 {
     size_t len = str.length();
     size_t numLen = len;
@@ -94,7 +117,7 @@ Token convertUInt(const std::string &str, size_t &pos)
     return Token(TokenType::CONST_UINT, std::stoull(numStr), pos);
 }
 
-Token convertULong(const std::string &str, size_t &pos)
+Token lexULong(const std::string &str, size_t &pos)
 {
     size_t len = str.length();
     size_t numLen = len;
@@ -109,7 +132,7 @@ Token convertULong(const std::string &str, size_t &pos)
     return Token(TokenType::CONST_ULONG, std::stoull(numStr), pos);
 }
 
-Token convertDouble(const std::string &str, size_t &pos)
+Token lexDouble(const std::string &str, size_t &pos)
 {
     size_t numLen = 0;
     while (numLen < str.length() &&
@@ -136,12 +159,18 @@ void Lexer::defineTokenDefs()
 {
     _tokenDefs = {
         {std::regex("[A-Za-z_][A-Za-z0-9_]*\\b"), convertIdentifer},
-        {std::regex("([0-9]+)[^\\w.]"), convertInt},
-        {std::regex("([0-9]+[lL])[^\\w.]"), convertLong},
-        {std::regex("([0-9]+[uU])[^\\w.]"), convertUInt},
-        {std::regex("([0-9]+([lL][uU]|[uU][lL]))[^\\w.]"), convertULong},
-        {std::regex("(([0-9]*\\.[0-9]+|[0-9]+\\.?)[Ee][+-]?[0-9]+|[0-9]*\\.[0-9]+|[0-9]+\\.)[^\\w.]"), convertDouble},
-        // The following 20 keywords match will not be reached after identifier, but still kept here for references.
+        {std::regex("'([^'\\\\\\n]|\\\\['\"?\\\\abfnrtv])'"), lexChar},
+        {std::regex("\"([^\"\\\\\\n]|\\\\['\"\\\\?abfnrtv])*\""), lexString},
+        {std::regex("([0-9]+)[^\\w.]"), lexInt},
+        {std::regex("([0-9]+[lL])[^\\w.]"), lexLong},
+        {std::regex("([0-9]+[uU])[^\\w.]"), lexUInt},
+        {std::regex("([0-9]+([lL][uU]|[uU][lL]))[^\\w.]"), lexULong},
+        {std::regex("(([0-9]*\\.[0-9]+|[0-9]+\\.?)[Ee][+-]?[0-9]+|[0-9]*\\.[0-9]+|[0-9]+\\.)[^\\w.]"), lexDouble},
+        // The following 21 keywords match will not be reached after identifier, but still kept here for references.
+        {std::regex("char\\b"), [](const std::string &str, size_t &pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_CHAR, str, pos);
+         }},
         {std::regex("int\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_INT, str, pos);

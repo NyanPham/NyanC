@@ -10,6 +10,7 @@ class TypeChecker
 public:
     TypeChecker() = default;
 
+    std::shared_ptr<AST::String> typeCheckString(const std::shared_ptr<AST::String> &string);
     std::shared_ptr<AST::Initializer> typeCheckInit(const Types::DataType &targetType, const std::shared_ptr<AST::Initializer> &init);
     std::shared_ptr<AST::Initializer> makeZeroInit(const Types::DataType &type);
     Symbols::InitialValue toStaticInit(const Types::DataType &varType, const std::shared_ptr<AST::Initializer> &e);

@@ -7,6 +7,11 @@
 #include "InstructionFixup.h"
 #include "../Rounding.h"
 
+inline bool isLargerThanByte(int64_t imm)
+{
+    return imm >= 256LL || imm < -128LL;
+}
+
 inline int64_t convertTo64Bit(int32_t value)
 {
     return static_cast<int64_t>(value);
@@ -122,6 +127,20 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
                     mov->getDst()),
             };
         }
+        // Moving a longword-size constant with a byte operand size produces assembler warning
+        else if (
+            Assembly::isAsmByte(*mov->getAsmType()) &&
+            isImmOperand(mov->getSrc()) &&
+            isLargerThanByte(std::dynamic_pointer_cast<Assembly::Imm>(mov->getSrc())->getValue()))
+        {
+            auto reduced = static_cast<uint8_t>(std::dynamic_pointer_cast<Assembly::Imm>(mov->getSrc())->getValue());
+            return {
+                std::make_shared<Assembly::Mov>(
+                    std::make_shared<Assembly::AsmType>(Assembly::Byte()),
+                    std::make_shared<Assembly::Imm>(reduced),
+                    mov->getDst()),
+            };
+        }
         else
         {
             return {
@@ -140,14 +159,16 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         {
             return {
                 std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
-                    std::make_shared<Assembly::Imm>(std::dynamic_pointer_cast<Assembly::Imm>(movsx->getSrc())->getValue()),
+                    movsx->getSrcType(),
+                    movsx->getSrc(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
                 std::make_shared<Assembly::Movsx>(
+                    movsx->getSrcType(),
+                    movsx->getDstType(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
                 std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    movsx->getDstType(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
                     movsx->getDst()),
             };
@@ -156,10 +177,12 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         {
             return {
                 std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
-                    std::make_shared<Assembly::Imm>(std::dynamic_pointer_cast<Assembly::Imm>(movsx->getSrc())->getValue()),
+                    movsx->getSrcType(),
+                    movsx->getSrc(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10)),
                 std::make_shared<Assembly::Movsx>(
+                    movsx->getSrcType(),
+                    movsx->getDstType(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R10),
                     movsx->getDst()),
             };
@@ -168,10 +191,12 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
         {
             return {
                 std::make_shared<Assembly::Movsx>(
+                    movsx->getSrcType(),
+                    movsx->getDstType(),
                     movsx->getSrc(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
                 std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
+                    movsx->getDstType(),
                     std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
                     movsx->getDst()),
             };
@@ -185,29 +210,65 @@ InstructionFixup::fixupInstruction(const std::shared_ptr<Assembly::Instruction> 
     }
     case Assembly::NodeType::MovZeroExtend:
     {
-        /* Rewrite MovZeroExtend as one or two instructions */
         auto movzx = std::dynamic_pointer_cast<Assembly::MovZeroExtend>(inst);
 
-        if (movzx->getSrc()->getType() == Assembly::NodeType::Reg)
+        auto byteType = std::make_shared<Assembly::AsmType>(Assembly::Byte());
+        auto longwordType = std::make_shared<Assembly::AsmType>(Assembly::Longword());
+        auto r10 = std::make_shared<Assembly::Reg>(Assembly::RegName::R10);
+        auto r11 = std::make_shared<Assembly::Reg>(Assembly::RegName::R11);
+
+        if (Assembly::isAsmByte(*movzx->getSrcType()) && isImmOperand(movzx->getSrc()))
+        {
+            // MovZeroExtend src can't be an immediate.
+            if (isMemoryOperand(movzx->getDst()))
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(byteType, movzx->getSrc(), r10),
+                    std::make_shared<Assembly::MovZeroExtend>(byteType, movzx->getDstType(), r10, r11),
+                    std::make_shared<Assembly::Mov>(movzx->getDstType(), r11, movzx->getDst()),
+                };
+            }
+            else
+            {
+                return {
+                    std::make_shared<Assembly::Mov>(
+                        byteType,
+                        movzx->getSrc(),
+                        r10),
+                    std::make_shared<Assembly::MovZeroExtend>(
+                        byteType,
+                        movzx->getDstType(),
+                        r10,
+                        movzx->getDst()),
+                };
+            }
+        }
+        else if (Assembly::isAsmByte(*movzx->getSrcType()) && isMemoryOperand(movzx->getDst()))
+        {
+            // MovZeroExtend destination must be a register
+            return {
+                std::make_shared<Assembly::MovZeroExtend>(byteType, movzx->getDstType(), movzx->getSrc(), r11),
+                std::make_shared<Assembly::Mov>(movzx->getDstType(), r11, movzx->getDst()),
+            };
+        }
+        else if (Assembly::isAsmLongword(*movzx->getSrcType()) && isMemoryOperand(movzx->getDst()))
+        {
+            // to zero-extend longword to quadword, first copy into register, then move to destination
+            return {
+                std::make_shared<Assembly::Mov>(longwordType, movzx->getSrc(), r11),
+                std::make_shared<Assembly::Mov>(movzx->getDstType(), r11, movzx->getDst()),
+            };
+        }
+        else if (Assembly::isAsmLongword(*movzx->getSrcType()))
         {
             return {
-                std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
-                    movzx->getSrc(),
-                    movzx->getDst()),
+                std::make_shared<Assembly::Mov>(longwordType, movzx->getSrc(), movzx->getDst()),
             };
         }
         else
         {
             return {
-                std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Longword()),
-                    movzx->getSrc(),
-                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11)),
-                std::make_shared<Assembly::Mov>(
-                    std::make_shared<Assembly::AsmType>(Assembly::Quadword()),
-                    std::make_shared<Assembly::Reg>(Assembly::RegName::R11),
-                    movzx->getDst()),
+                inst,
             };
         }
     }

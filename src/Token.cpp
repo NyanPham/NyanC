@@ -19,6 +19,10 @@ std::string tokenTypeToString(TokenType type)
     {
     case TokenType::IDENTIFIER:
         return "IDENTIFIER";
+    case TokenType::CONST_CHAR:
+        return "CONST_CHAR";
+    case TokenType::STRING_LITERAL:
+        return "STRING_LITERAL";
     case TokenType::CONST_INT:
         return "CONST_INT";
     case TokenType::CONST_LONG:
@@ -29,6 +33,8 @@ std::string tokenTypeToString(TokenType type)
         return "CONST_ULONG";
     case TokenType::CONST_DOUBLE:
         return "CONST_DOUBLE";
+    case TokenType::KEYWORD_CHAR:
+        return "KEYWORD_CHAR";
     case TokenType::KEYWORD_INT:
         return "KEYWORD_INT";
     case TokenType::KEYWORD_LONG:

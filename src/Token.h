@@ -8,6 +8,8 @@
 enum class TokenType
 {
     IDENTIFIER,
+    CONST_CHAR,
+    STRING_LITERAL,
     CONST_INT,
     CONST_LONG,
     CONST_UINT,
@@ -15,6 +17,7 @@ enum class TokenType
     CONST_DOUBLE,
 
     // Keywords
+    KEYWORD_CHAR,
     KEYWORD_INT,
     KEYWORD_LONG,
     KEYWORD_SIGNED,
