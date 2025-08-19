@@ -11,9 +11,9 @@
 
 /*
 program = Program(top_level*)
-top_level = Function(identifier name, bool global, identifier* params, Instruction* instructions)
-    | StaticVariable(identifier name, bool global, Types.t t, Initializers.static_init* init_list)
-    | StaticConstant(identifier name, type t, Initializers.static_init init)
+top_level = Function(string name, bool global, string* params, Instruction* instructions)
+    | StaticVariable(string name, bool global, Types.t t, Initializers.static_init* init_list)
+    | StaticConstant(string name, type t, Initializers.static_init init)
 instruction = Return(val?)
     | SignExtend(val src, val dst)
     | Truncate(val src, val dst)
@@ -29,13 +29,14 @@ instruction = Return(val?)
     | Load(val src_ptr, val dst)
     | Store(val src, val dst_ptr)
     | AddPtr(val ptr, val index, int scale, val dst)
-    | CopyToOffset(val src, identifier dst, int offset)
-    | Jump(identifier target)
-    | JumpIfZero(val condition, identifier target)
-    | JumpIfNotZero(val condition, identifier target)
-    | Label(identifier)
-    | FunCall(identifier fn_name, val* args, val? dst)
-val = Constant(const) | Var(identifier)
+    | CopyToOffset(val src, string dst, int offset)
+    | CopyFromOffset(string src, int offset, val dst)
+    | Jump(string target)
+    | JumpIfZero(val condition, string target)
+    | JumpIfNotZero(val condition, string target)
+    | Label(string)
+    | FunCall(string fn_name, val* args, val? dst)
+val = Constant(const) | Var(string)
 unary_operator = Complement | Negate | Not
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -68,6 +69,7 @@ namespace TACKY
     class Store;
     class AddPtr;
     class CopyToOffset;
+    class CopyFromOffset;
     class Jump;
     class JumpIfZero;
     class JumpIfNotZero;
@@ -99,6 +101,7 @@ namespace TACKY
         Store,
         AddPtr,
         CopyToOffset,
+        CopyFromOffset,
         Jump,
         JumpIfZero,
         JumpIfNotZero,
@@ -321,6 +324,22 @@ namespace TACKY
         std::shared_ptr<Val> _src;
         std::string _dst;
         ssize_t _offset;
+    };
+
+    class CopyFromOffset : public Instruction
+    {
+    public:
+        CopyFromOffset(const std::string &src, ssize_t offset, std::shared_ptr<Val> dst)
+            : Instruction(NodeType::CopyFromOffset), _src{std::move(src)}, _offset{offset}, _dst{std::move(dst)} {}
+
+        const std::string &getSrc() const { return _src; }
+        ssize_t getOffset() const { return _offset; }
+        std::shared_ptr<Val> getDst() const { return _dst; }
+
+    private:
+        std::string _src;
+        ssize_t _offset;
+        std::shared_ptr<Val> _dst;
     };
 
     class Jump : public Instruction

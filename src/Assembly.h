@@ -41,7 +41,7 @@ instruction = Mov(asm_type, operand src, operand dst)
     | Ret
 unary_operator = Neg | Not | ShrOneOp
 binary_operator = Add | Sub | Mult | DivDouble | And | Or | Xor | Sal | Sar | Shl | Shr
-operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Memory(reg, int) | Data(identifier) | PseudoMem(identifier, int) | Indexed(reg base, reg index, int scale)
+operand = Imm(int) | Reg(reg) | Pseudo(identifier) | Memory(reg, int) | Data(identifier, int offset) | PseudoMem(identifier, int) | Indexed(reg base, reg index, int scale)
 cond_code = E | NE | L | LE | G | GE | A | AE | B | BE | P | NP
 reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11 | SP | BP | XMM0 | XMM1 | XMM2 | XMM3 | XMM4 | XMM5 | XMM6 | XMM7 | XMM14 | XMM15
 */
@@ -339,24 +339,26 @@ namespace Assembly
     class Data : public Operand
     {
     public:
-        Data(const std::string &name) : Operand(NodeType::Data), _name{name} {}
+        Data(const std::string &name, int offset) : Operand(NodeType::Data), _name{name}, _offset{offset} {}
         const std::string &getName() const { return _name; }
+        auto getOffset() const { return _offset; }
 
     private:
         std::string _name;
+        int _offset;
     };
 
     class PseudoMem : public Operand
     {
     public:
-        PseudoMem(const std::string &name, int offset)
-            : Operand(NodeType::PseudoMem), _name{name}, _offset{offset} {}
+        PseudoMem(const std::string &base, int offset)
+            : Operand(NodeType::PseudoMem), _base{base}, _offset{offset} {}
 
-        const std::string &getName() const { return _name; }
+        const std::string &getBase() const { return _base; }
         int getOffset() const { return _offset; }
 
     private:
-        std::string _name;
+        std::string _base;
         int _offset;
     };
 

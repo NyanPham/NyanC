@@ -6,8 +6,14 @@
 #include <optional>
 #include <iostream>
 #include <memory>
+#include <vector>
 
 #include "./utils/VariantHelper.h"
+
+namespace TypeTableNS
+{
+    class TypeTable;
+}
 
 namespace Types
 {
@@ -23,6 +29,7 @@ namespace Types
     struct PointerType;
     struct VoidType;
     struct ArrayType;
+    struct StructureType;
 
     using DataType = std::variant<
         CharType,
@@ -36,6 +43,7 @@ namespace Types
         PointerType,
         VoidType,
         ArrayType,
+        StructureType,
         FunType>;
 
     struct CharType
@@ -122,41 +130,33 @@ namespace Types
     {
         VoidType() {}
 
-        int getSize() const { throw std::runtime_error("Internal erorr: void type doesn't have size"); }
-        int getAlignment() const { throw std::runtime_error("Internal erorr: void type doesn't have alignment"); }
+        int getSize() const { throw std::runtime_error("Internal error: void type doesn't have size"); }
+        int getAlignment() const { throw std::runtime_error("Internal error: void type doesn't have alignment"); }
         bool isSigned() const { throw std::runtime_error("Internal error: signedness doesn't make sense for void type"); }
         std::string toString() const { return "VoidType"; }
     };
-
-    inline int getSize(const DataType &type)
-    {
-        return std::visit([](const auto &t)
-                          { return t.getSize(); }, type);
-    }
-
-    inline int getAlignment(const DataType &type)
-    {
-        return std::visit([](const auto &t)
-                          { return t.getAlignment(); }, type);
-    }
-
-    inline bool isSigned(const DataType &type)
-    {
-        return std::visit([](const auto &t)
-                          { return t.isSigned(); }, type);
-    }
-
-    std::string dataTypeToString(const DataType &type);
 
     struct PointerType
     {
         std::shared_ptr<DataType> referencedType;
 
-        PointerType(const std::shared_ptr<DataType> &type) : referencedType(std::move(type)) {}
+        PointerType(const std::shared_ptr<DataType> &type);
 
         int getSize() const { return 8; }
         int getAlignment() const { return 8; }
         bool isSigned() const { return false; }
+
+        std::string toString() const;
+    };
+
+    struct StructureType
+    {
+        std::string tag;
+        StructureType(const std::string &tag);
+
+        int getSize(const TypeTableNS::TypeTable &typeTable) const;
+        int getAlignment(const TypeTableNS::TypeTable &typeTable) const;
+        bool isSigned() const { throw std::runtime_error("Internal error: signedness doesn't make sense for structure type"); }
 
         std::string toString() const;
     };
@@ -168,22 +168,11 @@ namespace Types
 
         FunType(
             std::vector<std::shared_ptr<DataType>> paramTypes,
-            std::shared_ptr<DataType> retType) : paramTypes(std::move(paramTypes)), retType(std::move(retType)) {}
+            std::shared_ptr<DataType> retType);
 
-        int getSize() const
-        {
-            throw std::runtime_error("Internal error: function type doesn't have size");
-        }
-
-        int getAlignment() const
-        {
-            throw std::runtime_error("Internal error: function type doesn't have alignment");
-        }
-
-        bool isSigned() const
-        {
-            throw std::runtime_error("Internal error: signedness doesn't make sense for function type");
-        }
+        int getSize() const;
+        int getAlignment() const;
+        bool isSigned() const;
 
         std::string toString() const;
     };
@@ -193,235 +182,65 @@ namespace Types
         std::shared_ptr<DataType> elemType;
         int size;
 
-        ArrayType(const std::shared_ptr<DataType> &elemType, int size) : elemType(std::move(elemType)), size{size} {}
+        ArrayType(const std::shared_ptr<DataType> &elemType, int size);
 
-        int getSize() const { return size * Types::getSize(*elemType); }
-        int getAlignment() const { return Types::getAlignment(*elemType); }
-        bool isSigned() const { throw std::runtime_error("Internal error: signedness doesn't make sense for function type"); }
+        int getSize(const TypeTableNS::TypeTable &typeTable) const;
+        int getAlignment(const TypeTableNS::TypeTable &typeTable) const;
+        bool isSigned() const;
 
         std::string toString() const;
     };
 
-    inline std::string PointerType::toString() const
-    {
-        std::string result = "PointerType(referencedType: ";
-        result += dataTypeToString(*referencedType);
-        result += ")";
-        return result;
-    }
+    // --- Inline and utility functions ---
 
-    inline std::string ArrayType::toString() const
-    {
-        std::string result = "ArrayType(elemType: ";
-        result += dataTypeToString(*elemType);
-        result += ", size: ";
-        result += std::to_string(size);
-        result += ")";
-        return result;
-    }
+    int getSize(const DataType &type);
+    int getSize(const DataType &type, const TypeTableNS::TypeTable &typeTable);
+    int getAlignment(const DataType &type);
+    int getAlignment(const DataType &type, const TypeTableNS::TypeTable &typeTable);
+    bool isSigned(const DataType &type);
+    std::string dataTypeToString(const DataType &type);
 
-    inline std::string FunType::toString() const
-    {
-        std::string result = "FunType(";
-        result += '[';
-        for (size_t i = 0; i < paramTypes.size(); ++i)
-        {
-            result += dataTypeToString(*paramTypes[i]);
-            if (i < paramTypes.size() - 1)
-                result += ", ";
-        }
-        result += ']';
+    inline DataType makeCharType() { return CharType{}; }
+    inline DataType makeSCharType() { return SCharType{}; }
+    inline DataType makeUCharType() { return UCharType{}; }
+    inline DataType makeIntType() { return IntType{}; }
+    inline DataType makeLongType() { return LongType{}; }
+    inline DataType makeUIntType() { return UIntType{}; }
+    inline DataType makeULongType() { return ULongType{}; }
+    inline DataType makeDoubleType() { return DoubleType{}; }
+    inline DataType makePointerType(const std::shared_ptr<DataType> &referencedType) { return PointerType{referencedType}; }
+    inline DataType makeVoidType() { return VoidType{}; }
+    inline DataType makeArrayType(const std::shared_ptr<DataType> &elemType, int size) { return ArrayType{elemType, size}; }
+    inline DataType makeStructType(const std::string tag) { return StructureType{tag}; }
+    inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes, const std::shared_ptr<DataType> &retType) { return FunType{paramTypes, retType}; }
 
-        result += " -> " + dataTypeToString(*retType) + ")";
-        return result;
-    }
+    inline std::optional<CharType> getCharType(const DataType &type) { return getVariant<CharType>(type); }
+    inline std::optional<SCharType> getSCharType(const DataType &type) { return getVariant<SCharType>(type); }
+    inline std::optional<UCharType> getUCharType(const DataType &type) { return getVariant<UCharType>(type); }
+    inline std::optional<IntType> getIntType(const DataType &type) { return getVariant<IntType>(type); }
+    inline std::optional<LongType> getLongType(const DataType &type) { return getVariant<LongType>(type); }
+    inline std::optional<UIntType> getUIntType(const DataType &type) { return getVariant<UIntType>(type); }
+    inline std::optional<ULongType> getULongType(const DataType &type) { return getVariant<ULongType>(type); }
+    inline std::optional<DoubleType> getDoubleType(const DataType &type) { return getVariant<DoubleType>(type); }
+    inline std::optional<PointerType> getPointerType(const DataType &type) { return getVariant<PointerType>(type); }
+    inline std::optional<VoidType> getVoidType(const DataType &type) { return getVariant<VoidType>(type); }
+    inline std::optional<ArrayType> getArrayType(const DataType &type) { return getVariant<ArrayType>(type); }
+    inline std::optional<StructureType> getStructType(const DataType &type) { return getVariant<StructureType>(type); }
+    inline std::optional<FunType> getFunType(const DataType &type) { return getVariant<FunType>(type); }
 
-    inline std::string dataTypeToString(const DataType &type)
-    {
-        return std::visit([](const auto &t)
-                          { return t.toString(); }, type);
-    }
-
-    inline DataType makeCharType()
-    {
-        return CharType{};
-    }
-
-    inline DataType makeSCharType()
-    {
-        return SCharType{};
-    }
-
-    inline DataType makeUCharType()
-    {
-        return UCharType{};
-    }
-
-    inline DataType makeIntType()
-    {
-        return IntType{};
-    }
-
-    inline DataType makeLongType()
-    {
-        return LongType{};
-    }
-
-    inline DataType makeUIntType()
-    {
-        return UIntType{};
-    }
-
-    inline DataType makeULongType()
-    {
-        return ULongType{};
-    }
-
-    inline DataType makeDoubleType()
-    {
-        return DoubleType{};
-    }
-
-    inline DataType makePointerType(const std::shared_ptr<DataType> &referencedType)
-    {
-        return PointerType{referencedType};
-    }
-
-    inline DataType makeVoidType()
-    {
-        return VoidType{};
-    }
-
-    inline DataType makeArrayType(const std::shared_ptr<DataType> &elemType, int size)
-    {
-        return ArrayType{elemType, size};
-    }
-
-    inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes,
-                                const std::shared_ptr<DataType> &retType)
-    {
-        return FunType{paramTypes, retType};
-    }
-
-    inline std::optional<CharType> getCharType(const DataType &type)
-    {
-        return getVariant<CharType>(type);
-    }
-
-    inline std::optional<SCharType> getSCharType(const DataType &type)
-    {
-        return getVariant<SCharType>(type);
-    }
-
-    inline std::optional<UCharType> getUCharType(const DataType &type)
-    {
-        return getVariant<UCharType>(type);
-    }
-
-    inline std::optional<IntType> getIntType(const DataType &type)
-    {
-        return getVariant<IntType>(type);
-    }
-
-    inline std::optional<LongType> getLongType(const DataType &type)
-    {
-        return getVariant<LongType>(type);
-    }
-
-    inline std::optional<UIntType> getUIntType(const DataType &type)
-    {
-        return getVariant<UIntType>(type);
-    }
-
-    inline std::optional<ULongType> getULongType(const DataType &type)
-    {
-        return getVariant<ULongType>(type);
-    }
-
-    inline std::optional<DoubleType> getDoubleType(const DataType &type)
-    {
-        return getVariant<DoubleType>(type);
-    }
-
-    inline std::optional<PointerType> getPointerType(const DataType &type)
-    {
-        return getVariant<PointerType>(type);
-    }
-
-    inline std::optional<VoidType> getVoidType(const DataType &type)
-    {
-        return getVariant<VoidType>(type);
-    }
-
-    inline std::optional<ArrayType> getArrayType(const DataType &type)
-    {
-        return getVariant<ArrayType>(type);
-    }
-
-    inline std::optional<FunType> getFunType(const DataType &type)
-    {
-        return getVariant<FunType>(type);
-    }
-
-    inline bool isCharType(const DataType &type)
-    {
-        return isVariant<CharType>(type);
-    }
-
-    inline bool isSCharType(const DataType &type)
-    {
-        return isVariant<SCharType>(type);
-    }
-
-    inline bool isUCharType(const DataType &type)
-    {
-        return isVariant<UCharType>(type);
-    }
-
-    inline bool isIntType(const DataType &type)
-    {
-        return isVariant<IntType>(type);
-    }
-
-    inline bool isLongType(const DataType &type)
-    {
-        return isVariant<LongType>(type);
-    }
-
-    inline bool isUIntType(const DataType &type)
-    {
-        return isVariant<UIntType>(type);
-    }
-
-    inline bool isULongType(const DataType &type)
-    {
-        return isVariant<ULongType>(type);
-    }
-
-    inline bool isDoubleType(const DataType &type)
-    {
-        return isVariant<DoubleType>(type);
-    }
-
-    inline bool isPointerType(const DataType &type)
-    {
-        return isVariant<PointerType>(type);
-    }
-
-    inline bool isVoidType(const DataType &type)
-    {
-        return isVariant<VoidType>(type);
-    }
-
-    inline bool isArrayType(const DataType &type)
-    {
-        return isVariant<ArrayType>(type);
-    }
-
-    inline bool isFunType(const DataType &type)
-    {
-        return isVariant<FunType>(type);
-    }
+    inline bool isCharType(const DataType &type) { return isVariant<CharType>(type); }
+    inline bool isSCharType(const DataType &type) { return isVariant<SCharType>(type); }
+    inline bool isUCharType(const DataType &type) { return isVariant<UCharType>(type); }
+    inline bool isIntType(const DataType &type) { return isVariant<IntType>(type); }
+    inline bool isLongType(const DataType &type) { return isVariant<LongType>(type); }
+    inline bool isUIntType(const DataType &type) { return isVariant<UIntType>(type); }
+    inline bool isULongType(const DataType &type) { return isVariant<ULongType>(type); }
+    inline bool isDoubleType(const DataType &type) { return isVariant<DoubleType>(type); }
+    inline bool isPointerType(const DataType &type) { return isVariant<PointerType>(type); }
+    inline bool isVoidType(const DataType &type) { return isVariant<VoidType>(type); }
+    inline bool isArrayType(const DataType &type) { return isVariant<ArrayType>(type); }
+    inline bool isStructType(const DataType &type) { return isVariant<StructureType>(type); }
+    inline bool isFunType(const DataType &type) { return isVariant<FunType>(type); }
 
     inline bool operator==(const Types::DataType &lhs, const Types::DataType &rhs)
     {
@@ -434,7 +253,6 @@ namespace Types
                 {
                     if constexpr (std::is_same_v<LeftType, Types::FunType>)
                     {
-                        // Compare FunType (parameter types and return type)
                         if (left.paramTypes.size() != right.paramTypes.size())
                             return false;
                         for (size_t i = 0; i < left.paramTypes.size(); ++i)
@@ -451,6 +269,10 @@ namespace Types
                     else if constexpr (std::is_same_v<LeftType, Types::ArrayType>)
                     {
                         return static_cast<bool>(left.size == right.size && *left.elemType == *right.elemType);
+                    }
+                    else if constexpr (std::is_same_v<LeftType, Types::StructureType>)
+                    {
+                        return static_cast<bool>(left.tag == right.tag);
                     }
                     else
                     {
@@ -480,7 +302,7 @@ namespace Types
             return true;
         }
 
-        if (Types::isFunType(type) || Types::isPointerType(type))
+        if (Types::isFunType(type) || Types::isPointerType(type) || Types::isArrayType(type) || Types::isStructType(type))
         {
             return false;
         }
@@ -512,25 +334,13 @@ namespace Types
 
     inline bool isScalar(const Types::DataType &type)
     {
-        if (Types::isArrayType(type) || Types::isVoidType(type) || Types::isFunType(type))
+        if (Types::isArrayType(type) || Types::isVoidType(type) || Types::isFunType(type) || Types::isStructType(type))
             return false;
         return true;
     }
 
-    inline bool isComplete(const Types::DataType &type)
-    {
-        return !Types::isVoidType(type);
-    }
-
-    inline bool isCompletePointer(const Types::DataType &type)
-    {
-        if (auto pointerType = Types::getPointerType(type))
-        {
-            return Types::isComplete(*pointerType->referencedType);
-        }
-
-        return false;
-    }
+    bool isComplete(const DataType &type, const TypeTableNS::TypeTable &typeTable);
+    bool isCompletePointer(const DataType &type, const TypeTableNS::TypeTable &typeTable);
 }
 
 #endif

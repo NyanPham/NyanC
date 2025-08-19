@@ -216,11 +216,11 @@ namespace Initializers
         return getVariant<PointerInit>(staticInit);
     }
 
-    inline std::vector<std::shared_ptr<StaticInit>> zero(const Types::DataType &type)
+    inline std::vector<std::shared_ptr<StaticInit>> zero(const Types::DataType &type, const TypeTableNS::TypeTable &typeTable)
     {
         std::vector<std::shared_ptr<StaticInit>> result;
         result.reserve(1);
-        result.emplace_back(std::make_shared<StaticInit>(ZeroInit(Types::getSize(type))));
+        result.emplace_back(std::make_shared<StaticInit>(ZeroInit(Types::getSize(type, typeTable))));
         return result;
     }
 

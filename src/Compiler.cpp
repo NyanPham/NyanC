@@ -19,6 +19,7 @@
 #include "Emit.h"
 #include "utils/ASTPrettyPrint.h"
 #include "utils/SymbolTablePrint.h"
+#include "utils/TypeTablePrint.h"
 #include "utils/TackyPrettyPrint.h"
 #include "utils/CodeGenPrettyPrint.h"
 #include "utils/AssemblySymbolTablePrint.h"
@@ -65,6 +66,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
             auto input = buffer.str();
             ASTPrettyPrint astPrettyPrint;
             SymbolTablePrint symbolTablePrint;
+            TypeTablePrint typeTablePrint;
             TackyPrettyPrint tackyPrettyPrint;
             CodeGenPrettyPrint codeGenPrettyPrint;
             AssemblySymbolTablePrint asmSymbolTablePrint;
@@ -129,18 +131,19 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                     std::cout << "ID Resolved:" << '\n';
                     astPrettyPrint.print(*transformedAst);
 
-                    std::cout << "Validated labels:" << '\n';
-                    astPrettyPrint.print(*validatedASt);
+                    // std::cout << "Validated labels:" << '\n';
+                    // astPrettyPrint.print(*validatedASt);
 
-                    std::cout << "LoopLabeled:" << '\n';
-                    astPrettyPrint.print(*labeledAst);
+                    // std::cout << "LoopLabeled:" << '\n';
+                    // astPrettyPrint.print(*labeledAst);
 
                     symbolTablePrint.print(typeChecker.getSymbolTable());
+                    typeTablePrint.print(typeChecker.getTypeTable());
                     std::cout << "TypeChecked:" << '\n';
                     astPrettyPrint.print(*typeCheckedAst);
 
-                    std::cout << "Cases Collected:" << '\n';
-                    astPrettyPrint.print(*casesCollectedAst);
+                    // std::cout << "Cases Collected:" << '\n';
+                    // astPrettyPrint.print(*casesCollectedAst);
                 }
 
                 break;
@@ -166,12 +169,13 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto switchCasesCollector = CollectSwitchCases();
                 auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
                 if (debugging)
                 {
                     symbolTablePrint.print(typeChecker.getSymbolTable());
+                    typeTablePrint.print(typeChecker.getTypeTable());
                     std::cout << "TACKY:" << '\n';
                     tackyPrettyPrint.print(*tacky);
                 }
@@ -199,10 +203,10 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto switchCasesCollector = CollectSwitchCases();
                 auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
-                auto codeGen = CodeGen(typeChecker.getSymbolTable());
+                auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
@@ -252,10 +256,10 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto switchCasesCollector = CollectSwitchCases();
                 auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
-                auto codeGen = CodeGen(typeChecker.getSymbolTable());
+                auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
@@ -292,10 +296,10 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto switchCasesCollector = CollectSwitchCases();
                 auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
-                auto codeGen = CodeGen(typeChecker.getSymbolTable());
+                auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
@@ -333,10 +337,10 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto switchCasesCollector = CollectSwitchCases();
                 auto casesCollectedAst = switchCasesCollector.analyzeSwitches(typeCheckedAst);
 
-                auto tackyGen = TackyGen(typeChecker.getSymbolTable());
+                auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
-                auto codeGen = CodeGen(typeChecker.getSymbolTable());
+                auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());

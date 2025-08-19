@@ -7,15 +7,18 @@
 #include "AST.h"
 #include "UniqueIds.h"
 #include "ConstConvert.h"
+#include "TypeTable.h"
+#include "Symbols.h"
 
 // use this as the "result" of void expressions that don't return a result
 auto dummyOperand = std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeIntZero()));
 
-ssize_t getPtrScale(const Types::DataType &type)
+ssize_t
+TackyGen::getPtrScale(const Types::DataType &type)
 {
     if (auto ptrType = Types::getPointerType(type))
     {
-        return Types::getSize(*ptrType->referencedType);
+        return Types::getSize(*ptrType->referencedType, _typeTable);
     }
     else
     {
@@ -42,17 +45,54 @@ struct DereferencedPointer
     }
 };
 
-using ExpResult = std::variant<PlainOperand, DereferencedPointer>;
+struct SubObject
+{
+    std::string base;
+    int offset;
+
+    std::string toString() const
+    {
+        return "SubObject(base=" + base + ", offset=" + std::to_string(offset) + ")";
+    }
+};
+
+using ExpResult = std::variant<PlainOperand, DereferencedPointer, SubObject>;
+
 std::string expResultToString(const ExpResult &expRes)
 {
     return std::visit([](const auto &v)
                       { return v.toString(); }, expRes);
 }
 
+int TackyGen::getMemberOffset(const std::string &member, const Types::DataType &type)
+{
+    if (auto strctType = Types::getStructType(type))
+    {
+        auto members = _typeTable.find(strctType->tag).members;
+        auto it = members.find(member);
+        if (it == members.end())
+            throw std::runtime_error("Internal error: failed to find member in struct");
+        else
+            return it->second.offset;
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: tried to get offset of member within non-structure type");
+    }
+}
+
+int TackyGen::getMemberPointerOffset(const std::string &member, const Types::DataType &type)
+{
+    if (auto ptrType = Types::getPointerType(type))
+        return getMemberOffset(member, *ptrType->referencedType);
+    else
+        throw std::runtime_error("Internal error: trying to get member through pointer but is not a pointer type");
+}
+
 std::shared_ptr<TACKY::Constant>
 TackyGen::evalSize(const Types::DataType &type)
 {
-    auto size = Types::getSize(type);
+    auto size = Types::getSize(type, _typeTable);
     return std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeConstLong(size)));
 }
 
@@ -102,9 +142,9 @@ TackyGen::getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_
     }
 
     // Cast between int types. Note: assumes src and dst have different types
-    if (Types::getSize(dstType) == Types::getSize(srcType))
+    if (Types::getSize(dstType, _typeTable) == Types::getSize(srcType, _typeTable))
         return std::make_shared<TACKY::Copy>(src, dst);
-    else if (Types::getSize(dstType) < Types::getSize(srcType))
+    else if (Types::getSize(dstType, _typeTable) < Types::getSize(srcType, _typeTable))
         return std::make_shared<TACKY::Truncate>(src, dst);
     else if (Types::isSigned(srcType))
         return std::make_shared<TACKY::SignExtend>(src, dst);
@@ -437,6 +477,18 @@ TackyGen::emitPostfix(const AST::BinaryOp &op, const std::shared_ptr<AST::Expres
         operInsts.push_back(doOp(op, dst, tmp));
         operInsts.push_back(std::make_shared<TACKY::Store>(tmp, derefPtr->val));
     }
+    else if (auto subObj = std::get_if<SubObject>(&(*lval)))
+    {
+        /*
+            dst = CopyFromOffset(base, offset)
+            tmp = dst + 1 // or dst - 1
+            CopyToOffset(tmp, base, offset)
+        */
+        auto tmp = std::make_shared<TACKY::Var>(createTmp(exp->getDataType()));
+        operInsts.push_back(std::make_shared<TACKY::CopyFromOffset>(subObj->base, subObj->offset, dst));
+        operInsts.push_back(doOp(op, dst, tmp));
+        operInsts.push_back(std::make_shared<TACKY::CopyToOffset>(tmp, subObj->base, subObj->offset));
+    }
 
     auto insts = std::vector<std::shared_ptr<TACKY::Instruction>>{};
     insts.insert(insts.end(), innerEval.begin(), innerEval.end());
@@ -468,6 +520,16 @@ TackyGen::emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<
             tmp2 = tmp2 <op> rval
             tmp = cast(tmp2)
             store(tmp, rhs_ptr)
+        if LHS is subobject w/ same type:
+            tmp = CopyFromOffset(lhs, offset)
+            tmp = tmp <op> rval
+            CopyToOffset(tmp, lhs, offset)
+        if LHS is suboject w/ different type:
+            tmp = CopyFromOffset(lhs, offset)
+            tmp2 = cast(tmp)
+            tmp2 = tmp2 <op> rval
+            tmp = cast(tmp2)
+            CopyToOffset(tmp, lhs, offset)
     */
 
     auto lhsType = lhs->getDataType().value();
@@ -493,6 +555,12 @@ TackyGen::emitCompoundExpression(const AST::BinaryOp &op, const std::shared_ptr<
         dst = std::make_shared<TACKY::Var>(createTmp(lhsType));
         loadInst.push_back(std::make_shared<TACKY::Load>(derefPtr->val, dst));
         storeInst.push_back(std::make_shared<TACKY::Store>(dst, derefPtr->val));
+    }
+    else if (auto subObj = std::get_if<SubObject>(&(*_lhs)))
+    {
+        dst = std::make_shared<TACKY::Var>(createTmp(lhsType));
+        loadInst.push_back(std::make_shared<TACKY::CopyFromOffset>(subObj->base, subObj->offset, dst));
+        storeInst.push_back(std::make_shared<TACKY::CopyToOffset>(dst, subObj->base, subObj->offset));
     }
 
     /*
@@ -676,6 +744,10 @@ TackyGen::emitAssignment(const std::shared_ptr<AST::Expression> &lhs, const std:
     {
         insts.push_back(std::make_shared<TACKY::Store>(rval, derefPtr->val));
     }
+    else if (auto subObj = std::get_if<SubObject>(&(*lval)))
+    {
+        insts.push_back(std::make_shared<TACKY::CopyToOffset>(rval, subObj->base, subObj->offset));
+    }
 
     return {
         insts,
@@ -803,6 +875,101 @@ TackyGen::emitPointerDiff(const Types::DataType &type, const std::shared_ptr<AST
 }
 
 std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
+TackyGen::emitDotOperator(const std::shared_ptr<AST::Dot> &dot)
+{
+    auto t = dot->getDataType().value();
+    auto strct = dot->getStruct();
+    auto member = dot->getMember();
+
+    auto memberOffset = getMemberOffset(member, *strct->getDataType());
+    auto [insts, innerObj] = emitTackyForExp(strct);
+
+    auto plainOper = std::get_if<PlainOperand>(&(*innerObj));
+    auto subObj = std::get_if<SubObject>(&(*innerObj));
+    auto derefPtr = std::get_if<DereferencedPointer>(&(*innerObj));
+
+    if (plainOper && plainOper->val->getType() == TACKY::NodeType::Var)
+    {
+        auto v = std::static_pointer_cast<TACKY::Var>(plainOper->val)->getName();
+        return {
+            insts,
+            std::make_shared<ExpResult>(SubObject(v, memberOffset)),
+        };
+    }
+
+    if (subObj)
+    {
+        return {
+            insts,
+            std::make_shared<ExpResult>(SubObject(subObj->base, subObj->offset + memberOffset)),
+        };
+    }
+
+    if (derefPtr)
+    {
+        if (memberOffset == 0)
+        {
+            return {
+                insts,
+                innerObj,
+            };
+        }
+        else
+        {
+            auto dst = std::make_shared<TACKY::Var>(
+                createTmp(
+                    std::make_optional(
+                        Types::makePointerType(std::make_shared<Types::DataType>(t)))));
+            auto index = std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeConstLong(memberOffset)));
+            auto addPtrInst = std::make_shared<TACKY::AddPtr>(derefPtr->val, index, 1, dst);
+            insts.push_back(addPtrInst);
+
+            return {
+                insts,
+                std::make_shared<ExpResult>(DereferencedPointer(dst)),
+            };
+        }
+    }
+
+    // is PlainOperand(Constant):
+    throw std::runtime_error("Internal error: found dot operator applied to constant");
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
+TackyGen::emitArrowOperator(const std::shared_ptr<AST::Arrow> &arrow)
+{
+    auto t = arrow->getDataType().value();
+    auto strct = arrow->getStruct();
+    auto member = arrow->getMember();
+
+    auto memberOffset = getMemberPointerOffset(member, *strct->getDataType());
+    auto [insts, ptr] = emitTackyAndConvert(strct);
+
+    if (memberOffset == 0)
+    {
+        return {
+            insts,
+            std::make_shared<ExpResult>(DereferencedPointer(ptr)),
+        };
+    }
+    else
+    {
+        auto dst = std::make_shared<TACKY::Var>(
+            createTmp(
+                std::make_optional(
+                    Types::makePointerType(std::make_shared<Types::DataType>(t)))));
+        auto index = std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeConstLong(memberOffset)));
+        auto addPtrInst = std::make_shared<TACKY::AddPtr>(ptr, index, 1, dst);
+        insts.push_back(addPtrInst);
+
+        return {
+            insts,
+            std::make_shared<ExpResult>(DereferencedPointer(dst)),
+        };
+    }
+}
+
+std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>>
 TackyGen::emitSubscript(const std::shared_ptr<AST::Subscript> &subscript)
 {
     auto [insts, result] = emitPointerAddition(Types::makePointerType(std::make_shared<Types::DataType>(*subscript->getDataType())), subscript->getExp1(), subscript->getExp2());
@@ -850,6 +1017,30 @@ TackyGen::emitAddrOf(const std::shared_ptr<AST::AddrOf> &addrOf)
             insts,
             std::make_shared<ExpResult>(PlainOperand(derefPtr->val))};
     }
+    else if (auto subObj = std::get_if<SubObject>(&(*result)))
+    {
+        auto dst = std::make_shared<TACKY::Var>(createTmp(addrOf->getDataType()));
+        auto getAddr = std::make_shared<TACKY::GetAddress>(std::make_shared<TACKY::Var>(subObj->base), dst);
+        insts.push_back(getAddr);
+        if (subObj->offset == 0)
+        {
+            // skip AddrPtr if offset is 0
+            return {
+                insts,
+                std::make_shared<ExpResult>(PlainOperand(dst)),
+            };
+        }
+        else
+        {
+            auto index = std::make_shared<TACKY::Constant>(std::make_shared<Constants::Const>(Constants::makeConstLong(subObj->offset)));
+            auto addPtr = std::make_shared<TACKY::AddPtr>(dst, index, 1, dst);
+            insts.push_back(addPtr);
+            return {
+                insts,
+                std::make_shared<ExpResult>(PlainOperand(dst)),
+            };
+        }
+    }
 
     throw std::runtime_error("Internal error: Invalid expression for address of");
 }
@@ -860,13 +1051,28 @@ TackyGen::emitTackyAndConvert(const std::shared_ptr<AST::Expression> &exp)
     auto [insts, result] = emitTackyForExp(exp);
     if (auto plainOperand = std::get_if<PlainOperand>(&(*result)))
     {
-        return {insts, plainOperand->val};
+        return {
+            insts,
+            plainOperand->val,
+        };
     }
     else if (auto derefPtr = std::get_if<DereferencedPointer>(&(*result)))
     {
         auto dst = std::make_shared<TACKY::Var>(createTmp(exp->getDataType()));
         insts.push_back(std::make_shared<TACKY::Load>(derefPtr->val, dst));
-        return {insts, dst};
+        return {
+            insts,
+            dst,
+        };
+    }
+    else if (auto subObj = std::get_if<SubObject>(&(*result)))
+    {
+        auto dst = std::make_shared<TACKY::Var>(createTmp(exp->getDataType()));
+        insts.push_back(std::make_shared<TACKY::CopyFromOffset>(subObj->base, subObj->offset, dst));
+        return {
+            insts,
+            dst,
+        };
     }
 
     throw std::runtime_error("Internal error: Invalid expression for emitTackyAndConvert");
@@ -1005,6 +1211,14 @@ TackyGen::emitTackyForExp(const std::shared_ptr<AST::Expression> &exp)
             std::vector<std::shared_ptr<TACKY::Instruction>>{},
             std::make_shared<ExpResult>(PlainOperand(evalSize(*std::dynamic_pointer_cast<AST::SizeOf>(exp)->getInnerExp()->getDataType()))),
         };
+    }
+    case AST::NodeType::Dot:
+    {
+        return emitDotOperator(std::dynamic_pointer_cast<AST::Dot>(exp));
+    }
+    case AST::NodeType::Arrow:
+    {
+        return emitArrowOperator(std::dynamic_pointer_cast<AST::Arrow>(exp));
     }
     default:
         throw std::invalid_argument("Internal error: Invalid expression");
@@ -1320,8 +1534,22 @@ TackyGen::emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const 
             for (size_t i = 0; i < compoundInit->getInits().size(); ++i)
             {
                 auto elemInit = compoundInit->getInits()[i];
-                auto newOffset = offset + (i * Types::getSize(*arrayType->elemType));
+                auto newOffset = offset + (i * Types::getSize(*arrayType->elemType, _typeTable));
                 auto innerInits = emitCompoundInit(elemInit, name, newOffset);
+                newInits.insert(newInits.end(), innerInits.begin(), innerInits.end());
+            }
+            return newInits;
+        }
+        else if (compoundInit->getDataType().has_value() && Types::isStructType(compoundInit->getDataType().value()))
+        {
+            auto structType = Types::getStructType(compoundInit->getDataType().value());
+            auto members = _typeTable.getMembers(structType->tag);
+            for (size_t i = 0; i < compoundInit->getInits().size(); ++i)
+            {
+                auto init = compoundInit->getInits()[i];
+                auto memb = members[i];
+                auto memOffset = offset + memb.offset;
+                auto innerInits = emitCompoundInit(init, name, memOffset);
                 newInits.insert(newInits.end(), innerInits.begin(), innerInits.end());
             }
             return newInits;
@@ -1351,7 +1579,7 @@ TackyGen::emitLocalDeclaration(const std::shared_ptr<AST::Declaration> &decl)
         }
         return emitVarDeclaration(std::dynamic_pointer_cast<AST::VariableDeclaration>(decl));
     }
-    else
+    else // FunDecl or StructDecl
         return {};
 }
 
@@ -1390,6 +1618,7 @@ TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem
     {
     case AST::NodeType::FunctionDeclaration:
     case AST::NodeType::VariableDeclaration:
+    case AST::NodeType::StructDeclaration:
     {
         return emitLocalDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem));
     }
@@ -1449,7 +1678,7 @@ TackyGen::convertSymbolsToTacky()
                         name,
                         staticAttrs->global,
                         symbol.type,
-                        Initializers::zero(symbol.type)));
+                        Initializers::zero(symbol.type, _typeTable)));
             }
             else
             {

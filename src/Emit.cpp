@@ -149,7 +149,11 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
         auto lbl = _asmSymbolTable.isConstant(data->getName())
                        ? showLocalLabel(data->getName())
                        : showLabel(data->getName());
-        return std::format("{}(%rip)", lbl);
+
+        if (data->getOffset() == 0)
+            return std::format("{}(%rip)", lbl);
+        else
+            return std::format("{}+{}(%rip)", lbl, data->getOffset());
     }
 
     if (auto indexed = std::dynamic_pointer_cast<Assembly::Indexed>(operand))
@@ -168,7 +172,7 @@ std::string Emit::showOperand(const std::shared_ptr<Assembly::AsmType> &asmType,
     // Printing PseudoMem is only for debugging
     if (auto pseudoMem = std::dynamic_pointer_cast<Assembly::PseudoMem>(operand))
     {
-        return std::format("{}({})", pseudoMem->getOffset(), pseudoMem->getName());
+        return std::format("{}({})", pseudoMem->getOffset(), pseudoMem->getBase());
     }
 
     throw std::runtime_error("Internal Error: Unknown operand!");

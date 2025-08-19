@@ -481,7 +481,7 @@ private:
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "PseudoMem(name=" << pmem.getName() << ", offset=" << pmem.getOffset() << ")\n";
+        std::cout << "PseudoMem(name=" << pmem.getBase() << ", offset=" << pmem.getOffset() << ")\n";
     }
 
     void visitIndexed(const Assembly::Indexed &indexed, bool indent = true)

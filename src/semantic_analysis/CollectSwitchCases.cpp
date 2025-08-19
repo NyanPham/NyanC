@@ -200,6 +200,7 @@ CollectSwitchCases::analyzeBlockItem(const std::shared_ptr<AST::BlockItem> &blkI
     {
     case AST::NodeType::FunctionDeclaration:
     case AST::NodeType::VariableDeclaration:
+    case AST::NodeType::StructDeclaration:
         return {
             optSwitchCtx,
             blkItem,

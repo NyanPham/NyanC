@@ -18,9 +18,11 @@
 EBNF for a subset of C:
 
 <program> ::= { <declaration> }
-<declaration> ::= <variable-declaration> | <function-declaration>
+<declaration> ::= <variable-declaration> | <function-declaration> | <struct-declaration>
 <variable-declaration> ::= { <specifier> }+ <declarator> [ "=" <initializer> ] ";"
 <function-declaration> ::= { <specifier> }+ <declarator> "(" <param-list> ")" (<block> | ";")
+<struct-declaration> ::= "struct" <identifier> [ "{" { <member-declaration> }+ "}" ] ";"
+<member-declaration> ::= { <type-specifier> }+ <declarator> ";"
 <initializer> ::= <exp> | "{" <initializer> { "," <initializer> } [ "," ] "}"
 <declarator> ::= "*" <declarator> | <direct-declarator>
 <direct-declarator> ::= <simple-declarator> [ <declarator-suffix> ]
@@ -29,6 +31,7 @@ EBNF for a subset of C:
 <param> ::= { <type-specifier> }+ <declarator>
 <simple-declarator> ::= <identifier> | "(" <declarator> ")"
 <type-specifier> ::= "int" | "long" | "signed" | "unsigned" | "double" | "char" | "void"
+    | "struct" <identifier>
 <specifier> ::= <type-specifier> | "static" | "extern"
 <block> ::= "{" { <block-item> } "}"
 <block-item> ::= <statement> | <declaration>
@@ -56,7 +59,10 @@ EBNF for a subset of C:
     | "sizeof" "(" <type-name> ")"
     | <postfix-exp>
 <type-name> ::= { <type-specifier> }+ [ <abstract-declarator> ]
-<postfix-exp> ::= <primary-exp> { "++" | "--" }
+<postfix-exp> ::= <primary-exp> { <postfix-op> }
+<postfix-op> ::= "[" <exp> "]"
+    | "." <identifier>
+    | "->" <identifier>
 <primary-exp> ::= <const>
     | <identifier>
     | "(" <exp> ")"
@@ -1101,7 +1107,7 @@ std::shared_ptr<AST::Constant> Parser::parseConstant()
         }
     }
 
-    throw std::runtime_error("Internal error: unknown token constant type");
+    raiseError("a constant", tokenTypeToString(token.getType()));
     return nullptr;
 }
 
@@ -1128,6 +1134,50 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
+Token Parser::parseTypeSpecifier()
+{
+    auto nextTok{peekToken()};
+
+    if (!nextTok.has_value())
+        throw ParseError("Found an empty token while parsing type specifier");
+
+    if (nextTok->getType() == TokenType::KEYWORD_STRUCT)
+    {
+        // if the specifier is a struct kw, we actually care about the tag that follows it
+        takeToken();
+        // struct keyword must be followed by tag
+        auto tok{takeToken()};
+        if (tok->getType() == TokenType::IDENTIFIER)
+            return tok.value();
+        else
+            raiseError("A structure tag", tokenTypeToString(tok->getType()));
+    }
+    else if (isTypeSpecifier(nextTok.value()))
+    {
+        takeToken();
+        return nextTok.value();
+    }
+    else
+        throw std::runtime_error("Internal error: called parse_type_specifier on non-type specifier token");
+
+    return nextTok.value();
+}
+
+Token Parser::parseSpecifier()
+{
+    auto nextTok{peekToken()};
+    if (!nextTok.has_value())
+        throw ParseError("Found an empty token while parsing specifier");
+
+    if (nextTok->getType() == TokenType::KEYWORD_STATIC || nextTok->getType() == TokenType::KEYWORD_EXTERN)
+    {
+        takeToken();
+        return nextTok.value();
+    }
+
+    return parseTypeSpecifier();
+}
+
 std::vector<Token> Parser::parseTypeSpecifierList()
 {
     std::vector<Token> typeSpecifiers{};
@@ -1135,8 +1185,8 @@ std::vector<Token> Parser::parseTypeSpecifierList()
 
     while (nextToken.has_value() && isTypeSpecifier(nextToken.value()))
     {
-        auto spec{takeToken()};
-        typeSpecifiers.push_back(spec.value());
+        auto spec{parseTypeSpecifier()};
+        typeSpecifiers.push_back(spec);
         nextToken = peekToken();
     }
 
@@ -1150,8 +1200,8 @@ std::vector<Token> Parser::parseSpecifierList()
 
     while (nextToken.has_value() && isSpecifier(nextToken.value()))
     {
-        auto spec{takeToken()};
-        specifiers.push_back(spec.value());
+        auto spec{parseSpecifier()};
+        specifiers.push_back(spec);
         nextToken = peekToken();
     }
 
@@ -1179,11 +1229,13 @@ Types::DataType Parser::parseType(const std::vector<Token> &typeList)
 
     if (typeList.size() == 1)
     {
-        if (containsToken(typeList, TokenType::KEYWORD_VOID))
+        if (typeList[0].getType() == TokenType::IDENTIFIER)
+            return Types::makeStructType(std::get<std::string>(typeList[0].getValue()));
+        if (typeList[0].getType() == TokenType::KEYWORD_VOID)
             return Types::makeVoidType();
-        if (containsToken(typeList, TokenType::KEYWORD_DOUBLE))
+        if (typeList[0].getType() == TokenType::KEYWORD_DOUBLE)
             return Types::makeDoubleType();
-        if (containsToken(typeList, TokenType::KEYWORD_CHAR))
+        if (typeList[0].getType() == TokenType::KEYWORD_CHAR)
             return Types::makeCharType();
     }
 
@@ -1201,6 +1253,7 @@ Types::DataType Parser::parseType(const std::vector<Token> &typeList)
         containsToken(typeList, TokenType::KEYWORD_DOUBLE) ||
         containsToken(typeList, TokenType::KEYWORD_CHAR) ||
         containsToken(typeList, TokenType::KEYWORD_VOID) ||
+        containsToken(typeList, TokenType::IDENTIFIER) ||
         containsUnsignedAndSigned(typeList))
     {
         throw std::runtime_error("Invalid type specifier");
@@ -1224,10 +1277,10 @@ Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
 
     for (const auto &spec : specifierList)
     {
-        if (isTypeSpecifier(spec))
-            types.push_back(spec);
-        else
+        if (spec.getType() == TokenType::KEYWORD_EXTERN || spec.getType() == TokenType::KEYWORD_STATIC)
             storageClasses.push_back(spec);
+        else
+            types.push_back(spec);
     }
 
     Types::DataType type{parseType(types)};
@@ -1382,6 +1435,20 @@ std::shared_ptr<AST::Expression> Parser::parsePostfixHelper(std::shared_ptr<AST:
         auto subscriptExp = std::make_shared<AST::Subscript>(primaryExp, index);
         return parsePostfixHelper(subscriptExp);
     }
+    case TokenType::DOT:
+    {
+        takeToken();
+        auto member{parseIdentifier()};
+        auto memberExp = std::make_shared<AST::Dot>(primaryExp, member);
+        return parsePostfixHelper(memberExp);
+    }
+    case TokenType::ARROW:
+    {
+        takeToken();
+        auto member{parseIdentifier()};
+        auto arrowExp = std::make_shared<AST::Arrow>(primaryExp, member);
+        return parsePostfixHelper(arrowExp);
+    }
     default:
         return primaryExp;
     }
@@ -1453,9 +1520,8 @@ std::shared_ptr<AST::Expression> Parser::parsePrimaryExp()
     }
     default:
         raiseError("an expression", tokenTypeToString(nextToken->getType()));
+        return nullptr; // Ensure all control paths return a value
     }
-
-    return nullptr;
 }
 
 std::shared_ptr<AST::Expression>
@@ -1740,6 +1806,70 @@ std::vector<std::shared_ptr<AST::Expression>> Parser::parseArgList()
     return args;
 }
 
+std::shared_ptr<AST::StructDeclaration>
+Parser::parseStructDeclaration()
+{
+    expect(TokenType::KEYWORD_STRUCT);
+    auto tag{parseIdentifier()};
+
+    auto nextTok{takeToken()};
+    if (!nextTok.has_value())
+        throw std::runtime_error("Internal error: expected a structure body or semicolon");
+
+    std::vector<std::shared_ptr<AST::MemberDeclaration>> members{};
+    if (nextTok->getType() == TokenType::SEMICOLON)
+    {
+        members = {};
+    }
+    else if (nextTok->getType() == TokenType::OPEN_BRACE)
+    {
+        members = parseMemberList();
+        expect(TokenType::CLOSE_BRACE);
+        expect(TokenType::SEMICOLON);
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: shouldn't have called parse_structure_declaration here");
+    }
+
+    return std::make_shared<AST::StructDeclaration>(tag, members);
+}
+
+// parse a non-empty member list
+std::vector<std::shared_ptr<AST::MemberDeclaration>>
+Parser::parseMemberList()
+{
+    auto m = parseMember();
+    std::vector<std::shared_ptr<AST::MemberDeclaration>> members{m};
+
+    auto nextToken{peekToken()};
+    while (nextToken.has_value() && nextToken->getType() != TokenType::CLOSE_BRACE)
+    {
+        members.push_back(parseMember());
+        nextToken = peekToken();
+    }
+    return members;
+}
+
+std::shared_ptr<AST::MemberDeclaration>
+Parser::parseMember()
+{
+    auto specifiers{parseTypeSpecifierList()};
+    auto t{parseType(specifiers)};
+    auto memberDecl{parseDeclarator()};
+    if (std::holds_alternative<FunDeclarator>(*memberDecl))
+    {
+        throw ParseError("found function declarator in struct member list");
+    }
+    else
+    {
+        expect(TokenType::SEMICOLON);
+        auto [memberName, member_type, _] = processDeclarator(memberDecl, std::make_shared<Types::DataType>(t));
+
+        return std::make_shared<AST::MemberDeclaration>(memberName, member_type);
+    }
+}
+
 std::shared_ptr<AST::FunctionDeclaration>
 Parser::finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &funType, std::vector<std::string> params, std::optional<AST::StorageClass> storageClass)
 {
@@ -1801,8 +1931,8 @@ std::shared_ptr<AST::VariableDeclaration> Parser::parseVariableDeclaration()
     {
         return std::dynamic_pointer_cast<AST::VariableDeclaration>(decl);
     }
-    else
-        throw std::runtime_error("Expected variable declaration but found function declaration");
+    else // is FunDecl or StructDecl
+        throw std::runtime_error("Expected variable declaration but found function or structure declaration");
 }
 
 std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
@@ -1818,21 +1948,36 @@ std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
 
 std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
 {
-    auto specifiers{parseSpecifierList()};
-    auto [baseTyp, storageClass] = parseTypeAndStorageClass(specifiers);
-    auto declarator{parseDeclarator()};
-    auto [name, typ, params] = processDeclarator(declarator, std::make_shared<Types::DataType>(baseTyp));
+    // first figure out whether this is a struct declaration
+    auto toks{peekTokens(3)};
 
-    if (Types::isFunType(*typ))
+    if (toks[0].has_value() && toks[1].has_value() && toks[2].has_value() &&
+        toks[0]->getType() == TokenType::KEYWORD_STRUCT &&
+        toks[1]->getType() == TokenType::IDENTIFIER &&
+        (toks[2]->getType() == TokenType::OPEN_BRACE || toks[2]->getType() == TokenType::SEMICOLON))
     {
-        return finishParsingFunctionDeclaration(name, *typ, params, storageClass);
+        return parseStructDeclaration();
     }
     else
     {
-        if (params.empty())
-            return finishParsingVariableDeclaration(name, *typ, storageClass);
+        auto specifiers{parseSpecifierList()};
+        auto [baseTyp, storageClass] = parseTypeAndStorageClass(specifiers);
+
+        // parse until declarator, then call appropriate function to finish parsing
+        auto declarator{parseDeclarator()};
+        auto [name, typ, params] = processDeclarator(declarator, std::make_shared<Types::DataType>(baseTyp));
+
+        if (Types::isFunType(*typ))
+        {
+            return finishParsingFunctionDeclaration(name, *typ, params, storageClass);
+        }
         else
-            throw std::runtime_error("Internal error: declarator has parameters but object type");
+        {
+            if (params.empty())
+                return finishParsingVariableDeclaration(name, *typ, storageClass);
+            else
+                throw std::runtime_error("Internal error: declarator has parameters but object type");
+        }
     }
 }
 

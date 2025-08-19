@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include <map>
 
 #include "TypeChecker.h"
 #include "AST.h"
@@ -7,6 +8,7 @@
 #include "Const.h"
 #include "Initializers.h"
 #include "ConstConvert.h"
+#include "Rounding.h"
 
 /*
 A helper function that makes implicit conversions explicit
@@ -31,9 +33,15 @@ bool isLvalue(const std::shared_ptr<AST::Expression> &exp)
         AST::NodeType::Dereference,
         AST::NodeType::Subscript,
         AST::NodeType::String,
+        AST::NodeType::Arrow,
     };
 
-    return lvalueNodeTypes.count(exp->getType()) > 0;
+    if (lvalueNodeTypes.count(exp->getType()) > 0)
+        return true;
+    if (auto dotExp = std::dynamic_pointer_cast<AST::Dot>(exp))
+        return isLvalue(dotExp->getStruct());
+
+    return false;
 }
 
 bool isZeroInt(const std::shared_ptr<Constants::Const> &c)
@@ -105,7 +113,8 @@ std::shared_ptr<AST::Expression> convertByAssignment(const std::shared_ptr<AST::
         throw std::runtime_error("Cannot convert type for assignment");
 }
 
-Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &t2)
+Types::DataType
+TypeChecker::getCommonType(const Types::DataType &t1, const Types::DataType &t2)
 {
     auto type1 = Types::isCharacter(t1) ? Types::makeIntType() : t1;
     auto type2 = Types::isCharacter(t2) ? Types::makeIntType() : t2;
@@ -116,7 +125,7 @@ Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &
     if (Types::isDoubleType(type1) || Types::isDoubleType(type2))
         return Types::makeDoubleType();
 
-    if (Types::getSize(type1) == Types::getSize(type2))
+    if (Types::getSize(type1, _typeTable) == Types::getSize(type2, _typeTable))
     {
         if (Types::isSigned(type1))
             return type2;
@@ -124,7 +133,7 @@ Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &
             return type1;
     }
 
-    if (Types::getSize(type1) > Types::getSize(type2))
+    if (Types::getSize(type1, _typeTable) > Types::getSize(type2, _typeTable))
         return type1;
     else
         return type2;
@@ -157,6 +166,16 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
             inits.push_back(makeZeroInit(arrType->elemType));
         }
         auto compoundInit = std::make_shared<AST::CompoundInit>(inits);
+        compoundInit->setDataType(std::make_optional(type));
+        return compoundInit;
+    }
+    else if (auto strctType = Types::getStructType(type))
+    {
+        auto members = _typeTable.getMembers(strctType->tag);
+        auto zeroInits = std::vector<std::shared_ptr<AST::Initializer>>();
+        for (const auto &member : members)
+            zeroInits.push_back(makeZeroInit(member.memberType));
+        auto compoundInit = std::make_shared<AST::CompoundInit>(zeroInits);
         compoundInit->setDataType(std::make_optional(type));
         return compoundInit;
     }
@@ -194,11 +213,51 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
     }
 }
 
+void TypeChecker::validateStructDefinition(const std::shared_ptr<AST::StructDeclaration> &strctDef)
+{
+    // make sure it's not already in the type table
+    auto tag = strctDef->getTag();
+    auto members = strctDef->getMembers();
+
+    if (_typeTable.has(tag))
+    {
+        throw std::runtime_error("Structure " + tag + " was already declared!");
+    }
+    else
+    {
+        // check for duplicate member names
+        std::unordered_set<std::string> memberNames{};
+        for (const auto &member : members)
+        {
+            auto memberName = member->getMemberName();
+            auto memberType = member->getMemberType();
+            if (memberNames.count(memberName))
+                throw std::runtime_error("Duplicate declaration of member " + memberName + " in structure " + tag);
+            else
+                memberNames.insert(memberName);
+            // validate member type
+            validateType(memberType);
+            if (Types::isFunType(*memberType))
+            {
+                // this is redundant, we'd already reject this in parser
+                throw std::runtime_error("Can't declare structure member with function type");
+            }
+            else
+            {
+                if (Types::isComplete(*memberType, _typeTable))
+                    ; // Do nothing
+                else
+                    throw std::runtime_error("Cannot declare structure member with incomplete type");
+            }
+        }
+    }
+}
+
 void TypeChecker::validateType(const std::shared_ptr<Types::DataType> &type)
 {
     if (auto arrType = Types::getArrayType(*type))
     {
-        if (Types::isComplete(*arrType->elemType))
+        if (Types::isComplete(*arrType->elemType, _typeTable))
             validateType(arrType->elemType);
         else
             throw std::runtime_error("Array of incomplete type");
@@ -225,7 +284,8 @@ void TypeChecker::validateType(const std::shared_ptr<Types::DataType> &type)
         Types::isUIntType(*type) ||
         Types::isULongType(*type) ||
         Types::isDoubleType(*type) ||
-        Types::isVoidType(*type))
+        Types::isVoidType(*type) ||
+        Types::isStructType(*type))
     {
         return;
     }
@@ -245,11 +305,63 @@ TypeChecker::typeCheckScalar(const std::shared_ptr<AST::Expression> &exp)
         throw std::runtime_error("A scalar operand is required");
 }
 
+std::shared_ptr<AST::Dot> TypeChecker::typeCheckDotOperator(const std::shared_ptr<AST::Dot> &dot)
+{
+    auto typedStrct = typeCheckAndConvert(dot->getStruct());
+
+    if (auto strctType = Types::getStructType(typedStrct->getDataType().value()))
+    {
+        // typecheck_and_convert already validated that this structure type is complete
+        auto strctDef = _typeTable.find(strctType->tag);
+        auto membEntryIt = strctDef.members.find(dot->getMember());
+
+        if (membEntryIt == strctDef.members.end())
+            throw std::runtime_error("Struct type" + strctType->tag + " has no member " + dot->getMember());
+
+        auto member = membEntryIt->second;
+        auto memberType = *member.memberType;
+        auto dotExp = std::make_shared<AST::Dot>(typedStrct, dot->getMember());
+        dotExp->setDataType(std::make_optional(memberType));
+        return dotExp;
+    }
+    else
+    {
+        throw std::runtime_error("Dot operator can only be applied to expressions with structure type");
+    }
+}
+
+std::shared_ptr<AST::Arrow> TypeChecker::typeCheckArrowOperator(const std::shared_ptr<AST::Arrow> &arrow)
+{
+    auto typedStrctPtr = typeCheckAndConvert(arrow->getStruct());
+
+    auto ptrType = Types::getPointerType(typedStrctPtr->getDataType().value());
+    if (ptrType && Types::isStructType(*ptrType->referencedType))
+    {
+        auto strctType = Types::getStructType(*ptrType->referencedType);
+        // typecheck_and_convert already validated that this structure type is complete
+        auto strctDef = _typeTable.find(strctType->tag);
+        auto membEntryIt = strctDef.members.find(arrow->getMember());
+
+        if (membEntryIt == strctDef.members.end())
+            throw std::runtime_error("Struct type" + strctType->tag + " has incomplete or has no member " + arrow->getMember());
+
+        auto memberEntry = membEntryIt->second;
+        auto memberType = *memberEntry.memberType;
+        auto arrowExp = std::make_shared<AST::Arrow>(typedStrctPtr, arrow->getMember());
+        arrowExp->setDataType(std::make_optional(memberType));
+        return arrowExp;
+    }
+    else
+    {
+        throw std::runtime_error("Arrow operator can only be applied to pointers to structure");
+    }
+}
+
 std::shared_ptr<AST::SizeOfT>
 TypeChecker::typeCheckSizeOfT(const std::shared_ptr<AST::SizeOfT> &sizeOfT)
 {
     validateType(sizeOfT->getTypeName());
-    if (Types::isComplete(*sizeOfT->getTypeName()))
+    if (Types::isComplete(*sizeOfT->getTypeName(), _typeTable))
     {
         auto typeCheckedSizeOfT = std::make_shared<AST::SizeOfT>(sizeOfT->getTypeName());
         typeCheckedSizeOfT->setDataType(std::make_optional(Types::makeULongType()));
@@ -265,7 +377,7 @@ std::shared_ptr<AST::SizeOf>
 TypeChecker::typeCheckSizeOf(const std::shared_ptr<AST::SizeOf> &sizeOf)
 {
     auto typedInner = typeCheckExp(sizeOf->getInnerExp());
-    if (Types::isComplete(typedInner->getDataType().value()))
+    if (Types::isComplete(typedInner->getDataType().value(), _typeTable))
     {
         auto sizeOfExp = std::make_shared<AST::SizeOf>(typedInner);
         sizeOfExp->setDataType(std::make_optional(Types::makeULongType()));
@@ -344,6 +456,42 @@ TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_
                 auto typeCheckedCompoundInit = std::make_shared<AST::CompoundInit>(typeCheckedInits);
                 typeCheckedCompoundInit->setDataType(std::make_optional(targetType));
                 return typeCheckedCompoundInit;
+            }
+        }
+        else if (auto structType = Types::getStructType(targetType))
+        {
+            auto members = _typeTable.getMembers(structType->tag);
+            if (compoundInit->getInits().size() > members.size())
+            {
+                throw std::runtime_error("Too many values in structure initializer");
+            }
+            else
+            {
+                auto inits = compoundInit->getInits();
+                auto initializedMembers = std::vector<TypeTableNS::MemberEntry>(members.begin(), members.begin() + inits.size());
+                auto uninitializedMembers = std::vector<TypeTableNS::MemberEntry>(members.begin() + inits.size(), members.end());
+
+                auto typeCheckedMembers = std::vector<std::shared_ptr<AST::Initializer>>();
+
+                for (size_t i = 0; i < initializedMembers.size(); i++)
+                {
+                    auto memb = initializedMembers[i];
+                    auto init = inits[i];
+                    typeCheckedMembers.push_back(typeCheckInit(*memb.memberType, init));
+                }
+
+                auto padding = std::vector<std::shared_ptr<AST::Initializer>>();
+
+                for (size_t i = 0; i < uninitializedMembers.size(); i++)
+                {
+                    auto memb = uninitializedMembers[i];
+                    padding.push_back(makeZeroInit(memb.memberType));
+                }
+
+                typeCheckedMembers.insert(typeCheckedMembers.end(), padding.begin(), padding.end());
+                auto compoundInit = std::make_shared<AST::CompoundInit>(typeCheckedMembers);
+                compoundInit->setDataType(std::make_optional(targetType));
+                return compoundInit;
             }
         }
         else
@@ -442,7 +590,7 @@ std::shared_ptr<AST::Unary>
 TypeChecker::typeCheckIncrDecr(const std::shared_ptr<AST::Unary> &incrDecrUnary)
 {
     auto typedInner = typeCheckAndConvert(incrDecrUnary->getExp());
-    if (isLvalue(typedInner) && (Types::isArithmetic(typedInner->getDataType().value()) || Types::isCompletePointer(typedInner->getDataType().value())))
+    if (isLvalue(typedInner) && (Types::isArithmetic(typedInner->getDataType().value()) || Types::isCompletePointer(typedInner->getDataType().value(), _typeTable)))
     {
         auto typedExp = std::make_shared<AST::Unary>(incrDecrUnary->getOp(), typedInner);
         typedExp->setDataType(typedInner->getDataType());
@@ -480,14 +628,14 @@ TypeChecker::typeCheckAddition(const std::shared_ptr<AST::Binary> &addition)
         addExp->setDataType(std::make_optional(commonType));
         return addExp;
     }
-    else if (Types::isCompletePointer(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
+    else if (Types::isCompletePointer(typedE1->getDataType().value(), _typeTable) && Types::isInteger(typedE2->getDataType().value()))
     {
         auto convertedE2 = convertTo(typedE2, Types::makeLongType());
         auto addExp = std::make_shared<AST::Binary>(AST::BinaryOp::Add, typedE1, convertedE2);
         addExp->setDataType(typedE1->getDataType());
         return addExp;
     }
-    else if (Types::isCompletePointer(typedE2->getDataType().value()) && Types::isInteger(typedE1->getDataType().value()))
+    else if (Types::isCompletePointer(typedE2->getDataType().value(), _typeTable) && Types::isInteger(typedE1->getDataType().value()))
     {
         auto convertedE1 = convertTo(typedE1, Types::makeLongType());
         auto addExp = std::make_shared<AST::Binary>(AST::BinaryOp::Add, convertedE1, typedE2);
@@ -515,14 +663,14 @@ TypeChecker::typeCheckSubtraction(const std::shared_ptr<AST::Binary> &subtractio
         subExp->setDataType(std::make_optional(commonType));
         return subExp;
     }
-    else if (Types::isCompletePointer(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
+    else if (Types::isCompletePointer(typedE1->getDataType().value(), _typeTable) && Types::isInteger(typedE2->getDataType().value()))
     {
         auto convertedE2 = convertTo(typedE2, Types::makeLongType());
         auto subExp = std::make_shared<AST::Binary>(AST::BinaryOp::Subtract, typedE1, convertedE2);
         subExp->setDataType(typedE1->getDataType());
         return subExp;
     }
-    else if (Types::isCompletePointer(typedE1->getDataType().value()) && typedE1->getDataType().value() == typedE2->getDataType().value())
+    else if (Types::isCompletePointer(typedE1->getDataType().value(), _typeTable) && typedE1->getDataType().value() == typedE2->getDataType().value())
     {
         auto subExp = std::make_shared<AST::Binary>(AST::BinaryOp::Subtract, typedE1, typedE2);
         subExp->setDataType(std::make_optional(Types::makeLongType()));
@@ -713,13 +861,13 @@ TypeChecker::typeCheckSubscript(const std::shared_ptr<AST::Subscript> &subscript
     std::shared_ptr<AST::Expression> convertedE1;
     std::shared_ptr<AST::Expression> convertedE2;
 
-    if (Types::isCompletePointer(typedE1->getDataType().value()) && Types::isInteger(typedE2->getDataType().value()))
+    if (Types::isCompletePointer(typedE1->getDataType().value(), _typeTable) && Types::isInteger(typedE2->getDataType().value()))
     {
         ptrType = typedE1->getDataType().value();
         convertedE1 = typedE1;
         convertedE2 = convertTo(typedE2, Types::makeLongType());
     }
-    else if (Types::isCompletePointer(typedE2->getDataType().value()) && Types::isInteger(typedE1->getDataType().value()))
+    else if (Types::isCompletePointer(typedE2->getDataType().value(), _typeTable) && Types::isInteger(typedE1->getDataType().value()))
     {
         ptrType = typedE2->getDataType().value();
         convertedE1 = convertTo(typedE1, Types::makeLongType());
@@ -750,7 +898,11 @@ std::shared_ptr<AST::Expression>
 TypeChecker::typeCheckAndConvert(const std::shared_ptr<AST::Expression> &exp)
 {
     auto typedExp = typeCheckExp(exp);
-    if (auto arrType = Types::getArrayType(typedExp->getDataType().value()))
+    if (Types::isStructType(typedExp->getDataType().value()) && !Types::isComplete(typedExp->getDataType().value(), _typeTable))
+    {
+        throw std::runtime_error("Incomplete structure type not permitted here");
+    }
+    else if (auto arrType = Types::getArrayType(typedExp->getDataType().value()))
     {
         auto addrExp = std::make_shared<AST::AddrOf>(typedExp);
         addrExp->setDataType(std::make_optional(Types::makePointerType(arrType->elemType)));
@@ -813,6 +965,50 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
         throw std::runtime_error("String literal can only initialize char or decay to pointer");
     }
 
+    else if (Types::isStructType(*varType) && init->getType() == AST::NodeType::CompoundInit)
+    {
+        auto strctType = Types::getStructType(*varType);
+        auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init);
+
+        auto strctDef = _typeTable.find(strctType->tag);
+        auto members = _typeTable.getMembers(strctType->tag);
+
+        if (compoundInit->getInits().size() > members.size())
+        {
+            throw std::runtime_error("Too many elements in struct initializer");
+        }
+        else
+        {
+            int currentOffset = 0;
+            auto currentInits = std::vector<std::shared_ptr<Initializers::StaticInit>>{};
+
+            for (size_t i = 0; i < compoundInit->getInits().size(); i++)
+            {
+                auto init = compoundInit->getInits()[i];
+                auto memb = members[i];
+                auto padding = std::vector<std::shared_ptr<Initializers::StaticInit>>{};
+                if (currentOffset < memb.offset)
+                    padding.push_back(std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{static_cast<size_t>(memb.offset - currentOffset)}));
+
+                auto moreStaticInits = staticInitHelper(memb.memberType, init);
+                currentInits.insert(currentInits.end(), padding.begin(), padding.end());
+                currentInits.insert(currentInits.end(), moreStaticInits.begin(), moreStaticInits.end());
+
+                currentOffset = memb.offset + getSize(memb.memberType);
+            }
+
+            if (currentOffset < strctDef.size)
+                currentInits.push_back(std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{static_cast<size_t>(strctDef.size - currentOffset)}));
+
+            return currentInits;
+        }
+    }
+
+    else if (Types::isStructType(*varType) && init->getType() == AST::NodeType::SingleInit)
+    {
+        throw std::runtime_error("Can't initialize static structure from scalar value");
+    }
+
     else if (Types::isArrayType(*varType) && init->getType() == AST::NodeType::SingleInit)
     {
         throw std::runtime_error("Can't initialize array from scalar value");
@@ -829,7 +1025,7 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
             return constExp && isZeroInt(constExp->getConst());
         }())
     {
-        return Initializers::zero(*varType);
+        return Initializers::zero(*varType, _typeTable);
     }
     else if (Types::isPointerType(*varType))
     {
@@ -839,39 +1035,51 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
     {
         if (auto constExp = std::dynamic_pointer_cast<AST::Constant>(singleInit->getExp()))
         {
-            std::shared_ptr<Initializers::StaticInit> initVal = nullptr;
-            auto convertedC = ConstConvert::convert(*varType, constExp->getConst());
+            if (Types::isArithmetic(*varType))
+            {
+                std::shared_ptr<Initializers::StaticInit> initVal = nullptr;
+                auto convertedC = ConstConvert::convert(*varType, constExp->getConst());
 
-            if (auto constChar = Constants::getConstChar(*convertedC))
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::CharInit{constChar->val});
-            else if (auto constInt = Constants::getConstInt(*convertedC))
-            {
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::IntInit{constInt->val});
-            }
-            else if (auto constLong = Constants::getConstLong(*convertedC))
-            {
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::LongInit{constLong->val});
-            }
-            else if (auto constUChar = Constants::getConstUChar(*convertedC))
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::UCharInit{constUChar->val});
-            else if (auto constUInt = Constants::getConstUInt(*convertedC))
-            {
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::UIntInit{constUInt->val});
-            }
-            else if (auto constULong = Constants::getConstULong(*convertedC))
-            {
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::ULongInit{constULong->val});
-            }
-            else if (auto constDouble = Constants::getConstDouble(*convertedC))
-            {
-                initVal = std::make_shared<Initializers::StaticInit>(Initializers::DoubleInit{constDouble->val});
+                if (auto constChar = Constants::getConstChar(*convertedC))
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::CharInit{constChar->val});
+                else if (auto constInt = Constants::getConstInt(*convertedC))
+                {
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::IntInit{constInt->val});
+                }
+                else if (auto constLong = Constants::getConstLong(*convertedC))
+                {
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::LongInit{constLong->val});
+                }
+                else if (auto constUChar = Constants::getConstUChar(*convertedC))
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::UCharInit{constUChar->val});
+                else if (auto constUInt = Constants::getConstUInt(*convertedC))
+                {
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::UIntInit{constUInt->val});
+                }
+                else if (auto constULong = Constants::getConstULong(*convertedC))
+                {
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::ULongInit{constULong->val});
+                }
+                else if (auto constDouble = Constants::getConstDouble(*convertedC))
+                {
+                    initVal = std::make_shared<Initializers::StaticInit>(Initializers::DoubleInit{constDouble->val});
+                }
+                else
+                {
+                    throw std::runtime_error("invalid static initializer");
+                }
+
+                return {initVal};
             }
             else
             {
-                throw std::runtime_error("invalid static initializer");
+                /*
+                    we already dealt with pointers (can only initialize w/ null constant or string literal
+                    and already rejected any declarations with type void and any arrays or structs
+                    initialized with scalar expressions
+                */
+                throw std::runtime_error("Internal error: should have already rejected initializer with type");
             }
-
-            return {initVal};
         }
         else
         {
@@ -898,7 +1106,7 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
             }
             else if (n > 0)
             {
-                auto zeroBytes = (size_t)(Types::getSize(*arrType->elemType) * n);
+                auto zeroBytes = (size_t)(Types::getSize(*arrType->elemType, _typeTable) * n);
                 padding.push_back(std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{zeroBytes}));
             }
             else
@@ -996,7 +1204,7 @@ TypeChecker::typeCheckCompoundAssignment(const std::shared_ptr<AST::CompoundAssi
         if (
             (compoundAssign->getOp() == AST::BinaryOp::Add || compoundAssign->getOp() == AST::BinaryOp::Subtract) &&
             !(Types::isArithmetic(lhsType) && Types::isArithmetic(rhsType)) &&
-            !(Types::isCompletePointer(lhsType) && Types::isInteger(rhsType)))
+            !(Types::isCompletePointer(lhsType, _typeTable) && Types::isInteger(rhsType)))
         {
             throw std::runtime_error("Invalid types for +=/-=");
         }
@@ -1045,7 +1253,7 @@ std::shared_ptr<AST::PostfixDecr>
 TypeChecker::typeCheckPostfixDecr(const std::shared_ptr<AST::PostfixDecr> &postfixDecr)
 {
     auto typedExp = typeCheckAndConvert(postfixDecr->getExp());
-    if (isLvalue(typedExp) && (Types::isArithmetic(typedExp->getDataType().value()) || Types::isCompletePointer(typedExp->getDataType().value())))
+    if (isLvalue(typedExp) && (Types::isArithmetic(typedExp->getDataType().value()) || Types::isCompletePointer(typedExp->getDataType().value(), _typeTable)))
     {
         // Result has same value as e; no conversions required.
         // We need to convert integer "1" to their common type, but that will always be the same type as e, at least w/ types we've added so far
@@ -1064,7 +1272,7 @@ std::shared_ptr<AST::PostfixIncr>
 TypeChecker::typeCheckPostfixIncr(const std::shared_ptr<AST::PostfixIncr> &postfixIncr)
 {
     auto typedExp = typeCheckAndConvert(postfixIncr->getExp());
-    if (isLvalue(typedExp) && (Types::isArithmetic(typedExp->getDataType().value()) || Types::isCompletePointer(typedExp->getDataType().value())))
+    if (isLvalue(typedExp) && (Types::isArithmetic(typedExp->getDataType().value()) || Types::isCompletePointer(typedExp->getDataType().value(), _typeTable)))
     {
         // Same deal as postfix decrement
         auto resultType = typedExp->getDataType().value();
@@ -1093,6 +1301,10 @@ TypeChecker::typeCheckConditional(const std::shared_ptr<AST::Conditional> &condi
         resultType = getCommonPointerType(typedThen, typedElse);
     else if (Types::isArithmetic(typedThen->getDataType().value()) && Types::isArithmetic(typedElse->getDataType().value()))
         resultType = getCommonType(typedThen->getDataType().value(), typedElse->getDataType().value());
+    else if (typedThen->getDataType().value() == typedElse->getDataType().value())
+        // only other option is structure types, this is fine if they're identical
+        // (typecheck_and_convert already validated that they're complete)
+        resultType = typedThen->getDataType().value();
     else
         throw std::runtime_error("Invalid operands for conditional");
 
@@ -1247,6 +1459,14 @@ TypeChecker::typeCheckExp(const std::shared_ptr<AST::Expression> &exp)
     {
         return typeCheckSizeOf(std::dynamic_pointer_cast<AST::SizeOf>(exp));
     }
+    case AST::NodeType::Dot:
+    {
+        return typeCheckDotOperator(std::dynamic_pointer_cast<AST::Dot>(exp));
+    }
+    case AST::NodeType::Arrow:
+    {
+        return typeCheckArrowOperator(std::dynamic_pointer_cast<AST::Arrow>(exp));
+    }
     default:
         throw std::runtime_error("Internal Error: Unknown type of expression!");
     }
@@ -1271,6 +1491,7 @@ TypeChecker::typeCheckBlockItem(const std::shared_ptr<AST::BlockItem> &blkItem, 
     {
     case AST::NodeType::VariableDeclaration:
     case AST::NodeType::FunctionDeclaration:
+    case AST::NodeType::StructDeclaration:
     {
         return typeCheckLocalDecl(std::dynamic_pointer_cast<AST::Declaration>(blkItem));
     }
@@ -1449,6 +1670,45 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     }
 }
 
+std::shared_ptr<AST::StructDeclaration>
+TypeChecker::typeCheckStructDecl(const std::shared_ptr<AST::StructDeclaration> &strctDecl)
+{
+    auto tag = strctDecl->getTag();
+    auto members = strctDecl->getMembers();
+
+    if (members.empty())
+    {
+        // ignore forward declarations
+        return strctDecl;
+    }
+    else
+    {
+        // validate the definition, then add it to the type table
+        validateStructDefinition(strctDecl);
+
+        std::map<std::string, TypeTableNS::MemberEntry> memberEntries{};
+        int structSize = 0;
+        int structAlignment = 0;
+
+        for (auto &member : members)
+        {
+            auto memberAlignment = Types::getAlignment(member->getMemberType(), _typeTable);
+            auto memberOffset = Rounding::roundAwayFromZero(memberAlignment, structSize);
+            auto m = TypeTableNS::MemberEntry(member->getMemberType(), memberOffset);
+            memberEntries[member->getMemberName()] = m;
+            structAlignment = std::max(structAlignment, memberAlignment);
+            structSize = memberOffset + Types::getSize(member->getMemberType(), _typeTable);
+        }
+
+        auto size = Rounding::roundAwayFromZero(structAlignment, structSize);
+        auto structDef = TypeTableNS::StructEntry(structAlignment, size, memberEntries);
+
+        _typeTable.addStructDefinition(tag, structDef);
+
+        return strctDecl;
+    }
+}
+
 std::shared_ptr<AST::VariableDeclaration>
 TypeChecker::typeCheckLocalVarDecl(const std::shared_ptr<AST::VariableDeclaration> &varDecl)
 {
@@ -1456,6 +1716,12 @@ TypeChecker::typeCheckLocalVarDecl(const std::shared_ptr<AST::VariableDeclaratio
         throw std::runtime_error("No void declarations");
     else
         validateType(std::make_shared<Types::DataType>(varDecl->getVarType()));
+
+    if ((!varDecl->getOptStorageClass().has_value() || varDecl->getOptStorageClass().value() != AST::StorageClass::Extern) && !Types::isComplete(varDecl->getVarType(), _typeTable))
+    {
+        // can't define a variable with an incomplete type
+        throw std::runtime_error("Cannot define a variable with an incomplete type");
+    }
 
     if (varDecl->getOptStorageClass().has_value())
     {
@@ -1483,7 +1749,7 @@ TypeChecker::typeCheckLocalVarDecl(const std::shared_ptr<AST::VariableDeclaratio
         }
         case AST::StorageClass::Static:
         {
-            auto zeroInit = Symbols::Initial(Initializers::zero(varDecl->getVarType()));
+            auto zeroInit = Symbols::Initial(Initializers::zero(varDecl->getVarType(), _typeTable));
 
             Symbols::InitialValue staticInit =
                 varDecl->getOptInit().has_value()
@@ -1519,6 +1785,8 @@ TypeChecker::typeCheckLocalDecl(const std::shared_ptr<AST::Declaration> &decl)
         return typeCheckLocalVarDecl(varDecl);
     else if (auto funDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
         return typeCheckFunDecl(funDecl);
+    else if (auto strctDecl = std::dynamic_pointer_cast<AST::StructDeclaration>(decl))
+        return typeCheckStructDecl(strctDecl);
     else
         throw std::runtime_error("Internal Error: Unknown type of declaration!");
 }
@@ -1540,6 +1808,12 @@ TypeChecker::typeCheckFileScopeVarDecl(const std::shared_ptr<AST::VariableDeclar
         varDecl->getOptInit().has_value()
             ? toStaticInit(varDecl->getVarType(), varDecl->getOptInit().value())
             : defaultInit;
+
+    if (!(Types::isComplete(varDecl->getVarType(), _typeTable) || Symbols::isNoInitializer(staticInit)))
+    {
+        // note: some compilers permit tentative definition with incomplete type, if it's completed later in the file. we don't.
+        throw std::runtime_error("Can't define a variable with an incomplete type");
+    }
 
     bool currGlobal = !varDecl->getOptStorageClass().has_value() || (varDecl->getOptStorageClass().has_value() && varDecl->getOptStorageClass().value() != AST::StorageClass::Static);
 
@@ -1611,6 +1885,22 @@ TypeChecker::typeCheckFunDecl(const std::shared_ptr<AST::FunctionDeclaration> &f
     }
 
     bool hasBody = funDecl->getOptBody().has_value();
+
+    if (hasBody && !(
+                       (Types::isVoidType(*_returnType) || Types::isComplete(*_returnType, _typeTable)) &&
+                       [&]()
+                       {
+                           for (const auto &paramType : _paramTypes)
+                           {
+                               if (!Types::isComplete(*paramType, _typeTable))
+                                   return false;
+                           }
+                           return true;
+                       }()))
+    {
+        throw std::runtime_error("Can't define a function with incomplete return type or parameter type");
+    }
+
     bool global = !funDecl->getOptStorageClass().has_value() || (funDecl->getOptStorageClass().has_value() && funDecl->getOptStorageClass().value() != AST::StorageClass::Static);
     bool alreadyDefined = hasBody;
 
@@ -1662,6 +1952,8 @@ TypeChecker::typeCheckGlobalDecl(const std::shared_ptr<AST::Declaration> &decl)
         return typeCheckFunDecl(funDecl);
     else if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
         return typeCheckFileScopeVarDecl(varDecl);
+    else if (auto strctDecl = std::dynamic_pointer_cast<AST::StructDeclaration>(decl))
+        return typeCheckStructDecl(strctDecl);
     else
         throw std::runtime_error("Internal Error: Unknown type of declaration!");
 }

@@ -39,6 +39,7 @@ enum class TokenType
     KEYWORD_STATIC,
     KEYWORD_EXTERN,
     KEYWORD_SIZEOF,
+    KEYWORD_STRUCT,
 
     // Punctuation
     OPEN_PAREN,
@@ -86,6 +87,8 @@ enum class TokenType
     DOUBLE_RIGHT_BRACKET_EQUAL,
     QUESTION_MARK,
     COLON,
+    DOT,
+    ARROW,
 };
 
 using TokenValue = std::variant<std::string, uint64_t, long double>;

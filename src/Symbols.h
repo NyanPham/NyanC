@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <optional>
 #include <stdexcept>
+#include <vector>
+#include <memory>
 
 #include "Types.h"
 #include "Initializers.h"
@@ -18,85 +20,38 @@ namespace Symbols
     */
     struct Tentative
     {
-        std::string toString() const
-        {
-            return "Tentative";
-        }
+        std::string toString() const;
     };
 
     struct Initial
     {
         std::vector<std::shared_ptr<Initializers::StaticInit>> staticInits;
 
-        Initial(std::vector<std::shared_ptr<Initializers::StaticInit>> staticInits) : staticInits{staticInits} {}
+        Initial(std::vector<std::shared_ptr<Initializers::StaticInit>> staticInits);
 
-        std::string toString() const
-        {
-            std::string result = "Initial([";
-            for (size_t i = 0; i < staticInits.size(); ++i)
-            {
-                result += Initializers::toString(*staticInits[i]);
-                if (i + 1 < staticInits.size())
-                    result += ", ";
-            }
-            result += "])";
-            return result;
-        }
+        std::string toString() const;
     };
 
     struct NoInitializer
     {
-        std::string toString() const
-        {
-            return "NoInitializer";
-        }
+        std::string toString() const;
     };
 
     using InitialValue = std::variant<Tentative, Initial, NoInitializer>;
 
-    inline std::string initialValueToString(const InitialValue &initValue)
-    {
-        return std::visit(
-            [](const auto &t)
-            {
-                return t.toString();
-            },
-            initValue);
-    }
+    std::string initialValueToString(const InitialValue &initValue);
 
-    inline InitialValue makeTentative() { return Tentative{}; }
-    inline InitialValue makeInitial(const std::vector<std::shared_ptr<Initializers::StaticInit>> &inits) { return Initial{inits}; }
-    inline InitialValue makeNoInitializer() { return NoInitializer(); }
+    InitialValue makeTentative();
+    InitialValue makeInitial(const std::vector<std::shared_ptr<Initializers::StaticInit>> &inits);
+    InitialValue makeNoInitializer();
 
-    inline std::optional<Tentative> getTentative(const InitialValue &initValue)
-    {
-        return getVariant<Tentative>(initValue);
-    }
+    std::optional<Tentative> getTentative(const InitialValue &initValue);
+    std::optional<Initial> getInitial(const InitialValue &initValue);
+    std::optional<NoInitializer> getNoInitializer(const InitialValue &initValue);
 
-    inline std::optional<Initial> getInitial(const InitialValue &initValue)
-    {
-        return getVariant<Initial>(initValue);
-    }
-
-    inline std::optional<NoInitializer> getNoInitializer(const InitialValue &initValue)
-    {
-        return getVariant<NoInitializer>(initValue);
-    }
-
-    inline bool isTentative(const InitialValue &initValue)
-    {
-        return isVariant<Tentative>(initValue);
-    }
-
-    inline bool isInitial(const InitialValue &initValue)
-    {
-        return isVariant<Initial>(initValue);
-    }
-
-    inline bool isNoInitializer(const InitialValue &initValue)
-    {
-        return isVariant<NoInitializer>(initValue);
-    }
+    bool isTentative(const InitialValue &initValue);
+    bool isInitial(const InitialValue &initValue);
+    bool isNoInitializer(const InitialValue &initValue);
 
     /*
     type identifier_attrs =
@@ -111,13 +66,10 @@ namespace Symbols
         bool defined;
         bool global;
 
-        FunAttr() = default;
-        FunAttr(bool defined, bool global)
-            : defined{defined}, global{global}
-        {
-        }
+        FunAttr();
+        FunAttr(bool defined, bool global);
 
-        std::string toString() const { return "FunAttr(defined=" + std::to_string(defined) + ", global=" + std::to_string(global) + ")"; }
+        std::string toString() const;
     };
 
     struct StaticAttr
@@ -125,105 +77,54 @@ namespace Symbols
         InitialValue init;
         bool global;
 
-        StaticAttr() = default;
-        StaticAttr(const InitialValue &init, bool global)
-            : init{init}, global{global}
-        {
-        }
+        StaticAttr();
+        StaticAttr(const InitialValue &init, bool global);
 
-        std::string toString() const { return "StaticAttr(init=" + initialValueToString(init) + ", global=" + std::to_string(global) + ")"; }
+        std::string toString() const;
     };
 
     struct ConstAttr
     {
         std::shared_ptr<Initializers::StaticInit> init;
 
-        ConstAttr() = default;
-        ConstAttr(const std::shared_ptr<Initializers::StaticInit> &init) : init{init} {}
-        std::string toString() const { return "ConstAttr(init=" + Initializers::toString(*init) + ")"; }
+        ConstAttr();
+        ConstAttr(const std::shared_ptr<Initializers::StaticInit> &init);
+
+        std::string toString() const;
     };
 
     struct LocalAttr
     {
-        LocalAttr() = default;
-        std::string toString() const { return "LocalAttr()"; }
+        LocalAttr();
+        std::string toString() const;
     };
 
     using IdentifierAttrs = std::variant<FunAttr, StaticAttr, ConstAttr, LocalAttr>;
 
-    inline std::string identifierAttrsToString(const IdentifierAttrs &attrs)
-    {
-        return std::visit([](const auto &t)
-                          { return t.toString(); }, attrs);
-    }
+    std::string identifierAttrsToString(const IdentifierAttrs &attrs);
 
-    inline IdentifierAttrs makeFunAttr(bool defined, bool global) { return FunAttr{defined, global}; }
-    inline IdentifierAttrs makeStaticAttr(const InitialValue &init, bool global) { return StaticAttr{init, global}; }
-    inline IdentifierAttrs makeConstAttr(const std::shared_ptr<Initializers::StaticInit> &init) { return ConstAttr{init}; }
-    inline IdentifierAttrs makeLocalAttr() { return LocalAttr{}; }
+    IdentifierAttrs makeFunAttr(bool defined, bool global);
+    IdentifierAttrs makeStaticAttr(const InitialValue &init, bool global);
+    IdentifierAttrs makeConstAttr(const std::shared_ptr<Initializers::StaticInit> &init);
+    IdentifierAttrs makeLocalAttr();
 
-    inline std::optional<FunAttr> getFunAttr(const IdentifierAttrs &attrs)
-    {
-        return getVariant<FunAttr>(attrs);
-    }
+    std::optional<FunAttr> getFunAttr(const IdentifierAttrs &attrs);
+    std::optional<StaticAttr> getStaticAttr(const IdentifierAttrs &attrs);
+    std::optional<ConstAttr> getConstAttr(const IdentifierAttrs &attrs);
+    std::optional<LocalAttr> getLocalAttr(const IdentifierAttrs &attrs);
 
-    inline std::optional<StaticAttr> getStaticAttr(const IdentifierAttrs &attrs)
-    {
-        return getVariant<StaticAttr>(attrs);
-    }
+    bool isFunAttr(const IdentifierAttrs &attrs);
+    bool isStaticAttr(const IdentifierAttrs &attrs);
+    bool isConstAttr(const IdentifierAttrs &attrs);
+    bool isLocalAttr(const IdentifierAttrs &attrs);
 
-    inline std::optional<ConstAttr> getConstAttr(const IdentifierAttrs &attrs)
-    {
-        return getVariant<ConstAttr>(attrs);
-    }
-
-    inline std::optional<LocalAttr> getLocalAttr(const IdentifierAttrs &attrs)
-    {
-        return getVariant<LocalAttr>(attrs);
-    }
-
-    inline bool isFunAttr(const IdentifierAttrs &attrs)
-    {
-        return isVariant<FunAttr>(attrs);
-    }
-
-    inline bool isStaticAttr(const IdentifierAttrs &attrs)
-    {
-        return isVariant<StaticAttr>(attrs);
-    }
-
-    inline bool isConstAttr(const IdentifierAttrs &attrs)
-    {
-        return isVariant<ConstAttr>(attrs);
-    }
-
-    inline bool isLocalAttr(const IdentifierAttrs &attrs)
-    {
-        return isVariant<LocalAttr>(attrs);
-    }
-
-    /*
-    type entry = {
-        t: Types.t,
-        attrs: identifier_attrs
-    }
-    I call it Symbol in my implementation to be relevant with the name SymbolTable
-    */
     struct Symbol
     {
         Types::DataType type;
         IdentifierAttrs attrs;
 
-        std::string toString() const
-        {
-            return "Symbol(type=" + Types::dataTypeToString(type) +
-                   ", attrs=" + identifierAttrsToString(attrs) + ")";
-        }
+        std::string toString() const;
     };
-
-    /*
-    Symbol table and helper functions
-    */
 
     class SymbolTable
     {
@@ -231,89 +132,15 @@ namespace Symbols
         std::unordered_map<std::string, Symbol> symbols;
 
     public:
-        void addStaticVar(const std::string &name, const Types::DataType &type, const InitialValue &init, bool global)
-        {
-            symbols[name] = Symbol{
-                .type = type,
-                .attrs = makeStaticAttr(init, global),
-            };
-        }
-
-        void addAutomaticVar(const std::string &name, const Types::DataType &type)
-        {
-            symbols[name] = Symbol{
-                .type = type,
-                .attrs = makeLocalAttr(),
-            };
-        }
-
-        void addFunction(const std::string &name, const Types::DataType &type, bool isDefined, bool global)
-        {
-            symbols[name] = Symbol{
-                .type = type,
-                .attrs = makeFunAttr(isDefined, global),
-            };
-        }
-
-        std::string addString(const std::string &str)
-        {
-            auto strId = UniqueIds::makeNamedTemporary("string");
-            auto type = Types::makeArrayType(
-                std::make_shared<Types::DataType>(Types::makeCharType()),
-                str.size() + 1);
-
-            symbols[strId] = Symbol{
-                .type = type,
-                .attrs = makeConstAttr(std::make_shared<Initializers::StaticInit>(Initializers::StringInit(str, true))),
-            };
-
-            return strId;
-        }
-
-        bool isGlobal(const std::string &name)
-        {
-            auto attrs = get(name).attrs;
-
-            return std::visit([](const auto &attr) -> bool
-                              {
-                if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, LocalAttr> ||
-                              std::is_same_v<std::decay_t<decltype(attr)>, ConstAttr>) {
-                    return false;
-                } else if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, StaticAttr>) {
-                    return attr.global;
-                } else if constexpr (std::is_same_v<std::decay_t<decltype(attr)>, FunAttr>) {
-                    return attr.global;
-                }
-                throw std::runtime_error("Unexpected attribute type"); }, attrs);
-        }
-
-        std::optional<Symbol> getOpt(const std::string &name) const
-        {
-            auto it = symbols.find(name);
-            if (it != symbols.end())
-                return it->second;
-            return std::nullopt;
-        }
-
-        Symbol get(const std::string &name) const
-        {
-            auto optSymbol = getOpt(name);
-
-            if (!optSymbol.has_value())
-                throw std::runtime_error("Symbol not found: " + name);
-
-            return optSymbol.value();
-        }
-
-        bool exists(const std::string &name) const
-        {
-            return getOpt(name).has_value();
-        }
-
-        const std::unordered_map<std::string, Symbol> &getAllSymbols() const
-        {
-            return symbols;
-        }
+        void addStaticVar(const std::string &name, const Types::DataType &type, const InitialValue &init, bool global);
+        void addAutomaticVar(const std::string &name, const Types::DataType &type);
+        void addFunction(const std::string &name, const Types::DataType &type, bool isDefined, bool global);
+        std::string addString(const std::string &str);
+        bool isGlobal(const std::string &name);
+        std::optional<Symbol> getOpt(const std::string &name) const;
+        Symbol get(const std::string &name) const;
+        bool exists(const std::string &name) const;
+        const std::unordered_map<std::string, Symbol> &getAllSymbols() const;
     };
 }
 

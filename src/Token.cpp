@@ -77,6 +77,8 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_EXTERN";
     case TokenType::KEYWORD_SIZEOF:
         return "KEYWORD_SIZEOF";
+    case TokenType::KEYWORD_STRUCT:
+        return "KEYWORD_STRUCT";
     case TokenType::OPEN_PAREN:
         return "OPEN_PAREN";
     case TokenType::CLOSE_PAREN:
@@ -163,6 +165,10 @@ std::string tokenTypeToString(TokenType type)
         return "QUESTION_MARK";
     case TokenType::COLON:
         return "COLON";
+    case TokenType::DOT:
+        return "DOT";
+    case TokenType::ARROW:
+        return "ARROW";
     default:
         return "UNKNOWN";
     }

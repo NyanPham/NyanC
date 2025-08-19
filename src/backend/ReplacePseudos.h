@@ -24,7 +24,7 @@ public:
     ReplacePseudos(AssemblySymbols::AsmSymbolTable &asmSymbolTable) : _asmSymbolTable{asmSymbolTable} {};
 
     std::pair<int, ReplacementState> calculateOffset(const std::string &name, ReplacementState &state);
-    ReplacementState createInitState();
+    ReplacementState createInitState(int statingOffset = 0);
     ReplaceOperandPair replaceOperand(const std::shared_ptr<Assembly::Operand> &operand, ReplacementState &state);
     ReplaceInstPair replacePseudosInInstruction(const std::shared_ptr<Assembly::Instruction> &inst, ReplacementState &state);
     std::shared_ptr<Assembly::TopLevel> replacePseudosInTopLevel(const std::shared_ptr<Assembly::TopLevel> &topLevel);

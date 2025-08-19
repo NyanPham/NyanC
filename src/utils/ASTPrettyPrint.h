@@ -137,6 +137,18 @@ public:
         case AST::NodeType::SizeOf:
             visitSizeOf(static_cast<const AST::SizeOf &>(node), indent);
             break;
+        case AST::NodeType::StructDeclaration:
+            visitStructDeclaration(static_cast<const AST::StructDeclaration &>(node), indent);
+            break;
+        case AST::NodeType::MemberDeclaration:
+            visitMemberDeclaration(static_cast<const AST::MemberDeclaration &>(node), indent);
+            break;
+        case AST::NodeType::Dot:
+            visitDot(static_cast<const AST::Dot &>(node), indent);
+            break;
+        case AST::NodeType::Arrow:
+            visitArrow(static_cast<const AST::Arrow &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -1096,6 +1108,71 @@ private:
         {
             std::cout << "unchecked";
         }
+        std::cout << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitStructDeclaration(const AST::StructDeclaration &strct, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "StructDeclaration(\n";
+        increaseIndent();
+        std::cout << getIndent() << "tag=\"" << strct.getTag() << "\",\n";
+        std::cout << getIndent() << "members=[\n";
+        increaseIndent();
+        for (const auto &member : strct.getMembers())
+        {
+            visit(*member, true);
+        }
+        decreaseIndent();
+        std::cout << getIndent() << "]\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitMemberDeclaration(const AST::MemberDeclaration &member, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "MemberDeclaration(";
+        std::cout << "name=\"" << member.getMemberName() << "\", ";
+        std::cout << "type=" << Types::dataTypeToString(*member.getMemberType());
+        std::cout << "),\n";
+    }
+
+    void visitDot(const AST::Dot &dot, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Dot(\n";
+        increaseIndent();
+        std::cout << getIndent() << "struct=";
+        visit(*dot.getStruct(), false);
+        std::cout << getIndent() << "member=\"" << dot.getMember() << "\"";
+        if (dot.getDataType().has_value())
+            std::cout << ", dataType=" << Types::dataTypeToString(dot.getDataType().value());
+        else
+            std::cout << ", dataType=unchecked";
+        std::cout << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitArrow(const AST::Arrow &arrow, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Arrow(\n";
+        increaseIndent();
+        std::cout << getIndent() << "struct=";
+        visit(*arrow.getStruct(), false);
+        std::cout << getIndent() << "member=\"" << arrow.getMember() << "\"";
+        if (arrow.getDataType().has_value())
+            std::cout << ", dataType=" << Types::dataTypeToString(arrow.getDataType().value());
+        else
+            std::cout << ", dataType=unchecked";
         std::cout << "\n";
         decreaseIndent();
         std::cout << getIndent() << "),\n";

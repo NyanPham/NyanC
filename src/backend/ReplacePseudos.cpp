@@ -8,10 +8,10 @@
 #include "../Rounding.h"
 
 ReplacementState
-ReplacePseudos::createInitState()
+ReplacePseudos::createInitState(int startingOffset)
 {
     return {
-        currOffset : 0,
+        currOffset : startingOffset,
         offsetMap : {},
     };
 }
@@ -44,7 +44,7 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
         if (_asmSymbolTable.isStatic(pseudo->getName()))
         {
             return {
-                std::make_shared<Assembly::Data>(pseudo->getName()),
+                std::make_shared<Assembly::Data>(pseudo->getName(), 0),
                 state,
             };
         }
@@ -71,19 +71,16 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
     }
     else if (auto pseudoMem = std::dynamic_pointer_cast<Assembly::PseudoMem>(operand))
     {
-        if (_asmSymbolTable.isStatic(pseudoMem->getName()))
+        if (_asmSymbolTable.isStatic(pseudoMem->getBase()))
         {
-            if (pseudoMem->getOffset() == 0)
-                return {
-                    std::make_shared<Assembly::Data>(pseudoMem->getName()),
-                    state,
-                };
-            else
-                throw std::runtime_error("Internal error: shouldn't have static variables with non-zero offset at this point");
+            return {
+                std::make_shared<Assembly::Data>(pseudoMem->getBase(), pseudoMem->getOffset()),
+                state,
+            };
         }
         else
         {
-            auto it = state.offsetMap.find(pseudoMem->getName());
+            auto it = state.offsetMap.find(pseudoMem->getBase());
             if (it != state.offsetMap.end())
             {
                 // We've already assigned this operand a stack slot
@@ -95,7 +92,7 @@ ReplacePseudos::replaceOperand(const std::shared_ptr<Assembly::Operand> &operand
             else
             {
                 // assign operand name a stack slot, and add its offset to the offset w/tin operand.name to get new operand
-                auto [newOffset, newState] = calculateOffset(pseudoMem->getName(), state);
+                auto [newOffset, newState] = calculateOffset(pseudoMem->getBase(), state);
                 return {
                     std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), newOffset + pseudoMem->getOffset()),
                     newState,
@@ -311,7 +308,14 @@ ReplacePseudos::replacePseudosInTopLevel(const std::shared_ptr<Assembly::TopLeve
 {
     if (auto func = std::dynamic_pointer_cast<Assembly::Function>(topLevel))
     {
-        auto currState{createInitState()};
+        // should we stick returns_on_stack in the AST or symbol table?
+        int startingOffset = 0;
+        if (_asmSymbolTable.returnsOnStack(func->getName()))
+        {
+            startingOffset = -8;
+        }
+
+        auto currState{createInitState(startingOffset)};
         std::vector<std::shared_ptr<Assembly::Instruction>> fixedInstructions{};
 
         for (auto &inst : func->getInstructions())

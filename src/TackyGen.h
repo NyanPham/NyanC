@@ -12,18 +12,22 @@
 
 struct PlainOperand;
 struct DereferencedPointer;
-using ExpResult = std::variant<PlainOperand, DereferencedPointer>;
+struct SubObject;
+using ExpResult = std::variant<PlainOperand, DereferencedPointer, SubObject>;
 
 class TackyGen
 {
 public:
-    TackyGen(Symbols::SymbolTable &symbolTable) : _symbolTable(symbolTable) {};
+    TackyGen(Symbols::SymbolTable &symbolTable, TypeTableNS::TypeTable &typeTable) : _symbolTable(symbolTable), _typeTable{typeTable} {};
 
+    int getMemberOffset(const std::string &member, const Types::DataType &type);
+    int getMemberPointerOffset(const std::string &member, const Types::DataType &type);
     std::shared_ptr<TACKY::Constant> evalSize(const Types::DataType &type);
     std::string createTmp(const std::optional<Types::DataType> &type);
     std::shared_ptr<Constants::Const> mkConst(const std::optional<Types::DataType> &type, int64_t i);
     std::shared_ptr<AST::Constant> mkAstConst(const std::optional<Types::DataType> &type, int64_t i);
     std::shared_ptr<TACKY::Instruction> getCastInst(const std::shared_ptr<TACKY::Val> &src, const std::shared_ptr<TACKY::Val> &dst, const Types::DataType &srcType, const Types::DataType &dstType);
+    ssize_t getPtrScale(const Types::DataType &type);
 
     std::string breakLabel(const std::string &id);
     std::string continueLabel(const std::string &id);
@@ -37,6 +41,9 @@ public:
 
     std::vector<std::shared_ptr<TACKY::Instruction>> emitStringInit(const std::string &s, const std::string &dst, int offset);
     std::vector<std::shared_ptr<TACKY::Instruction>> emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const std::string &name, ssize_t offset);
+
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitDotOperator(const std::shared_ptr<AST::Dot> &dot);
+    std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitArrowOperator(const std::shared_ptr<AST::Arrow> &arrow);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitSubscript(const std::shared_ptr<AST::Subscript> &subscript);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitPointerAddition(const Types::DataType &type, const std::shared_ptr<AST::Expression> &exp1, const std::shared_ptr<AST::Expression> &exp2);
     std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpResult>> emitSubtractionFromPointer(const Types::DataType &type, const std::shared_ptr<AST::Expression> &ptrExp, const std::shared_ptr<AST::Expression> &indexExp);
@@ -67,6 +74,7 @@ public:
 
 private:
     Symbols::SymbolTable &_symbolTable;
+    TypeTableNS::TypeTable &_typeTable;
 };
 
 #endif

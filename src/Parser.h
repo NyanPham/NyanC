@@ -66,6 +66,8 @@ public:
     std::shared_ptr<AbstractDeclarator> parseDirectAbstractDeclarator();
     std::shared_ptr<Types::DataType> processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &decl, const std::shared_ptr<Types::DataType> &baseType);
 
+    Token parseTypeSpecifier();
+    Token parseSpecifier();
     Types::DataType parseTypeName();
     std::vector<Token> parseTypeSpecifierList();
     std::vector<Token> parseSpecifierList();
@@ -96,6 +98,9 @@ public:
     std::vector<std::shared_ptr<AST::Expression>> parseOptionalArgList();
     std::vector<std::shared_ptr<AST::Expression>> parseArgList();
 
+    std::vector<std::shared_ptr<AST::MemberDeclaration>> parseMemberList();
+    std::shared_ptr<AST::MemberDeclaration> parseMember();
+    std::shared_ptr<AST::StructDeclaration> parseStructDeclaration();
     std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &funType, std::vector<std::string> params, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name, const Types::DataType &varType, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> parseVariableDeclaration();
@@ -123,6 +128,7 @@ private:
         TokenType::KEYWORD_STATIC,
         TokenType::KEYWORD_EXTERN,
         TokenType::KEYWORD_VOID,
+        TokenType::KEYWORD_STRUCT,
     };
 
     std::set<TokenType> _typeSpecifierTypes = {
@@ -133,6 +139,7 @@ private:
         TokenType::KEYWORD_SIGNED,
         TokenType::KEYWORD_UNSIGNED,
         TokenType::KEYWORD_VOID,
+        TokenType::KEYWORD_STRUCT,
     };
 
     bool isTypeSpecifier(const Token &token)

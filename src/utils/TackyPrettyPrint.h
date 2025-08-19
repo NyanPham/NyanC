@@ -107,6 +107,9 @@ private:
         case TACKY::NodeType::CopyToOffset:
             visitCopyToOffset(static_cast<const TACKY::CopyToOffset &>(node), indent);
             break;
+        case TACKY::NodeType::CopyFromOffset:
+            visitCopyFromOffset(static_cast<const TACKY::CopyFromOffset &>(node), indent);
+            break;
         default:
             std::cerr << "Unknown node type" << std::endl;
             break;
@@ -351,6 +354,20 @@ private:
         visit(*copyToOffset.getSrc(), false);
         std::cout << getIndent() << "dst=" << copyToOffset.getDst() << ",\n";
         std::cout << getIndent() << "offset=" << copyToOffset.getOffset() << "\n";
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
+    void visitCopyFromOffset(const TACKY::CopyFromOffset &copyFromOffset, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "CopyFromOffset(\n";
+        increaseIndent();
+        std::cout << getIndent() << "src=\"" << copyFromOffset.getSrc() << "\",\n";
+        std::cout << getIndent() << "offset=" << copyFromOffset.getOffset() << ",\n";
+        std::cout << getIndent() << "dst=";
+        visit(*copyFromOffset.getDst(), false);
         decreaseIndent();
         std::cout << getIndent() << "),\n";
     }

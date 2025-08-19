@@ -12,14 +12,19 @@
 
 /*
 program = Program(declaration*)
-declaration = FunDecl(function_declaration) | VarDecl(variable_declaration)
+declaration = FunDecl(function_declaration)
+    | VarDecl(variable_declaration)
+    | StructDecl(struct_declaration)
 variable_declaration = (identifier name, initializer? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
+struct_declaration = (identifier tag, member_declaration* members)
+member_declaration = (identifier member_name, type member_type)
 initializer = SingleInit(exp) | CompoundInit(initializer* list)
 type = Char | SChar | UChar | Int | Long | UInt | ULong | Double | Void
     | FunType(type* params, type ret)
     | Array(type elem_type, int size)
     | PointerType(type referenced)
+    | Structure(identifier tag)
 storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
@@ -55,6 +60,8 @@ exp = Constant(const, type)
     | Subscript(exp, exp, type)
     | SizeOf(exp, type)
     | SizeOfT(type, type)
+    | Dot(exp structure, identifier member, type)
+    | Arrow(exp pointer, identifier member, type)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -99,6 +106,8 @@ namespace AST
     class Subscript;
     class SizeOfT;
     class SizeOf;
+    class Dot;
+    class Arrow;
     class ForInit;
     class InitDecl;
     class InitExp;
@@ -110,6 +119,8 @@ namespace AST
     class Initializer;
     class FunctionDeclaration;
     class VariableDeclaration;
+    class StructDeclaration;
+    class MemberDeclaration;
     class BlockItem;
     class Program;
 
@@ -118,6 +129,8 @@ namespace AST
         Program,
         VariableDeclaration,
         FunctionDeclaration,
+        StructDeclaration,
+        MemberDeclaration,
         SingleInit,
         CompoundInit,
         Return,
@@ -152,6 +165,8 @@ namespace AST
         Subscript,
         SizeOfT,
         SizeOf,
+        Dot,
+        Arrow,
         InitDecl,
         InitExp,
     };
@@ -339,6 +354,38 @@ namespace AST
         std::optional<std::shared_ptr<Initializer>> _init;
         Types::DataType _varType;
         std::optional<StorageClass> _storageClass;
+    };
+
+    class StructDeclaration : public Declaration
+    {
+    public:
+        StructDeclaration(const std::string &tag, std::vector<std::shared_ptr<MemberDeclaration>> members)
+            : Declaration(NodeType::StructDeclaration), _tag{tag}, _members{std::move(members)}
+        {
+        }
+
+        auto &getTag() const { return _tag; }
+        auto &getMembers() const { return _members; }
+
+    private:
+        std::string _tag;
+        std::vector<std::shared_ptr<MemberDeclaration>> _members;
+    };
+
+    class MemberDeclaration : public Declaration
+    {
+    public:
+        MemberDeclaration(const std::string &memberName, const std::shared_ptr<Types::DataType> &memberType)
+            : Declaration(NodeType::MemberDeclaration), _memberName(memberName), _memberType(memberType)
+        {
+        }
+
+        auto &getMemberName() const { return _memberName; }
+        auto &getMemberType() const { return _memberType; }
+
+    private:
+        std::string _memberName;
+        std::shared_ptr<Types::DataType> _memberType;
     };
 
     class Constant : public Expression
@@ -565,6 +612,38 @@ namespace AST
 
     private:
         std::shared_ptr<Expression> _innerExp;
+    };
+
+    class Dot : public Expression
+    {
+    public:
+        Dot(const std::shared_ptr<Expression> &strct, const std::string &member, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Dot, dataType), _strct{strct}, _member{member}
+        {
+        }
+
+        auto &getStruct() const { return _strct; }
+        auto &getMember() const { return _member; }
+
+    private:
+        std::shared_ptr<Expression> _strct;
+        std::string _member;
+    };
+
+    class Arrow : public Expression
+    {
+    public:
+        Arrow(const std::shared_ptr<Expression> &strct, const std::string &member, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Arrow, dataType), _strct{strct}, _member{member}
+        {
+        }
+
+        auto &getStruct() const { return _strct; }
+        auto &getMember() const { return _member; }
+
+    private:
+        std::shared_ptr<Expression> _strct;
+        std::string _member;
     };
 
     class Return : public Statement
