@@ -1,5 +1,7 @@
 #include "Symbols.h"
 
+// Member function implementations (constructors, toString, etc.) can remain outside the namespace block if they are already in the Symbols namespace via the class definition.
+
 namespace Symbols
 {
 

@@ -160,7 +160,7 @@ The NyanC compiler processes C code in several stages:
   - [x] Pointer.
   - [x] Array.
   - [x] Character, String.
-  - [ ] Struct, Union
+  - [x] Struct, Union
 - [ ] Optimization passes on the TAC IR and code generation.
 
 See the [open issues](https://github.com/NyanPham/NyanC/issues) for a full list of proposed features (and known issues).

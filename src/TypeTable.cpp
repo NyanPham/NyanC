@@ -2,6 +2,7 @@
 #include "Types.h"
 #include <algorithm>
 #include <stdexcept>
+#include <optional>
 
 namespace TypeTableNS
 {
@@ -16,12 +17,12 @@ namespace TypeTableNS
         return "MemberEntry(Type: " + Types::dataTypeToString(*memberType) + ", Offset: " + std::to_string(offset) + ")";
     }
 
-    StructEntry::StructEntry() = default;
+    TypeDef::TypeDef() = default;
 
-    StructEntry::StructEntry(int alignment, int size, std::map<std::string, MemberEntry> members)
+    TypeDef::TypeDef(int alignment, int size, std::map<std::string, MemberEntry> members)
         : alignment{alignment}, size{size}, members{members} {}
 
-    std::string StructEntry::toString() const
+    std::string TypeDef::toString() const
     {
         std::string membersStr = "{";
         bool first = true;
@@ -33,44 +34,76 @@ namespace TypeTableNS
             first = false;
         }
         membersStr += "}";
-        return "StructEntry(Alignment: " + std::to_string(alignment) +
+        return "TypeDef(Alignment: " + std::to_string(alignment) +
                ", Size: " + std::to_string(size) +
                ", Members: " + membersStr + ")";
     }
 
-    void TypeTable::addStructDefinition(const std::string &tag, const StructEntry &entry)
+    TypeEntry::TypeEntry() = default;
+
+    TypeEntry::TypeEntry(AST::Which kind, std::optional<TypeDef> optTypeDef)
+        : kind{kind}, optTypeDef{optTypeDef} {}
+
+    std::string TypeEntry::toString() const
+    {
+        std::string result = "TypeEntry(Kind: " + std::to_string(static_cast<int>(kind));
+        if (optTypeDef.has_value()) {
+            result += ", " + optTypeDef->toString();
+        } else {
+            result += ", <no TypeDef>";
+        }
+        result += ")";
+        return result;
+    }
+
+    void TypeTable::addTypeDefinition(const std::string &tag, const TypeEntry &entry)
     {
         _table[tag] = entry;
     }
 
-    std::vector<MemberEntry> TypeTable::getMembers(const std::string &tag) const
+    std::map<std::string, TypeTableNS::MemberEntry> TypeTable::getMembers(const std::string &tag) const
     {
         auto it = _table.find(tag);
         if (it == _table.end())
-            throw std::runtime_error("Struct tag not found: " + tag);
+            throw std::runtime_error("Type tag not found: " + tag);
+        const auto &optTypeDef = it->second.optTypeDef;
+        if (!optTypeDef.has_value())
+            throw std::runtime_error("Type does not have members: " + tag);
+      
+        return optTypeDef->members;
+    }
+
+    std::vector<Types::DataType> TypeTable::getMemberTypes(const std::string &tag) const
+    {
+        std::vector<Types::DataType> types {};
+        auto members = getMembers(tag);
+        for (const auto &member : members)
+            types.push_back(*member.second.memberType);
+        return types;
+    }
+
+    std::vector<MemberEntry> TypeTable::getFlattenMembers(const std::string &tag) const
+    {
+        auto it = _table.find(tag);
+        if (it == _table.end())
+            throw std::runtime_error("Type tag not found: " + tag);
+        const auto &optTypeDef = it->second.optTypeDef;
+        if (!optTypeDef.has_value())
+            throw std::runtime_error("Type does not have members: " + tag);
         std::vector<MemberEntry> members;
-        for (const auto &[name, entry] : it->second.members)
+        for (const auto &[name, entry] : optTypeDef->members)
             members.push_back(entry);
         std::sort(members.begin(), members.end(), [](const MemberEntry &a, const MemberEntry &b)
                   { return a.offset < b.offset; });
         return members;
     }
 
-    std::vector<Types::DataType> TypeTable::getMemberTypes(const std::string &tag) const
-    {
-        std::vector<Types::DataType> types;
-        auto members = getMembers(tag);
-        for (const auto &member : members)
-            types.push_back(*member.memberType);
-        return types;
-    }
-
-    const StructEntry &TypeTable::find(const std::string &tag) const
+    const TypeEntry &TypeTable::find(const std::string &tag) const
     {
         auto it = _table.find(tag);
         if (it != _table.end())
             return it->second;
-        throw std::runtime_error("Struct not defined: " + tag);
+        throw std::runtime_error("Type not defined: " + tag);
     }
 
     bool TypeTable::has(const std::string &tag) const
@@ -78,4 +111,34 @@ namespace TypeTableNS
         return _table.find(tag) != _table.end();
     }
 
+    std::optional<TypeEntry> TypeTable::findOpt(const std::string &tag) const
+    {
+        auto it = _table.find(tag);
+        if (it != _table.end())
+            return std::make_optional(it->second);
+        return std::nullopt;
+    }
+
+    int TypeTable::getSize(const std::string &tag) const
+    {
+        const auto &entry = find(tag);
+        if (!entry.optTypeDef.has_value())
+            throw std::runtime_error("Incomplete type: " + tag);
+        return entry.optTypeDef->size;
+    }
+
+    /* Helper function to reconstruct Types.t from a tag */
+    Types::DataType TypeTable::getType(const std::string &tag) const
+    {
+        auto entry = find(tag);
+        switch (entry.kind)
+        {
+        case AST::Which::Struct:
+            return Types::makeStructType(tag);
+        case AST::Which::Union:
+            return Types::makeUnionType(tag);
+        default:
+            throw std::runtime_error("Unknown type: " + tag);
+        }
+    }
 }

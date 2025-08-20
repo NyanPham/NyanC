@@ -141,9 +141,9 @@ CodeGen::copyBytesFromReg(std::shared_ptr<Assembly::Reg> srcReg, std::shared_ptr
 }
 
 std::vector<CLS>
-CodeGen::classifyNewStructure(const std::string &tag)
+CodeGen::classifyNewType(const std::string &tag)
 {
-    auto size = _typeTable.find(tag).size;
+    auto size = _typeTable.getSize(tag);
 
     if (size > 16)
     {
@@ -152,69 +152,88 @@ CodeGen::classifyNewStructure(const std::string &tag)
         return std::vector<CLS>(eightbyteCount, CLS::Mem);
     }
 
-    std::function<std::vector<Types::DataType>(const Types::DataType &)> processType;
-    processType = [&](const Types::DataType &t) -> std::vector<Types::DataType>
+    std::function<std::pair<CLS, CLS>(int, CLS, CLS, Types::DataType)> classifyEightbytes;
+    classifyEightbytes = [&](int offset, CLS one, CLS two, Types::DataType type) -> std::pair<CLS, CLS>
     {
-        if (auto strctType = Types::getStructType(t))
+        if (Types::isDoubleType(type))
         {
-            auto memberTypes = _typeTable.getMemberTypes(strctType->tag);
-            auto processedTypes = std::vector<Types::DataType>{};
-            for (auto &membType : memberTypes)
-            {
-                auto ts = processType(membType);
-                processedTypes.insert(processedTypes.end(), ts.begin(), ts.end());
-            }
-            return processedTypes;
+            return std::make_pair(one, two); // this is default
         }
-        else if (auto arrType = Types::getArrayType(t))
+        else if (Types::isScalar(type))
         {
-            auto processedTypes = std::vector<Types::DataType>{};
-            for (size_t i = 0; i < arrType->size; ++i)
+            if (offset < 8)
+                return std::make_pair(CLS::INTEGER, two);
+            else
+                return std::make_pair(one, CLS::INTEGER);
+        }
+        else if (auto unionType = Types::getUnionType(type))
+        {
+            // fold over members
+            auto memberTypes = _typeTable.getMemberTypes(unionType->tag);
+            for (const auto &memberType : memberTypes)
             {
-                auto elemTypes = processType(*arrType->elemType);
-                processedTypes.insert(processedTypes.end(), elemTypes.begin(), elemTypes.end());
+                auto [_one, _two] = classifyEightbytes(offset, one, two, memberType);
+                one = _one;
+                two = _two;
             }
-            return processedTypes;
+            return std::make_pair(one, two);
+        }
+        else if (auto structType = Types::getStructType(type))
+        {
+            // fold over members, updating offsets
+            auto members = _typeTable.getMembers(structType->tag);
+            for (const auto &member : members)
+            {
+                auto memberInfo = member.second;
+                auto memberOffset = offset + memberInfo.offset;
+                auto [_one, _two] = classifyEightbytes(memberOffset, one, two, *memberInfo.memberType);
+                one = _one;
+                two = _two;
+            }
+            return std::make_pair(one, two);
+        }
+        else if (auto arrType = Types::getArrayType(type))
+        {
+            auto elemSize = Types::getSize(*arrType->elemType, _typeTable);
+            for (int i = 0; i < arrType->size; i++)
+            {
+                auto off = offset + (i * elemSize);
+                auto [_one, _two] = classifyEightbytes(off, one, two, *arrType->elemType);
+                one = _one;
+                two = _two;
+            }
+            return std::make_pair(one, two);
         }
         else
         {
-            return {
-                t,
-            };
+            throw std::runtime_error("Internal error");
         }
     };
 
-    auto scalarTypes = processType(Types::makeStructType(tag));
-    auto first = scalarTypes[0];
-    auto last = scalarTypes[scalarTypes.size() - 1];
+    auto t = _typeTable.getType(tag);
+    auto [class1, class2] = classifyEightbytes(0, CLS::SSE, CLS::SSE, t);
 
     if (size > 8)
     {
-        auto firstClass = Types::isDoubleType(first) ? CLS::SSE : CLS::INTEGER;
-        auto lastClass = Types::isDoubleType(last) ? CLS::SSE : CLS::INTEGER;
-        return {firstClass, lastClass};
-    }
-    else if (Types::isDoubleType(first))
-    {
-        return {CLS::SSE};
+        return std::vector<CLS>{class1, class2};
     }
     else
     {
-        return {CLS::INTEGER};
+        return std::vector<CLS>{class1};
     }
 }
 
 std::vector<CLS>
-CodeGen::classifyStructure(const std::string &tag)
+CodeGen::classifyType(const std::string &tag)
 {
-    if (_classifiedStructures.find(tag) != _classifiedStructures.end())
+    if (_classifiedTypes.find(tag) != _classifiedTypes.end())
     {
-        return _classifiedStructures[tag];
+        return _classifiedTypes[tag];
     }
     else
     {
-        auto classes = classifyNewStructure(tag);
-        _classifiedStructures[tag] = classes;
+        auto classes = classifyNewType(tag);
+        _classifiedTypes[tag] = classes;
         return classes;
     }
 }
@@ -223,28 +242,27 @@ std::vector<CLS>
 CodeGen::classifyTackyVal(std::shared_ptr<TACKY::Val> val)
 {
     if (auto strctType = Types::getStructType(*tackyType(val)))
-        return classifyStructure(strctType->tag);
+        return classifyType(strctType->tag);
+    else if (auto unionType = Types::getUnionType(*tackyType(val)))
+        return classifyType(unionType->tag);
     else
         throw std::runtime_error("Internal error: trying to classify non-structure type");
 }
 
-std::tuple<
-    std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>,
-    std::vector<std::shared_ptr<Assembly::Operand>>,
-    bool>
+CodeGen::RetClass
 CodeGen::classifyReturnVal(std::shared_ptr<TACKY::Val> retVal)
 {
     auto retvalType = tackyType(retVal);
 
-    if (auto strctType = Types::getStructType(*retvalType))
+    auto classifyReturnValHelper = [&](const std::string &tag) -> CodeGen::RetClass
     {
-        auto classes = classifyStructure(strctType->tag);
+        auto classes = classifyType(tag);
 
         std::string varName;
         if (auto var = std::dynamic_pointer_cast<TACKY::Var>(retVal))
             varName = var->getName();
         else
-            throw std::runtime_error("Internal error: constant with structure type");
+            throw std::runtime_error("Internal error: constant with structure or union type");
 
         if (classes[0] == CLS::Mem)
         {
@@ -284,6 +302,15 @@ CodeGen::classifyReturnVal(std::shared_ptr<TACKY::Val> retVal)
                 dblRetvals,
                 false);
         }
+    };
+
+    if (auto strctType = Types::getStructType(*retvalType))
+    {
+        return classifyReturnValHelper(strctType->tag);
+    }
+    else if (auto unionType = Types::getUnionType(*retvalType))
+    {
+        return classifyReturnValHelper(unionType->tag);
     }
     else if (Types::isDoubleType(*retvalType))
     {
@@ -487,7 +514,7 @@ CodeGen::classifyParameters(const std::vector<std::shared_ptr<TACKY::Val>> &tack
         }
         else if (auto byteArrType = Assembly::getByteArray(*asmType))
         {
-            // it's a structure
+            // it's a structure or union
             std::string varName;
             if (auto tackyVar = std::dynamic_pointer_cast<TACKY::Var>(v))
                 varName = tackyVar->getName();
@@ -599,7 +626,7 @@ CodeGen::convertType(const Types::DataType &type)
         return std::make_shared<Assembly::AsmType>(Assembly::Byte());
     else if (Types::isDoubleType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::Double());
-    else if (Types::isArrayType(type) || Types::isStructType(type))
+    else if (Types::isArrayType(type) || Types::isStructType(type) || Types::isUnionType(type))
         return std::make_shared<Assembly::AsmType>(Assembly::ByteArray(
             Types::getSize(type, _typeTable),
             Types::getAlignment(type, _typeTable)));
@@ -678,7 +705,12 @@ bool CodeGen::returnsOnStack(const std::string &fnName)
     {
         if (auto strctType = Types::getStructType(*funType->retType))
         {
-            auto classes = classifyStructure(strctType->tag);
+            auto classes = classifyType(strctType->tag);
+            return classes[0] == CLS::Mem;
+        }
+        else if (auto unionType = Types::getUnionType(*funType->retType))
+        {
+            auto classes = classifyType(unionType->tag);
             return classes[0] == CLS::Mem;
         }
         else

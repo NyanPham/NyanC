@@ -12,27 +12,38 @@ public:
     // Print the entire type table to the given output stream.
     static void print(const TypeTableNS::TypeTable &typeTable, std::ostream &os = std::cout)
     {
-        std::cout << "****************************************\n";
-        std::cout << "TypeTable Table:\n";
-        std::cout << "----------------------------------------\n";
+        os << "****************************************\n";
+        os << "TypeTable Table:\n";
+        os << "----------------------------------------\n";
 
-        for (const auto &pair : typeTable.getStructEntries())
+        for (const auto &pair : typeTable.getTypeEntries())
         {
             const std::string &tag = pair.first;
-            const TypeTableNS::StructEntry &entry = pair.second;
-            os << "Struct: " << tag << "\n";
-            os << "  Alignment: " << entry.alignment << "\n";
-            os << "  Size: " << entry.size << "\n";
-            os << "  Members:\n";
-            for (const auto &memberPair : entry.members)
+            const TypeTableNS::TypeEntry &entry = pair.second;
+
+            // Print kind (Struct/Union)
+            os << (entry.kind == AST::Which::Struct ? "Struct: " : "Union: ") << tag << "\n";
+
+            if (entry.optTypeDef.has_value())
             {
-                os << "    " << memberPair.first << ": "
-                   << memberPair.second.toString() << "\n";
+                const auto &typeDef = entry.optTypeDef.value();
+                os << "  Alignment: " << typeDef.alignment << "\n";
+                os << "  Size: " << typeDef.size << "\n";
+                os << "  Members:\n";
+                for (const auto &memberPair : typeDef.members)
+                {
+                    os << "    " << memberPair.first << ": "
+                       << memberPair.second.toString() << "\n";
+                }
+            }
+            else
+            {
+                os << "  <incomplete type>\n";
             }
             os << std::endl;
         }
 
-        std::cout << "****************************************\n";
+        os << "****************************************\n";
     }
 };
 

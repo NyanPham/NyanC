@@ -111,7 +111,7 @@ ValidateLabels::collectLabelsFromBlockItem(
     const std::shared_ptr<AST::BlockItem> &blockItem,
     std::function<std::string(const std::string &)> transformLabel)
 {
-    if (blockItem->getType() == AST::NodeType::VariableDeclaration || blockItem->getType() == AST::NodeType::FunctionDeclaration || blockItem->getType() == AST::NodeType::StructDeclaration)
+    if (blockItem->getType() == AST::NodeType::VariableDeclaration || blockItem->getType() == AST::NodeType::FunctionDeclaration || blockItem->getType() == AST::NodeType::TypeDeclaration)
         return blockItem;
     else
         return collectLabelsFromStatement(definedLabels, usedLabels, std::dynamic_pointer_cast<AST::Statement>(blockItem), transformLabel);

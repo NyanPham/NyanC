@@ -15,9 +15,6 @@
 
 namespace Symbols
 {
-    /*
-    type initial_value = Tentative | Initial(static_init*) | NoInitializer
-    */
     struct Tentative
     {
         std::string toString() const;
@@ -52,14 +49,6 @@ namespace Symbols
     bool isTentative(const InitialValue &initValue);
     bool isInitial(const InitialValue &initValue);
     bool isNoInitializer(const InitialValue &initValue);
-
-    /*
-    type identifier_attrs =
-        | FunAttr(bool defined, bool global)
-        | StaticAttr(initial_value init, bool global)
-        | ConstAttr(Initializers.static_init init)
-        | LocalAttr
-    */
 
     struct FunAttr
     {

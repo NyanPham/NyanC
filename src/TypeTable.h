@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Types.h"
+#include "AST.h"
 
 namespace TypeTableNS
 {
@@ -22,14 +23,25 @@ namespace TypeTableNS
         std::string toString() const;
     };
 
-    struct StructEntry
+    struct TypeDef
     {
         int alignment;
         int size;
         std::map<std::string, MemberEntry> members;
 
-        StructEntry();
-        StructEntry(int alignment, int size, std::map<std::string, MemberEntry> members);
+        TypeDef();
+        TypeDef(int alignment, int size, std::map<std::string, MemberEntry> members);
+
+        std::string toString() const;
+    };
+
+    struct TypeEntry 
+    {
+        AST::Which kind;
+        std::optional<TypeDef> optTypeDef;
+
+        TypeEntry();
+        TypeEntry(AST::Which kind, std::optional<TypeDef> optTypeDef);
 
         std::string toString() const;
     };
@@ -37,15 +49,19 @@ namespace TypeTableNS
     class TypeTable
     {
     public:
-        void addStructDefinition(const std::string &tag, const StructEntry &entry);
-        std::vector<MemberEntry> getMembers(const std::string &tag) const;
+        void addTypeDefinition(const std::string &tag, const TypeEntry &entry);
+        std::map<std::string, TypeTableNS::MemberEntry> getMembers(const std::string &tag) const;
         std::vector<Types::DataType> getMemberTypes(const std::string &tag) const;
-        const StructEntry &find(const std::string &tag) const;
+        std::vector<MemberEntry> getFlattenMembers(const std::string &tag) const;
+        const TypeEntry &find(const std::string &tag) const;
         bool has(const std::string &tag) const;
-        const std::map<std::string, StructEntry> &getStructEntries() const { return _table; }
+        const std::map<std::string, TypeEntry> &getTypeEntries() const { return _table; }
+        std::optional<TypeEntry> findOpt(const std::string &tag) const;
+        int getSize(const std::string &tag) const;
+        Types::DataType getType(const std::string &tag) const;
 
     private:
-        std::map<std::string, StructEntry> _table;
+        std::map<std::string, TypeEntry> _table;
     };
 
 }

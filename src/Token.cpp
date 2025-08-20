@@ -79,6 +79,8 @@ std::string tokenTypeToString(TokenType type)
         return "KEYWORD_SIZEOF";
     case TokenType::KEYWORD_STRUCT:
         return "KEYWORD_STRUCT";
+    case TokenType::KEYWORD_UNION:
+        return "KEYWORD_UNION";
     case TokenType::OPEN_PAREN:
         return "OPEN_PAREN";
     case TokenType::CLOSE_PAREN:

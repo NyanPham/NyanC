@@ -39,6 +39,7 @@ Token convertIdentifer(const std::string &str, size_t &pos)
         {"extern", TokenType::KEYWORD_EXTERN},
         {"sizeof", TokenType::KEYWORD_SIZEOF},
         {"struct", TokenType::KEYWORD_STRUCT},
+        {"union", TokenType::KEYWORD_UNION},
     };
 
     auto it = keywords.find(str);
@@ -168,7 +169,7 @@ void Lexer::defineTokenDefs()
         {std::regex("([0-9]+[uU])[^\\w.]"), lexUInt},
         {std::regex("([0-9]+([lL][uU]|[uU][lL]))[^\\w.]"), lexULong},
         {std::regex("(([0-9]*\\.[0-9]+|[0-9]+\\.?)[Ee][+-]?[0-9]+|[0-9]*\\.[0-9]+|[0-9]+\\.)[^\\w.]"), lexDouble},
-        // The following 23 keywords match will not be reached after identifier, but still kept here for references.
+        // The following 24 keywords match will not be reached after identifier, but still kept here for references.
         {std::regex("char\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_CHAR, str, pos);
@@ -260,6 +261,10 @@ void Lexer::defineTokenDefs()
         {std::regex("struct\\b"), [](const std::string &str, size_t &pos) -> Token
          {
              return Token(TokenType::KEYWORD_STRUCT, str, pos);
+         }},
+        {std::regex("union\\b"), [](const std::string &str, size_t &pos) -> Token
+         {
+             return Token(TokenType::KEYWORD_UNION, str, pos);
          }},
         {std::regex("\\("), [](const std::string &str, size_t &pos) -> Token
          {

@@ -186,6 +186,32 @@ std::string declaratorToString(const Declarator &declarator)
     Done Defining the Declarators
 */
 
+/*
+    Defining Specifiers
+*/
+
+struct StructTag
+{
+    std::string tag;
+    StructTag(std::string tag) : tag{tag} {}
+};
+struct UnionTag
+{
+    std::string tag;
+    UnionTag(std::string tag) : tag{tag} {}
+};
+struct OtherSpec
+{
+    Token tok; // this could be a type or storage class specifier
+    OtherSpec(Token tok) : tok{tok} {}
+};
+
+using Specifier = std::variant<StructTag, UnionTag, OtherSpec>;
+
+/*
+    Done Defining Specifiers
+*/
+
 size_t
 Parser::constToDim(const std::shared_ptr<Constants::Const> &c)
 {
@@ -618,7 +644,7 @@ Parser::processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &dec
 }
 
 /*
-Done Abstract Declarator
+    Done Abstract Declarator
 */
 
 void Parser::raiseError(const std::string &expected, const std::string &actual)
@@ -1134,36 +1160,47 @@ std::string Parser::parseIdentifier()
     return "";
 }
 
-Token Parser::parseTypeSpecifier()
+Specifier Parser::parseTypeSpecifier()
 {
     auto nextTok{peekToken()};
 
     if (!nextTok.has_value())
         throw ParseError("Found an empty token while parsing type specifier");
 
+    // if the specifier is a struct or union, we actually care about the tag that follows it
+
     if (nextTok->getType() == TokenType::KEYWORD_STRUCT)
     {
-        // if the specifier is a struct kw, we actually care about the tag that follows it
         takeToken();
         // struct keyword must be followed by tag
         auto tok{takeToken()};
         if (tok->getType() == TokenType::IDENTIFIER)
-            return tok.value();
+            return Specifier(StructTag(std::get<std::string>(tok->getValue())));
+        else
+            raiseError("A structure tag", tokenTypeToString(tok->getType()));
+    }
+    else if (nextTok->getType() == TokenType::KEYWORD_UNION)
+    {
+        takeToken();
+        // union keyword must be followed by tag
+        auto tok{takeToken()};
+        if (tok->getType() == TokenType::IDENTIFIER)
+            return Specifier(UnionTag(std::get<std::string>(tok->getValue())));
         else
             raiseError("A structure tag", tokenTypeToString(tok->getType()));
     }
     else if (isTypeSpecifier(nextTok.value()))
     {
         takeToken();
-        return nextTok.value();
+        return Specifier(OtherSpec{nextTok.value()});
     }
     else
         throw std::runtime_error("Internal error: called parse_type_specifier on non-type specifier token");
 
-    return nextTok.value();
+    return Specifier(OtherSpec{nextTok.value()});
 }
 
-Token Parser::parseSpecifier()
+Specifier Parser::parseSpecifier()
 {
     auto nextTok{peekToken()};
     if (!nextTok.has_value())
@@ -1172,15 +1209,15 @@ Token Parser::parseSpecifier()
     if (nextTok->getType() == TokenType::KEYWORD_STATIC || nextTok->getType() == TokenType::KEYWORD_EXTERN)
     {
         takeToken();
-        return nextTok.value();
+        return Specifier(OtherSpec{nextTok.value()});
     }
 
     return parseTypeSpecifier();
 }
 
-std::vector<Token> Parser::parseTypeSpecifierList()
+std::vector<Specifier> Parser::parseTypeSpecifierList()
 {
-    std::vector<Token> typeSpecifiers{};
+    std::vector<Specifier> typeSpecifiers{};
     auto nextToken{peekToken()};
 
     while (nextToken.has_value() && isTypeSpecifier(nextToken.value()))
@@ -1193,9 +1230,9 @@ std::vector<Token> Parser::parseTypeSpecifierList()
     return typeSpecifiers;
 }
 
-std::vector<Token> Parser::parseSpecifierList()
+std::vector<Specifier> Parser::parseSpecifierList()
 {
-    std::vector<Token> specifiers{};
+    std::vector<Specifier> specifiers{};
     auto nextToken{peekToken()};
 
     while (nextToken.has_value() && isSpecifier(nextToken.value()))
@@ -1221,66 +1258,100 @@ AST::StorageClass Parser::parseStorageClass(const Token &spec)
     }
 }
 
-Types::DataType Parser::parseType(const std::vector<Token> &typeList)
+Types::DataType Parser::parseType(const std::vector<Specifier> &typeList)
 {
+    /*
+        sort specifiers so we don't need to check for different
+        orderings of same specifiers
+    */
     bool hasDuplicateTokenType(const std::vector<Token> &tokens);
     bool containsUnsignedAndSigned(const std::vector<Token> &tokens);
     bool containsToken(const std::vector<Token> &tokens, TokenType type);
 
+    // First handle struct/union tags
     if (typeList.size() == 1)
     {
-        if (typeList[0].getType() == TokenType::IDENTIFIER)
-            return Types::makeStructType(std::get<std::string>(typeList[0].getValue()));
-        if (typeList[0].getType() == TokenType::KEYWORD_VOID)
+        if (auto strctTag = std::get_if<StructTag>(&typeList[0]))
+            return Types::makeStructType(strctTag->tag);
+        if (auto unionTag = std::get_if<UnionTag>(&typeList[0]))
+            return Types::makeUnionType(unionTag->tag);
+    }
+    /*
+        Make sure we don't have struct/union specifier combined with other type specifier.
+        then convert list of specifiers to list of tokens for easier processing
+    */
+    std::vector<Token> toks{};
+    for (auto &spec : typeList)
+    {
+        if (auto otherSpec = std::get_if<OtherSpec>(&spec))
+        {
+            toks.push_back(otherSpec->tok);
+        }
+        else
+        {
+            throw std::runtime_error("Found struct or union tag combined with other type specifiers");
+        }
+    }
+
+    if (toks.size() == 1)
+    {
+        if (toks[0].getType() == TokenType::KEYWORD_VOID)
             return Types::makeVoidType();
-        if (typeList[0].getType() == TokenType::KEYWORD_DOUBLE)
+        if (toks[0].getType() == TokenType::KEYWORD_DOUBLE)
             return Types::makeDoubleType();
-        if (typeList[0].getType() == TokenType::KEYWORD_CHAR)
+        if (toks[0].getType() == TokenType::KEYWORD_CHAR)
             return Types::makeCharType();
     }
 
-    if (typeList.size() == 2)
+    if (toks.size() == 2)
     {
-        if (containsToken(typeList, TokenType::KEYWORD_CHAR) && containsToken(typeList, TokenType::KEYWORD_SIGNED))
+        if (containsToken(toks, TokenType::KEYWORD_CHAR) && containsToken(toks, TokenType::KEYWORD_SIGNED))
             return Types::makeSCharType();
-        if (containsToken(typeList, TokenType::KEYWORD_CHAR) && containsToken(typeList, TokenType::KEYWORD_UNSIGNED))
+        if (containsToken(toks, TokenType::KEYWORD_CHAR) && containsToken(toks, TokenType::KEYWORD_UNSIGNED))
             return Types::makeUCharType();
     }
 
     if (
-        typeList.empty() ||
-        hasDuplicateTokenType(typeList) ||
-        containsToken(typeList, TokenType::KEYWORD_DOUBLE) ||
-        containsToken(typeList, TokenType::KEYWORD_CHAR) ||
-        containsToken(typeList, TokenType::KEYWORD_VOID) ||
-        containsToken(typeList, TokenType::IDENTIFIER) ||
-        containsUnsignedAndSigned(typeList))
+        toks.empty() ||
+        hasDuplicateTokenType(toks) ||
+        containsToken(toks, TokenType::KEYWORD_DOUBLE) ||
+        containsToken(toks, TokenType::KEYWORD_CHAR) ||
+        containsToken(toks, TokenType::KEYWORD_VOID) ||
+        containsToken(toks, TokenType::IDENTIFIER) ||
+        containsUnsignedAndSigned(toks))
     {
         throw std::runtime_error("Invalid type specifier");
     }
 
-    if (containsToken(typeList, TokenType::KEYWORD_UNSIGNED) && containsToken(typeList, TokenType::KEYWORD_LONG))
+    if (containsToken(toks, TokenType::KEYWORD_UNSIGNED) && containsToken(toks, TokenType::KEYWORD_LONG))
         return Types::makeULongType();
-    else if (containsToken(typeList, TokenType::KEYWORD_UNSIGNED))
+    else if (containsToken(toks, TokenType::KEYWORD_UNSIGNED))
         return Types::makeUIntType();
-    else if (containsToken(typeList, TokenType::KEYWORD_LONG))
+    else if (containsToken(toks, TokenType::KEYWORD_LONG))
         return Types::makeLongType();
     else
         return Types::makeIntType();
 }
 
 std::pair<Types::DataType, std::optional<AST::StorageClass>>
-Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
+Parser::parseTypeAndStorageClass(const std::vector<Specifier> &specifierList)
 {
-    std::vector<Token> types{};
-    std::vector<Token> storageClasses{};
+    std::vector<Specifier> types{};
+    std::vector<Specifier> storageClasses{};
 
     for (const auto &spec : specifierList)
     {
-        if (spec.getType() == TokenType::KEYWORD_EXTERN || spec.getType() == TokenType::KEYWORD_STATIC)
-            storageClasses.push_back(spec);
+        if (auto otherSpec = std::get_if<OtherSpec>(&spec))
+        {
+            if (otherSpec->tok.getType() == TokenType::KEYWORD_EXTERN || otherSpec->tok.getType() == TokenType::KEYWORD_STATIC)
+                storageClasses.push_back(spec);
+            else
+                types.push_back(spec);
+        }
         else
+        {
             types.push_back(spec);
+        }
     }
 
     Types::DataType type{parseType(types)};
@@ -1288,8 +1359,8 @@ Parser::parseTypeAndStorageClass(const std::vector<Token> &specifierList)
 
     if (storageClasses.empty())
         storageClass = std::nullopt;
-    else if (storageClasses.size() == 1)
-        storageClass = std::make_optional(parseStorageClass(storageClasses[0]));
+    else if (storageClasses.size() == 1 && std::holds_alternative<OtherSpec>(storageClasses[0]))
+        storageClass = std::make_optional(parseStorageClass(std::get<OtherSpec>(storageClasses[0]).tok));
     else
         throw std::runtime_error("Invalid storage class");
 
@@ -1806,15 +1877,15 @@ std::vector<std::shared_ptr<AST::Expression>> Parser::parseArgList()
     return args;
 }
 
-std::shared_ptr<AST::StructDeclaration>
-Parser::parseStructDeclaration()
+std::shared_ptr<AST::TypeDeclaration>
+Parser::parseTypeDeclaration()
 {
-    expect(TokenType::KEYWORD_STRUCT);
+    auto structOrUnionKw = takeToken();
     auto tag{parseIdentifier()};
 
     auto nextTok{takeToken()};
-    if (!nextTok.has_value())
-        throw std::runtime_error("Internal error: expected a structure body or semicolon");
+    if (!nextTok.has_value() || !structOrUnionKw.has_value())
+        throw std::runtime_error("Internal error: Invalid type declaration");
 
     std::vector<std::shared_ptr<AST::MemberDeclaration>> members{};
     if (nextTok->getType() == TokenType::SEMICOLON)
@@ -1832,7 +1903,15 @@ Parser::parseStructDeclaration()
         throw std::runtime_error("Internal error: shouldn't have called parse_structure_declaration here");
     }
 
-    return std::make_shared<AST::StructDeclaration>(tag, members);
+    AST::Which structOrUnion;
+    if (structOrUnionKw->getType() == TokenType::KEYWORD_STRUCT)
+        structOrUnion = AST::Which::Struct;
+    else if (structOrUnionKw->getType() == TokenType::KEYWORD_UNION)
+        structOrUnion = AST::Which::Union;
+    else
+        throw std::runtime_error("Internal error: shouldn't have called parse_structure_declaration here");
+
+    return std::make_shared<AST::TypeDeclaration>(structOrUnion, tag, members);
 }
 
 // parse a non-empty member list
@@ -1931,8 +2010,8 @@ std::shared_ptr<AST::VariableDeclaration> Parser::parseVariableDeclaration()
     {
         return std::dynamic_pointer_cast<AST::VariableDeclaration>(decl);
     }
-    else // is FunDecl or StructDecl
-        throw std::runtime_error("Expected variable declaration but found function or structure declaration");
+    else // is FunDecl or TypeDecl
+        throw std::runtime_error("Expected variable declaration but found function or type declaration");
 }
 
 std::shared_ptr<AST::FunctionDeclaration> Parser::parseFunctionDeclaration()
@@ -1952,11 +2031,11 @@ std::shared_ptr<AST::Declaration> Parser::parseDeclaration()
     auto toks{peekTokens(3)};
 
     if (toks[0].has_value() && toks[1].has_value() && toks[2].has_value() &&
-        toks[0]->getType() == TokenType::KEYWORD_STRUCT &&
+        (toks[0]->getType() == TokenType::KEYWORD_STRUCT || toks[0]->getType() == TokenType::KEYWORD_UNION) &&
         toks[1]->getType() == TokenType::IDENTIFIER &&
         (toks[2]->getType() == TokenType::OPEN_BRACE || toks[2]->getType() == TokenType::SEMICOLON))
     {
-        return parseStructDeclaration();
+        return parseTypeDeclaration();
     }
     else
     {

@@ -23,27 +23,35 @@ IdMap IdentifierResolution::copyIdentifierMap(const IdMap &idMap)
     return newIdMap;
 }
 
-StructMap IdentifierResolution::copyStructMap(const StructMap &structMap)
+/*
+    Map from user-defined structure/union tags to unique ones
+    NOTE: at this stage we don't distinguish between structures and unions
+    in the map, or complain if the same tag declares a struct and union in
+    the same scope - we'll catch that error during type checking
+*/
+TagMap IdentifierResolution::copyTagMap(const TagMap &tagMap)
 {
-    StructMap newStructMap = {};
+    // return a copy of the map with from_current_block set to false for every entry
+    TagMap newTagMap = {};
 
-    for (const auto &entry : structMap)
+    for (const auto &entry : tagMap)
     {
-        newStructMap[entry.first] = {
+        newTagMap[entry.first] = {
             entry.second.uniqueTag,
             false,
         };
     }
 
-    return newStructMap;
+    return newTagMap;
 }
 
-Types::DataType IdentifierResolution::resolveType(const Types::DataType &type, StructMap &structMap)
+/* Replace structure/union tags in type specifiers */
+Types::DataType IdentifierResolution::resolveType(const Types::DataType &type, TagMap &tagMap)
 {
-    if (auto strct = Types::getStructType(type))
+    if (auto strctType = Types::getStructType(type))
     {
-        auto it = structMap.find(strct->tag);
-        if (it != structMap.end())
+        auto it = tagMap.find(strctType->tag);
+        if (it != tagMap.end())
         {
             auto uniqueTag = it->second.uniqueTag;
             return Types::makeStructType(uniqueTag);
@@ -51,13 +59,24 @@ Types::DataType IdentifierResolution::resolveType(const Types::DataType &type, S
         else
             throw std::runtime_error("specified undeclared structure type");
     }
+    else if (auto unionType = Types::getUnionType(type))
+    {
+        auto it = tagMap.find(unionType->tag);
+        if (it != tagMap.end())
+        {
+            auto uniqueTag = it->second.uniqueTag;
+            return Types::makeUnionType(uniqueTag);
+        }
+        else
+            throw std::runtime_error("specified undeclared union type");
+    }
     else if (auto ptrType = Types::getPointerType(type))
     {
-        return Types::makePointerType(std::make_shared<Types::DataType>(resolveType(*ptrType->referencedType, structMap)));
+        return Types::makePointerType(std::make_shared<Types::DataType>(resolveType(*ptrType->referencedType, tagMap)));
     }
     else if (auto arrType = Types::getArrayType(type))
     {
-        auto resolvedElemType = resolveType(*arrType->elemType, structMap);
+        auto resolvedElemType = resolveType(*arrType->elemType, tagMap);
         return Types::makeArrayType(std::make_shared<Types::DataType>(resolvedElemType), arrType->size);
     }
     else if (auto funType = Types::getFunType(type))
@@ -65,9 +84,9 @@ Types::DataType IdentifierResolution::resolveType(const Types::DataType &type, S
         std::vector<std::shared_ptr<Types::DataType>> resolvedParamTypes{};
         for (auto paramType : funType->paramTypes)
         {
-            resolvedParamTypes.push_back(std::make_shared<Types::DataType>(resolveType(*paramType, structMap)));
+            resolvedParamTypes.push_back(std::make_shared<Types::DataType>(resolveType(*paramType, tagMap)));
         }
-        auto resolvedRetType = std::make_shared<Types::DataType>(resolveType(*funType->retType, structMap));
+        auto resolvedRetType = std::make_shared<Types::DataType>(resolveType(*funType->retType, tagMap));
         return Types::makeFunType(resolvedParamTypes, resolvedRetType);
     }
     else
@@ -76,11 +95,11 @@ Types::DataType IdentifierResolution::resolveType(const Types::DataType &type, S
     }
 }
 
-std::shared_ptr<AST::Initializer> IdentifierResolution::resolveInitializer(const std::shared_ptr<AST::Initializer> &init, IdMap &idMap, StructMap &structMap)
+std::shared_ptr<AST::Initializer> IdentifierResolution::resolveInitializer(const std::shared_ptr<AST::Initializer> &init, IdMap &idMap, TagMap &tagMap)
 {
     if (auto singleInit = std::dynamic_pointer_cast<AST::SingleInit>(init))
     {
-        return std::make_shared<AST::SingleInit>(resolveExp(singleInit->getExp(), idMap, structMap));
+        return std::make_shared<AST::SingleInit>(resolveExp(singleInit->getExp(), idMap, tagMap));
     }
     else if (auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init))
     {
@@ -88,7 +107,7 @@ std::shared_ptr<AST::Initializer> IdentifierResolution::resolveInitializer(const
         resolvedInits.reserve(compoundInit->getInits().size());
         for (const auto &innerInit : compoundInit->getInits())
         {
-            resolvedInits.push_back(resolveInitializer(innerInit, idMap, structMap));
+            resolvedInits.push_back(resolveInitializer(innerInit, idMap, tagMap));
         }
         return std::make_shared<AST::CompoundInit>(std::move(resolvedInits));
     }
@@ -98,30 +117,30 @@ std::shared_ptr<AST::Initializer> IdentifierResolution::resolveInitializer(const
     }
 }
 
-std::shared_ptr<AST::ForInit> IdentifierResolution::resolveForInit(const std::shared_ptr<AST::ForInit> &forInit, IdMap &idMap, StructMap &structMap)
+std::shared_ptr<AST::ForInit> IdentifierResolution::resolveForInit(const std::shared_ptr<AST::ForInit> &forInit, IdMap &idMap, TagMap &tagMap)
 {
     switch (forInit->getType())
     {
     case AST::NodeType::InitDecl:
     {
         auto initDecl = std::dynamic_pointer_cast<AST::InitDecl>(forInit);
-        return std::make_shared<AST::InitDecl>(resolveLocalVarDeclaration(initDecl->getDecl(), idMap, structMap));
+        return std::make_shared<AST::InitDecl>(resolveLocalVarDeclaration(initDecl->getDecl(), idMap, tagMap));
     }
     case AST::NodeType::InitExp:
     {
         auto initExp = std::dynamic_pointer_cast<AST::InitExp>(forInit);
-        return std::make_shared<AST::InitExp>(resolveOptionalExp(initExp->getOptExp(), idMap, structMap));
+        return std::make_shared<AST::InitExp>(resolveOptionalExp(initExp->getOptExp(), idMap, tagMap));
     }
     default:
         throw std::runtime_error("Internal Error: Unknown ForInit type!");
     }
 }
 
-std::optional<std::shared_ptr<AST::Expression>> IdentifierResolution::resolveOptionalExp(const std::optional<std::shared_ptr<AST::Expression>> &optExp, IdMap &idMap, StructMap &structMap)
+std::optional<std::shared_ptr<AST::Expression>> IdentifierResolution::resolveOptionalExp(const std::optional<std::shared_ptr<AST::Expression>> &optExp, IdMap &idMap, TagMap &tagMap)
 {
     if (optExp.has_value())
     {
-        return std::make_optional(resolveExp(optExp.value(), idMap, structMap));
+        return std::make_optional(resolveExp(optExp.value(), idMap, tagMap));
     }
     else
     {
@@ -130,7 +149,7 @@ std::optional<std::shared_ptr<AST::Expression>> IdentifierResolution::resolveOpt
 }
 
 std::shared_ptr<AST::Expression>
-IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, IdMap &idMap, TagMap &tagMap)
 {
     switch (exp->getType())
     {
@@ -138,8 +157,8 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     {
         auto assignment = std::dynamic_pointer_cast<AST::Assignment>(exp);
         return std::make_shared<AST::Assignment>(
-            resolveExp(assignment->getLeftExp(), idMap, structMap),
-            resolveExp(assignment->getRightExp(), idMap, structMap),
+            resolveExp(assignment->getLeftExp(), idMap, tagMap),
+            resolveExp(assignment->getRightExp(), idMap, tagMap),
             assignment->getDataType());
     }
     case AST::NodeType::CompoundAssignment:
@@ -147,22 +166,22 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
         auto compoundAssignment = std::dynamic_pointer_cast<AST::CompoundAssignment>(exp);
         return std::make_shared<AST::CompoundAssignment>(
             compoundAssignment->getOp(),
-            resolveExp(compoundAssignment->getLeftExp(), idMap, structMap),
-            resolveExp(compoundAssignment->getRightExp(), idMap, structMap),
+            resolveExp(compoundAssignment->getLeftExp(), idMap, tagMap),
+            resolveExp(compoundAssignment->getRightExp(), idMap, tagMap),
             compoundAssignment->getDataType());
     }
     case AST::NodeType::PostfixIncr:
     {
         auto postfixIncr = std::dynamic_pointer_cast<AST::PostfixIncr>(exp);
         return std::make_shared<AST::PostfixIncr>(
-            resolveExp(postfixIncr->getExp(), idMap, structMap),
+            resolveExp(postfixIncr->getExp(), idMap, tagMap),
             postfixIncr->getDataType());
     }
     case AST::NodeType::PostfixDecr:
     {
         auto postfixDecr = std::dynamic_pointer_cast<AST::PostfixDecr>(exp);
         return std::make_shared<AST::PostfixDecr>(
-            resolveExp(postfixDecr->getExp(), idMap, structMap),
+            resolveExp(postfixDecr->getExp(), idMap, tagMap),
             postfixDecr->getDataType());
     }
     case AST::NodeType::Var:
@@ -185,10 +204,10 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     {
         auto cast = std::dynamic_pointer_cast<AST::Cast>(exp);
 
-        auto resolvedType = resolveType(cast->getTargetType(), structMap);
+        auto resolvedType = resolveType(cast->getTargetType(), tagMap);
         return std::make_shared<AST::Cast>(
             resolvedType,
-            resolveExp(cast->getExp(), idMap, structMap),
+            resolveExp(cast->getExp(), idMap, tagMap),
             cast->getDataType());
     }
     case AST::NodeType::Unary:
@@ -196,7 +215,7 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
         auto unary = std::dynamic_pointer_cast<AST::Unary>(exp);
         return std::make_shared<AST::Unary>(
             unary->getOp(),
-            resolveExp(unary->getExp(), idMap, structMap),
+            resolveExp(unary->getExp(), idMap, tagMap),
             unary->getDataType());
     }
     case AST::NodeType::Binary:
@@ -204,22 +223,22 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
         auto binary = std::dynamic_pointer_cast<AST::Binary>(exp);
         return std::make_shared<AST::Binary>(
             binary->getOp(),
-            resolveExp(binary->getExp1(), idMap, structMap),
-            resolveExp(binary->getExp2(), idMap, structMap),
+            resolveExp(binary->getExp1(), idMap, tagMap),
+            resolveExp(binary->getExp2(), idMap, tagMap),
             binary->getDataType());
     }
     case AST::NodeType::SizeOf:
     {
         auto sizeOf = std::dynamic_pointer_cast<AST::SizeOf>(exp);
         return std::make_shared<AST::SizeOf>(
-            resolveExp(sizeOf->getInnerExp(), idMap, structMap),
+            resolveExp(sizeOf->getInnerExp(), idMap, tagMap),
             sizeOf->getDataType());
     }
     case AST::NodeType::SizeOfT:
     {
         auto sizeOfT = std::dynamic_pointer_cast<AST::SizeOfT>(exp);
         return std::make_shared<AST::SizeOfT>(
-            std::make_shared<Types::DataType>(resolveType(*sizeOfT->getTypeName(), structMap)),
+            std::make_shared<Types::DataType>(resolveType(*sizeOfT->getTypeName(), tagMap)),
             sizeOfT->getDataType());
     }
     case AST::NodeType::Constant:
@@ -231,9 +250,9 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     {
         auto conditional = std::dynamic_pointer_cast<AST::Conditional>(exp);
         return std::make_shared<AST::Conditional>(
-            resolveExp(conditional->getCondition(), idMap, structMap),
-            resolveExp(conditional->getThen(), idMap, structMap),
-            resolveExp(conditional->getElse(), idMap, structMap),
+            resolveExp(conditional->getCondition(), idMap, tagMap),
+            resolveExp(conditional->getThen(), idMap, tagMap),
+            resolveExp(conditional->getElse(), idMap, tagMap),
             conditional->getDataType());
     }
     case AST::NodeType::FunctionCall:
@@ -248,7 +267,7 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
             newArgs.reserve(fnCall->getArgs().size());
             for (const auto &arg : fnCall->getArgs())
             {
-                newArgs.push_back(resolveExp(arg, idMap, structMap));
+                newArgs.push_back(resolveExp(arg, idMap, tagMap));
             }
 
             return std::make_shared<AST::FunctionCall>(
@@ -264,26 +283,26 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     case AST::NodeType::Dereference:
     {
         auto dereference = std::dynamic_pointer_cast<AST::Dereference>(exp);
-        return std::make_shared<AST::Dereference>(resolveExp(dereference->getInnerExp(), idMap, structMap), dereference->getDataType());
+        return std::make_shared<AST::Dereference>(resolveExp(dereference->getInnerExp(), idMap, tagMap), dereference->getDataType());
     }
     case AST::NodeType::AddrOf:
     {
         auto addrOf = std::dynamic_pointer_cast<AST::AddrOf>(exp);
-        return std::make_shared<AST::AddrOf>(resolveExp(addrOf->getInnerExp(), idMap, structMap), addrOf->getDataType());
+        return std::make_shared<AST::AddrOf>(resolveExp(addrOf->getInnerExp(), idMap, tagMap), addrOf->getDataType());
     }
     case AST::NodeType::Subscript:
     {
         auto subscript = std::dynamic_pointer_cast<AST::Subscript>(exp);
         return std::make_shared<AST::Subscript>(
-            resolveExp(subscript->getExp1(), idMap, structMap),
-            resolveExp(subscript->getExp2(), idMap, structMap),
+            resolveExp(subscript->getExp1(), idMap, tagMap),
+            resolveExp(subscript->getExp2(), idMap, tagMap),
             subscript->getDataType());
     }
     case AST::NodeType::Dot:
     {
         auto dot = std::dynamic_pointer_cast<AST::Dot>(exp);
         return std::make_shared<AST::Dot>(
-            resolveExp(dot->getStruct(), idMap, structMap),
+            resolveExp(dot->getStructOrUnion(), idMap, tagMap),
             dot->getMember(),
             dot->getDataType());
     }
@@ -291,7 +310,7 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
     {
         auto arrow = std::dynamic_pointer_cast<AST::Arrow>(exp);
         return std::make_shared<AST::Arrow>(
-            resolveExp(arrow->getStruct(), idMap, structMap),
+            resolveExp(arrow->getStructOrUnion(), idMap, tagMap),
             arrow->getMember(),
             arrow->getDataType());
     }
@@ -301,7 +320,7 @@ IdentifierResolution::resolveExp(const std::shared_ptr<AST::Expression> &exp, Id
 }
 
 std::shared_ptr<AST::Statement>
-IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &stmt, IdMap &idMap, TagMap &tagMap)
 {
     switch (stmt->getType())
     {
@@ -310,35 +329,35 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
         auto returnStmt = std::dynamic_pointer_cast<AST::Return>(stmt);
         std::optional<std::shared_ptr<AST::Expression>> returnExp = returnStmt->getOptValue();
         if (returnExp.has_value())
-            returnExp = std::make_optional(resolveExp(returnExp.value(), idMap, structMap));
+            returnExp = std::make_optional(resolveExp(returnExp.value(), idMap, tagMap));
 
         return std::make_shared<AST::Return>(returnExp);
     }
     case AST::NodeType::ExpressionStmt:
-        return std::make_shared<AST::ExpressionStmt>(resolveExp(std::dynamic_pointer_cast<AST::ExpressionStmt>(stmt)->getExp(), idMap, structMap));
+        return std::make_shared<AST::ExpressionStmt>(resolveExp(std::dynamic_pointer_cast<AST::ExpressionStmt>(stmt)->getExp(), idMap, tagMap));
     case AST::NodeType::If:
     {
         auto ifStmt = std::dynamic_pointer_cast<AST::If>(stmt);
 
         return std::make_shared<AST::If>(
-            resolveExp(ifStmt->getCondition(), idMap, structMap),
-            resolveStatement(ifStmt->getThenClause(), idMap, structMap),
-            ifStmt->getOptElseClause().has_value() ? std::make_optional(resolveStatement(ifStmt->getOptElseClause().value(), idMap, structMap)) : std::nullopt);
+            resolveExp(ifStmt->getCondition(), idMap, tagMap),
+            resolveStatement(ifStmt->getThenClause(), idMap, tagMap),
+            ifStmt->getOptElseClause().has_value() ? std::make_optional(resolveStatement(ifStmt->getOptElseClause().value(), idMap, tagMap)) : std::nullopt);
     }
     case AST::NodeType::Compound:
     {
         // In a new compound block, create new variable & structure maps to enforce scope.
         auto newIdMap = copyIdentifierMap(idMap);
-        auto newStructMap = copyStructMap(structMap);
-        return std::make_shared<AST::Compound>(resolveBlock(std::dynamic_pointer_cast<AST::Compound>(stmt)->getBlock(), newIdMap, newStructMap));
+        auto newTagMap = copyTagMap(tagMap);
+        return std::make_shared<AST::Compound>(resolveBlock(std::dynamic_pointer_cast<AST::Compound>(stmt)->getBlock(), newIdMap, newTagMap));
     }
     case AST::NodeType::While:
     {
         auto whileStmt = std::dynamic_pointer_cast<AST::While>(stmt);
 
         return std::make_shared<AST::While>(
-            resolveExp(whileStmt->getCondition(), idMap, structMap),
-            resolveStatement(whileStmt->getBody(), idMap, structMap),
+            resolveExp(whileStmt->getCondition(), idMap, tagMap),
+            resolveStatement(whileStmt->getBody(), idMap, tagMap),
             whileStmt->getId());
     }
     case AST::NodeType::DoWhile:
@@ -346,8 +365,8 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
         auto doWhileStmt = std::dynamic_pointer_cast<AST::DoWhile>(stmt);
 
         return std::make_shared<AST::DoWhile>(
-            resolveStatement(doWhileStmt->getBody(), idMap, structMap),
-            resolveExp(doWhileStmt->getCondition(), idMap, structMap),
+            resolveStatement(doWhileStmt->getBody(), idMap, tagMap),
+            resolveExp(doWhileStmt->getCondition(), idMap, tagMap),
             doWhileStmt->getId());
     }
     case AST::NodeType::For:
@@ -356,30 +375,30 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
 
         // Create copy to preserve current scope for 'For'
         auto newIdMap = copyIdentifierMap(idMap);
-        auto newStructMap = copyStructMap(structMap);
+        auto newTagMap = copyTagMap(tagMap);
 
         // Resolve initializer: returns an updated id_map along with the resolved initializer.
-        auto resolvedInit = resolveForInit(forStmt->getInit(), newIdMap, newStructMap);
+        auto resolvedInit = resolveForInit(forStmt->getInit(), newIdMap, newTagMap);
 
         return std::make_shared<AST::For>(
             resolvedInit,
-            resolveOptionalExp(forStmt->getOptCondition(), newIdMap, newStructMap),
-            resolveOptionalExp(forStmt->getOptPost(), newIdMap, newStructMap),
-            resolveStatement(forStmt->getBody(), newIdMap, newStructMap),
+            resolveOptionalExp(forStmt->getOptCondition(), newIdMap, newTagMap),
+            resolveOptionalExp(forStmt->getOptPost(), newIdMap, newTagMap),
+            resolveStatement(forStmt->getBody(), newIdMap, newTagMap),
             forStmt->getId());
     }
     case AST::NodeType::LabeledStatement:
     {
         auto labeledStmt = std::dynamic_pointer_cast<AST::LabeledStatement>(stmt);
-        return std::make_shared<AST::LabeledStatement>(labeledStmt->getLabel(), resolveStatement(labeledStmt->getStatement(), idMap, structMap));
+        return std::make_shared<AST::LabeledStatement>(labeledStmt->getLabel(), resolveStatement(labeledStmt->getStatement(), idMap, tagMap));
     }
     case AST::NodeType::Switch:
     {
         auto switchStmt = std::dynamic_pointer_cast<AST::Switch>(stmt);
 
         return std::make_shared<AST::Switch>(
-            resolveExp(switchStmt->getControl(), idMap, structMap),
-            resolveStatement(switchStmt->getBody(), idMap, structMap),
+            resolveExp(switchStmt->getControl(), idMap, tagMap),
+            resolveStatement(switchStmt->getBody(), idMap, tagMap),
             switchStmt->getOptCases(),
             switchStmt->getId());
     }
@@ -388,8 +407,8 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
         auto caseStmt = std::dynamic_pointer_cast<AST::Case>(stmt);
 
         return std::make_shared<AST::Case>(
-            resolveExp(caseStmt->getValue(), idMap, structMap),
-            resolveStatement(caseStmt->getBody(), idMap, structMap),
+            resolveExp(caseStmt->getValue(), idMap, tagMap),
+            resolveStatement(caseStmt->getBody(), idMap, tagMap),
             caseStmt->getId());
     }
     case AST::NodeType::Default:
@@ -397,7 +416,7 @@ IdentifierResolution::resolveStatement(const std::shared_ptr<AST::Statement> &st
         auto defaultStmt = std::dynamic_pointer_cast<AST::Default>(stmt);
 
         return std::make_shared<AST::Default>(
-            resolveStatement(defaultStmt->getBody(), idMap, structMap),
+            resolveStatement(defaultStmt->getBody(), idMap, tagMap),
             defaultStmt->getId());
     }
     case AST::NodeType::Goto:
@@ -444,41 +463,41 @@ IdentifierResolution::resolveLocalVarHelper(const std::string &name, std::option
 }
 
 std::shared_ptr<AST::VariableDeclaration>
-IdentifierResolution::resolveLocalVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveLocalVarDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap, TagMap &tagMap)
 {
     auto uniqueName = resolveLocalVarHelper(varDecl->getName(), varDecl->getOptStorageClass(), idMap);
-    auto resolvedType = resolveType(varDecl->getVarType(), structMap);
+    auto resolvedType = resolveType(varDecl->getVarType(), tagMap);
     std::optional<std::shared_ptr<AST::Initializer>> resolvedInit = varDecl->getOptInit().has_value()
-                                                                        ? std::make_optional(resolveInitializer(varDecl->getOptInit().value(), idMap, structMap))
+                                                                        ? std::make_optional(resolveInitializer(varDecl->getOptInit().value(), idMap, tagMap))
                                                                         : std::nullopt;
 
     return std::make_shared<AST::VariableDeclaration>(uniqueName, resolvedInit, resolvedType, varDecl->getOptStorageClass());
 }
 
 std::shared_ptr<AST::BlockItem>
-IdentifierResolution::resolveBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, IdMap &idMap, TagMap &tagMap)
 {
     switch (blockItem->getType())
     {
     case AST::NodeType::FunctionDeclaration:
     case AST::NodeType::VariableDeclaration:
-    case AST::NodeType::StructDeclaration:
+    case AST::NodeType::TypeDeclaration:
         // resolving a declaration can change the structure or variable map
-        return resolveLocalDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem), idMap, structMap);
+        return resolveLocalDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem), idMap, tagMap);
     default:
         // resolving a statement doesn't change the struct or variable map
-        return resolveStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem), idMap, structMap);
+        return resolveStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem), idMap, tagMap);
     }
 }
 
 AST::Block
-IdentifierResolution::resolveBlock(const AST::Block &block, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveBlock(const AST::Block &block, IdMap &idMap, TagMap &tagMap)
 {
     AST::Block resolvedBlock = {};
 
     for (auto &blockItem : block)
     {
-        auto resolvedItem = resolveBlockItem(blockItem, idMap, structMap);
+        auto resolvedItem = resolveBlockItem(blockItem, idMap, tagMap);
         resolvedBlock.push_back(resolvedItem);
     }
 
@@ -486,11 +505,11 @@ IdentifierResolution::resolveBlock(const AST::Block &block, IdMap &idMap, Struct
 }
 
 std::shared_ptr<AST::Declaration>
-IdentifierResolution::resolveLocalDeclaration(const std::shared_ptr<AST::Declaration> decl, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveLocalDeclaration(const std::shared_ptr<AST::Declaration> decl, IdMap &idMap, TagMap &tagMap)
 {
     if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
     {
-        return resolveLocalVarDeclaration(varDecl, idMap, structMap);
+        return resolveLocalVarDeclaration(varDecl, idMap, tagMap);
     }
     if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
     {
@@ -500,11 +519,11 @@ IdentifierResolution::resolveLocalDeclaration(const std::shared_ptr<AST::Declara
         if (fnDecl->getOptStorageClass().has_value() && fnDecl->getOptStorageClass().value() == AST::StorageClass::Static)
             throw std::runtime_error("Static keyword not allowd on local function declarations");
 
-        return resolveFunDeclaration(fnDecl, idMap, structMap);
+        return resolveFunDeclaration(fnDecl, idMap, tagMap);
     }
-    if (auto strctDecl = std::dynamic_pointer_cast<AST::StructDeclaration>(decl))
+    if (auto typeDecl = std::dynamic_pointer_cast<AST::TypeDeclaration>(decl))
     {
-        return resolveStructDeclaration(strctDecl, structMap);
+        return resolveTagDeclaration(typeDecl, tagMap);
     }
     throw std::runtime_error("Internal error: Unknown declaration!");
 }
@@ -522,13 +541,13 @@ IdentifierResolution::resolveParams(const std::vector<std::string> &params, IdMa
     return resolvedParams;
 }
 
-std::shared_ptr<AST::StructDeclaration>
-IdentifierResolution::resolveStructDeclaration(const std::shared_ptr<AST::StructDeclaration> &decl, StructMap &structMap)
+std::shared_ptr<AST::TypeDeclaration>
+IdentifierResolution::resolveTagDeclaration(const std::shared_ptr<AST::TypeDeclaration> &decl, TagMap &tagMap)
 {
-    auto it = structMap.find(decl->getTag());
+    auto it = tagMap.find(decl->getTag());
     std::string resolvedTag;
 
-    if (it != structMap.end() && it->second.structFromCurrentScope)
+    if (it != tagMap.end() && it->second.tagFromCurrentScope)
     {
         // this refers to the same struct we've already declared, don't update the map
         resolvedTag = it->second.uniqueTag;
@@ -537,27 +556,28 @@ IdentifierResolution::resolveStructDeclaration(const std::shared_ptr<AST::Struct
     {
         // this declare a new type, generate a tag and update the map
         resolvedTag = UniqueIds::makeNamedTemporary(decl->getTag());
-        auto newEntry = StructEntry{
+        auto newEntry = TagEntry{
             .uniqueTag = resolvedTag,
-            .structFromCurrentScope = true};
-        structMap.insert_or_assign(decl->getTag(), newEntry);
+            .tagFromCurrentScope = true};
+        tagMap.insert_or_assign(decl->getTag(), newEntry);
     }
 
+    // note that we need to use new tag map here in case member type is derived from this type
     std::vector<std::shared_ptr<AST::MemberDeclaration>> resolvedMembers{};
     for (auto member : decl->getMembers())
     {
-        auto memberType = std::make_shared<Types::DataType>(resolveType(*member->getMemberType(), structMap));
+        auto memberType = std::make_shared<Types::DataType>(resolveType(*member->getMemberType(), tagMap));
         auto resolvedMember = std::make_shared<AST::MemberDeclaration>(member->getMemberName(), memberType);
         resolvedMembers.push_back(resolvedMember);
     }
 
-    return std::make_shared<AST::StructDeclaration>(resolvedTag, resolvedMembers);
+    return std::make_shared<AST::TypeDeclaration>(decl->getStructOrUnion(), resolvedTag, resolvedMembers);
 }
 
 std::shared_ptr<AST::VariableDeclaration>
-IdentifierResolution::resolveGlobalScopeVariableDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveGlobalScopeVariableDeclaration(const std::shared_ptr<AST::VariableDeclaration> &varDecl, IdMap &idMap, TagMap &tagMap)
 {
-    auto resolvedVarType = resolveType(varDecl->getVarType(), structMap);
+    auto resolvedVarType = resolveType(varDecl->getVarType(), tagMap);
     idMap.insert_or_assign(varDecl->getName(), IdMapEntry{
                                                    .uniqueName = varDecl->getName(),
                                                    .fromCurrentScope = true,
@@ -568,7 +588,7 @@ IdentifierResolution::resolveGlobalScopeVariableDeclaration(const std::shared_pt
 }
 
 std::shared_ptr<AST::FunctionDeclaration>
-IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionDeclaration> &fnDecl, IdMap &idMap, TagMap &tagMap)
 {
     auto entry = idMap.find(fnDecl->getName());
 
@@ -577,7 +597,7 @@ IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionD
         throw std::runtime_error("Duplicate function declaration: " + fnDecl->getName());
     }
 
-    auto resolvedType = resolveType(fnDecl->getFunType(), structMap);
+    auto resolvedType = resolveType(fnDecl->getFunType(), tagMap);
     auto newEntry = IdMapEntry{
         .uniqueName = fnDecl->getName(),
         .fromCurrentScope = true,
@@ -587,31 +607,31 @@ IdentifierResolution::resolveFunDeclaration(const std::shared_ptr<AST::FunctionD
     idMap.insert_or_assign(fnDecl->getName(), newEntry);
     auto innerMap = copyIdentifierMap(idMap);
     std::vector<std::string> resolvedParams = resolveParams(fnDecl->getParams(), innerMap);
-    auto innerStructMap = copyStructMap(structMap);
+    auto innerTagMap = copyTagMap(tagMap);
     std::optional<AST::Block> resolvedBody = std::nullopt;
 
     if (fnDecl->getOptBody().has_value())
     {
-        resolvedBody = std::make_optional(resolveBlock(fnDecl->getOptBody().value(), innerMap, innerStructMap));
+        resolvedBody = std::make_optional(resolveBlock(fnDecl->getOptBody().value(), innerMap, innerTagMap));
     }
 
     return std::make_shared<AST::FunctionDeclaration>(fnDecl->getName(), resolvedParams, resolvedBody, resolvedType, fnDecl->getOptStorageClass());
 }
 
 std::shared_ptr<AST::Declaration>
-IdentifierResolution::resolveGlobalDeclaration(const std::shared_ptr<AST::Declaration> &decl, IdMap &idMap, StructMap &structMap)
+IdentifierResolution::resolveGlobalDeclaration(const std::shared_ptr<AST::Declaration> &decl, IdMap &idMap, TagMap &tagMap)
 {
     if (auto fnDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
     {
-        return resolveFunDeclaration(fnDecl, idMap, structMap);
+        return resolveFunDeclaration(fnDecl, idMap, tagMap);
     }
     else if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
     {
-        return resolveGlobalScopeVariableDeclaration(varDecl, idMap, structMap);
+        return resolveGlobalScopeVariableDeclaration(varDecl, idMap, tagMap);
     }
-    else if (auto strctDecl = std::dynamic_pointer_cast<AST::StructDeclaration>(decl))
+    else if (auto typeDecl = std::dynamic_pointer_cast<AST::TypeDeclaration>(decl))
     {
-        return resolveStructDeclaration(strctDecl, structMap);
+        return resolveTagDeclaration(typeDecl, tagMap);
     }
     else
     {
@@ -625,7 +645,7 @@ IdentifierResolution::resolve(const std::shared_ptr<AST::Program> &prog)
     std::vector<std::shared_ptr<AST::Declaration>> resolvedDecls{};
     resolvedDecls.reserve(prog->getDeclarations().size());
     IdMap idMap{};
-    StructMap strctMap{};
+    TagMap strctMap{};
 
     for (const auto &decl : prog->getDeclarations())
     {

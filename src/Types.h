@@ -13,6 +13,7 @@
 namespace TypeTableNS
 {
     class TypeTable;
+    struct TypeDef;
 }
 
 namespace Types
@@ -30,6 +31,7 @@ namespace Types
     struct VoidType;
     struct ArrayType;
     struct StructureType;
+    struct UnionType;
 
     using DataType = std::variant<
         CharType,
@@ -44,6 +46,7 @@ namespace Types
         VoidType,
         ArrayType,
         StructureType,
+        UnionType,
         FunType>;
 
     struct CharType
@@ -161,6 +164,18 @@ namespace Types
         std::string toString() const;
     };
 
+    struct UnionType
+    {
+        std::string tag;
+        UnionType(const std::string &tag);
+
+        int getSize(const TypeTableNS::TypeTable &typeTable) const;
+        int getAlignment(const TypeTableNS::TypeTable &typeTable) const;
+        bool isSigned() const { throw std::runtime_error("Internal error: signedness doesn't make sense for union type"); }
+
+        std::string toString() const;
+    };
+
     struct FunType
     {
         std::vector<std::shared_ptr<DataType>> paramTypes;
@@ -212,6 +227,7 @@ namespace Types
     inline DataType makeVoidType() { return VoidType{}; }
     inline DataType makeArrayType(const std::shared_ptr<DataType> &elemType, int size) { return ArrayType{elemType, size}; }
     inline DataType makeStructType(const std::string tag) { return StructureType{tag}; }
+    inline DataType makeUnionType(const std::string tag) { return UnionType{tag}; }
     inline DataType makeFunType(std::vector<std::shared_ptr<DataType>> paramTypes, const std::shared_ptr<DataType> &retType) { return FunType{paramTypes, retType}; }
 
     inline std::optional<CharType> getCharType(const DataType &type) { return getVariant<CharType>(type); }
@@ -226,6 +242,7 @@ namespace Types
     inline std::optional<VoidType> getVoidType(const DataType &type) { return getVariant<VoidType>(type); }
     inline std::optional<ArrayType> getArrayType(const DataType &type) { return getVariant<ArrayType>(type); }
     inline std::optional<StructureType> getStructType(const DataType &type) { return getVariant<StructureType>(type); }
+    inline std::optional<UnionType> getUnionType(const DataType &type) { return getVariant<UnionType>(type); }
     inline std::optional<FunType> getFunType(const DataType &type) { return getVariant<FunType>(type); }
 
     inline bool isCharType(const DataType &type) { return isVariant<CharType>(type); }
@@ -240,6 +257,7 @@ namespace Types
     inline bool isVoidType(const DataType &type) { return isVariant<VoidType>(type); }
     inline bool isArrayType(const DataType &type) { return isVariant<ArrayType>(type); }
     inline bool isStructType(const DataType &type) { return isVariant<StructureType>(type); }
+    inline bool isUnionType(const DataType &type) { return isVariant<UnionType>(type); }
     inline bool isFunType(const DataType &type) { return isVariant<FunType>(type); }
 
     inline bool operator==(const Types::DataType &lhs, const Types::DataType &rhs)
@@ -274,6 +292,10 @@ namespace Types
                     {
                         return static_cast<bool>(left.tag == right.tag);
                     }
+                    else if constexpr (std::is_same_v<LeftType, Types::UnionType>)
+                    {
+                        return static_cast<bool>(left.tag == right.tag);
+                    }
                     else
                     {
                         return true;
@@ -302,7 +324,7 @@ namespace Types
             return true;
         }
 
-        if (Types::isFunType(type) || Types::isPointerType(type) || Types::isArrayType(type) || Types::isStructType(type))
+        if (Types::isFunType(type) || Types::isPointerType(type) || Types::isArrayType(type) || Types::isStructType(type) || Types::isUnionType(type))
         {
             return false;
         }
@@ -334,13 +356,15 @@ namespace Types
 
     inline bool isScalar(const Types::DataType &type)
     {
-        if (Types::isArrayType(type) || Types::isVoidType(type) || Types::isFunType(type) || Types::isStructType(type))
+        if (Types::isArrayType(type) || Types::isVoidType(type) || Types::isFunType(type) || Types::isStructType(type) || Types::isUnionType(type))
             return false;
         return true;
     }
 
     bool isComplete(const DataType &type, const TypeTableNS::TypeTable &typeTable);
     bool isCompletePointer(const DataType &type, const TypeTableNS::TypeTable &typeTable);
+
+    const TypeTableNS::TypeDef &getTypeDef(const std::string &tag, const TypeTableNS::TypeTable &typeTable);
 }
 
 #endif

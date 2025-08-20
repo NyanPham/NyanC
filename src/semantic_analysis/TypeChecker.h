@@ -12,7 +12,9 @@ public:
     TypeChecker() = default;
 
     Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &t2);
-    void validateStructDefinition(const std::shared_ptr<AST::StructDeclaration> &strctDef);
+    TypeTableNS::TypeDef buildStructDef(const std::vector<std::shared_ptr<AST::MemberDeclaration>> &members);
+    TypeTableNS::TypeDef buildUnionDef(const std::vector<std::shared_ptr<AST::MemberDeclaration>> &members);
+    void validateTypeDefinition(const std::shared_ptr<AST::TypeDeclaration> &strctDef);
     void validateType(const std::shared_ptr<Types::DataType> &type);
     std::shared_ptr<AST::Expression> typeCheckScalar(const std::shared_ptr<AST::Expression> &exp);
     std::shared_ptr<AST::Dot> typeCheckDotOperator(const std::shared_ptr<AST::Dot> &dot);
@@ -54,7 +56,7 @@ public:
     AST::Block typeCheckBlock(const AST::Block &blk, const Types::DataType &retType);
     std::shared_ptr<AST::BlockItem> typeCheckBlockItem(const std::shared_ptr<AST::BlockItem> &blkItm, const Types::DataType &retType);
     std::shared_ptr<AST::Statement> typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, const Types::DataType &retType);
-    std::shared_ptr<AST::StructDeclaration> typeCheckStructDecl(const std::shared_ptr<AST::StructDeclaration> &strctDecl);
+    std::shared_ptr<AST::TypeDeclaration> typeCheckTypeDecl(const std::shared_ptr<AST::TypeDeclaration> &typeDecl);
     std::shared_ptr<AST::VariableDeclaration> typeCheckLocalVarDecl(const std::shared_ptr<AST::VariableDeclaration> &varDecl);
     std::shared_ptr<AST::Declaration> typeCheckLocalDecl(const std::shared_ptr<AST::Declaration> &decl);
     std::shared_ptr<AST::VariableDeclaration> typeCheckFileScopeVarDecl(const std::shared_ptr<AST::VariableDeclaration> &varDecl);

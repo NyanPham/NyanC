@@ -14,10 +14,11 @@
 program = Program(declaration*)
 declaration = FunDecl(function_declaration)
     | VarDecl(variable_declaration)
-    | StructDecl(struct_declaration)
+    | TypeDecl(struct_or_union_declaration)
 variable_declaration = (identifier name, initializer? init, type var_type, storage_class?)
 function_declaration = (identifier name, identifier* params, block? body, type fun_type, storage_class?)
-struct_declaration = (identifier tag, member_declaration* members)
+which = Struct | Union
+struct_or_union_declaration = (struct_or_union: which, string tag, member_declaration* members)
 member_declaration = (identifier member_name, type member_type)
 initializer = SingleInit(exp) | CompoundInit(initializer* list)
 type = Char | SChar | UChar | Int | Long | UInt | ULong | Double | Void
@@ -25,6 +26,7 @@ type = Char | SChar | UChar | Int | Long | UInt | ULong | Double | Void
     | Array(type elem_type, int size)
     | PointerType(type referenced)
     | Structure(identifier tag)
+    | Union(identifier tag)
 storage_class = Static | Extern
 block = Block(block_item*)
 block_item = S(Statement) | D(Declaration)
@@ -60,8 +62,8 @@ exp = Constant(const, type)
     | Subscript(exp, exp, type)
     | SizeOf(exp, type)
     | SizeOfT(type, type)
-    | Dot(exp structure, identifier member, type)
-    | Arrow(exp pointer, identifier member, type)
+    | Dot(exp strct_or_union, string member, type)
+    | Arrow(exp strct_or_union, string member, type)
 unary_operator = Complement | Negate | Not | Incr | Decr
 binary_operator = Add | Subtract | Multiply | Divide | Remainder | And | Or
     | Equal | NotEqual | LessThan | LessOrEqual
@@ -119,7 +121,7 @@ namespace AST
     class Initializer;
     class FunctionDeclaration;
     class VariableDeclaration;
-    class StructDeclaration;
+    class TypeDeclaration;
     class MemberDeclaration;
     class BlockItem;
     class Program;
@@ -129,7 +131,7 @@ namespace AST
         Program,
         VariableDeclaration,
         FunctionDeclaration,
-        StructDeclaration,
+        TypeDeclaration,
         MemberDeclaration,
         SingleInit,
         CompoundInit,
@@ -206,6 +208,12 @@ namespace AST
     {
         Static,
         Extern,
+    };
+
+    enum class Which
+    {
+        Struct,
+        Union,
     };
 
     using Block = std::vector<std::shared_ptr<BlockItem>>;
@@ -356,18 +364,20 @@ namespace AST
         std::optional<StorageClass> _storageClass;
     };
 
-    class StructDeclaration : public Declaration
+    class TypeDeclaration : public Declaration
     {
     public:
-        StructDeclaration(const std::string &tag, std::vector<std::shared_ptr<MemberDeclaration>> members)
-            : Declaration(NodeType::StructDeclaration), _tag{tag}, _members{std::move(members)}
+        TypeDeclaration(Which structOrUnion, const std::string &tag, std::vector<std::shared_ptr<MemberDeclaration>> members)
+            : Declaration(NodeType::TypeDeclaration), _structOrUnion{structOrUnion}, _tag{tag}, _members{std::move(members)}
         {
         }
 
+        auto &getStructOrUnion() const { return _structOrUnion; }
         auto &getTag() const { return _tag; }
         auto &getMembers() const { return _members; }
 
     private:
+        Which _structOrUnion;
         std::string _tag;
         std::vector<std::shared_ptr<MemberDeclaration>> _members;
     };
@@ -617,32 +627,32 @@ namespace AST
     class Dot : public Expression
     {
     public:
-        Dot(const std::shared_ptr<Expression> &strct, const std::string &member, std::optional<Types::DataType> dataType = std::nullopt)
-            : Expression(NodeType::Dot, dataType), _strct{strct}, _member{member}
+        Dot(const std::shared_ptr<Expression> &strctOrUnion, const std::string &member, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Dot, dataType), _strctOrUnion{strctOrUnion}, _member{member}
         {
         }
 
-        auto &getStruct() const { return _strct; }
+        auto &getStructOrUnion() const { return _strctOrUnion; }
         auto &getMember() const { return _member; }
 
     private:
-        std::shared_ptr<Expression> _strct;
+        std::shared_ptr<Expression> _strctOrUnion;
         std::string _member;
     };
 
     class Arrow : public Expression
     {
     public:
-        Arrow(const std::shared_ptr<Expression> &strct, const std::string &member, std::optional<Types::DataType> dataType = std::nullopt)
-            : Expression(NodeType::Arrow, dataType), _strct{strct}, _member{member}
+        Arrow(const std::shared_ptr<Expression> &strctOrUnion, const std::string &member, std::optional<Types::DataType> dataType = std::nullopt)
+            : Expression(NodeType::Arrow, dataType), _strctOrUnion{strctOrUnion}, _member{member}
         {
         }
 
-        auto &getStruct() const { return _strct; }
+        auto &getStructOrUnion() const { return _strctOrUnion; }
         auto &getMember() const { return _member; }
 
     private:
-        std::shared_ptr<Expression> _strct;
+        std::shared_ptr<Expression> _strctOrUnion;
         std::string _member;
     };
 

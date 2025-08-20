@@ -28,6 +28,16 @@ struct AbstractBase;
 using Declarator = std::variant<Ident, PointerDeclarator, ArrayDeclarator, FunDeclarator>;
 using AbstractDeclarator = std::variant<AbstractPointer, AbstractArray, AbstractBase>;
 
+/*
+    Defining Specifiers
+*/
+
+struct StructTag;
+struct UnionTag;
+struct OtherSpec;
+
+using Specifier = std::variant<StructTag, UnionTag, OtherSpec>;
+
 class Parser
 {
 public:
@@ -66,14 +76,14 @@ public:
     std::shared_ptr<AbstractDeclarator> parseDirectAbstractDeclarator();
     std::shared_ptr<Types::DataType> processAbstractDeclarator(const std::shared_ptr<AbstractDeclarator> &decl, const std::shared_ptr<Types::DataType> &baseType);
 
-    Token parseTypeSpecifier();
-    Token parseSpecifier();
+    Specifier parseTypeSpecifier();
+    Specifier parseSpecifier();
     Types::DataType parseTypeName();
-    std::vector<Token> parseTypeSpecifierList();
-    std::vector<Token> parseSpecifierList();
+    std::vector<Specifier> parseTypeSpecifierList();
+    std::vector<Specifier> parseSpecifierList();
     AST::StorageClass parseStorageClass(const Token &spec);
-    Types::DataType parseType(const std::vector<Token> &specs);
-    std::pair<Types::DataType, std::optional<AST::StorageClass>> parseTypeAndStorageClass(const std::vector<Token> &specifierList);
+    Types::DataType parseType(const std::vector<Specifier> &specs);
+    std::pair<Types::DataType, std::optional<AST::StorageClass>> parseTypeAndStorageClass(const std::vector<Specifier> &specifierList);
 
     std::optional<std::shared_ptr<AST::Expression>> parseOptionalExp(TokenType delim);
     std::shared_ptr<AST::Switch> parseSwitchStatement();
@@ -100,7 +110,7 @@ public:
 
     std::vector<std::shared_ptr<AST::MemberDeclaration>> parseMemberList();
     std::shared_ptr<AST::MemberDeclaration> parseMember();
-    std::shared_ptr<AST::StructDeclaration> parseStructDeclaration();
+    std::shared_ptr<AST::TypeDeclaration> parseTypeDeclaration();
     std::shared_ptr<AST::FunctionDeclaration> finishParsingFunctionDeclaration(const std::string &name, const Types::DataType &funType, std::vector<std::string> params, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> finishParsingVariableDeclaration(const std::string &name, const Types::DataType &varType, std::optional<AST::StorageClass> storageClass);
     std::shared_ptr<AST::VariableDeclaration> parseVariableDeclaration();
@@ -129,6 +139,7 @@ private:
         TokenType::KEYWORD_EXTERN,
         TokenType::KEYWORD_VOID,
         TokenType::KEYWORD_STRUCT,
+        TokenType::KEYWORD_UNION,
     };
 
     std::set<TokenType> _typeSpecifierTypes = {
@@ -140,6 +151,7 @@ private:
         TokenType::KEYWORD_UNSIGNED,
         TokenType::KEYWORD_VOID,
         TokenType::KEYWORD_STRUCT,
+        TokenType::KEYWORD_UNION,
     };
 
     bool isTypeSpecifier(const Token &token)

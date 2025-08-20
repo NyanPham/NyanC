@@ -40,6 +40,7 @@ enum class TokenType
     KEYWORD_EXTERN,
     KEYWORD_SIZEOF,
     KEYWORD_STRUCT,
+    KEYWORD_UNION,
 
     // Punctuation
     OPEN_PAREN,

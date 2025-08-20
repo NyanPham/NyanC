@@ -20,17 +20,35 @@ namespace Types
 
     int StructureType::getSize(const TypeTableNS::TypeTable &typeTable) const
     {
-        return typeTable.find(tag).size;
+        return getTypeDef(tag, typeTable).size;
     }
 
     int StructureType::getAlignment(const TypeTableNS::TypeTable &typeTable) const
     {
-        return typeTable.find(tag).alignment;
+        return getTypeDef(tag, typeTable).alignment;
     }
 
     std::string StructureType::toString() const
     {
         return "StructureType(tag: " + tag + ")";
+    }
+
+    UnionType::UnionType(const std::string &tag)
+        : tag(tag) {}
+
+    int UnionType::getSize(const TypeTableNS::TypeTable &typeTable) const
+    {
+        return getTypeDef(tag, typeTable).size;
+    }
+
+    int UnionType::getAlignment(const TypeTableNS::TypeTable &typeTable) const
+    {
+        return getTypeDef(tag, typeTable).alignment;
+    }
+
+    std::string UnionType::toString() const
+    {
+        return "UnionType(tag: " + tag + ")";
     }
 
     FunType::FunType(
@@ -105,6 +123,8 @@ namespace Types
             using T = std::decay_t<decltype(t)>;
             if constexpr (std::is_same_v<T, StructureType>)
                 throw std::runtime_error("StructureType::getSize() requires a TypeTable argument");
+            else if constexpr (std::is_same_v<T, UnionType>)
+                throw std::runtime_error("UnionType::getSize() requires a TypeTable argument");
             else if constexpr (std::is_same_v<T, PointerType>)
                 throw std::runtime_error("PointerType::getSize() requires a TypeTable argument");
             else if constexpr (std::is_same_v<T, ArrayType>)
@@ -120,6 +140,8 @@ namespace Types
             using T = std::decay_t<decltype(t)>;
             if constexpr (std::is_same_v<T, StructureType>)
                 return t.getSize(typeTable);
+            else if constexpr (std::is_same_v<T, UnionType>)
+                return t.getSize(typeTable);
             else if constexpr (std::is_same_v<T, ArrayType>)
                 return t.getSize(typeTable);
             else
@@ -133,6 +155,8 @@ namespace Types
             using T = std::decay_t<decltype(t)>;
             if constexpr (std::is_same_v<T, StructureType>)
                 throw std::runtime_error("StructureType::getAlignment() requires a TypeTable argument");
+            else if constexpr (std::is_same_v<T, UnionType>)
+                throw std::runtime_error("UnionType::getAlignment() requires a TypeTable argument");
             else if constexpr (std::is_same_v<T, PointerType>)
                 throw std::runtime_error("PointerType::getAlignment() requires a TypeTable argument");
             else if constexpr (std::is_same_v<T, ArrayType>)
@@ -147,6 +171,8 @@ namespace Types
                           {
             using T = std::decay_t<decltype(t)>;
             if constexpr (std::is_same_v<T, StructureType>)
+                return t.getAlignment(typeTable);
+            else if constexpr (std::is_same_v<T, UnionType>)
                 return t.getAlignment(typeTable);
             else if constexpr (std::is_same_v<T, ArrayType>)
                 return t.getAlignment(typeTable);
@@ -166,14 +192,25 @@ namespace Types
                           { return t.toString(); }, type);
     }
 
+    /* Helper to check whether tag has type table entry w/ member info*/
     bool isComplete(const DataType &type, const TypeTableNS::TypeTable &typeTable)
     {
-        if (isVoidType(type))
+        auto tagComplete = [&](const std::string &tag) -> bool
+        {
+            auto optEntry = typeTable.findOpt(tag);
+            if (optEntry.has_value() && optEntry->optTypeDef.has_value())
+                return true;
+            else
+                // Otherwise, either type isn't in type table, or it's only declared, not defined
+                return false;
+        };
+
+        if (Types::isVoidType(type))
             return false;
-
-        if (auto strctType = getStructType(type))
-            return typeTable.has(strctType->tag);
-
+        if (auto strctType = Types::getStructType(type))
+            return tagComplete(strctType->tag);
+        if (auto unionType = Types::getUnionType(type))
+            return tagComplete(unionType->tag);
         return true;
     }
 
@@ -185,5 +222,15 @@ namespace Types
         }
 
         return false;
+    }
+
+    /* Helper to get definition from type table by tag, or throw error if not defined */
+    const TypeTableNS::TypeDef &getTypeDef(const std::string &tag, const TypeTableNS::TypeTable &typeTable)
+    {
+        std::optional<const TypeTableNS::TypeEntry> optTypeEntry = typeTable.findOpt(tag);
+        if (!optTypeEntry.has_value() || !optTypeEntry->optTypeDef.has_value())
+            throw std::runtime_error("No definition found for " + tag);
+        else // type_def.kind and type_entry.type_def are not null
+            return optTypeEntry->optTypeDef.value();
     }
 }

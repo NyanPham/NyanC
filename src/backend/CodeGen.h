@@ -11,6 +11,7 @@
 #include "Assembly.h"
 #include "Symbols.h"
 #include "AssemblySymbols.h"
+#include "./utils/RawDoubleHash.h"
 
 enum class CLS
 {
@@ -29,16 +30,16 @@ public:
     std::vector<std::shared_ptr<Assembly::Instruction>> copyBytes(std::shared_ptr<Assembly::Operand> srcVal, std::shared_ptr<Assembly::Operand> dstVal, size_t byteCount);
     std::vector<std::shared_ptr<Assembly::Instruction>> copyBytesToReg(std::shared_ptr<Assembly::Operand> srcVal, std::shared_ptr<Assembly::Reg> dstReg, int byteCount);
     std::vector<std::shared_ptr<Assembly::Instruction>> copyBytesFromReg(std::shared_ptr<Assembly::Reg> srcReg, std::shared_ptr<Assembly::Operand> dstVal, int byteCount);
-    std::vector<CLS> classifyNewStructure(const std::string &tag);
-    std::vector<CLS> classifyStructure(const std::string &tag);
+    std::vector<CLS> classifyNewType(const std::string &tag);
+    std::vector<CLS> classifyType(const std::string &tag);
     std::vector<CLS> classifyTackyVal(std::shared_ptr<TACKY::Val> val);
     bool returnsOnStack(const std::string &fnName);
 
-    std::tuple<
+    using RetClass = std::tuple<
         std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>,
         std::vector<std::shared_ptr<Assembly::Operand>>,
-        bool>
-    classifyReturnVal(std::shared_ptr<TACKY::Val> retVal);
+        bool>;
+    RetClass classifyReturnVal(std::shared_ptr<TACKY::Val> retVal);
     std::vector<std::shared_ptr<Assembly::Instruction>> convertReturnInstruction(const std::optional<std::shared_ptr<TACKY::Val>> &retVal);
 
     int getVarAlignment(const Types::DataType &type);
@@ -73,7 +74,8 @@ private:
     Symbols::SymbolTable &_symbolTable;
     TypeTableNS::TypeTable &_typeTable;
     AssemblySymbols::AsmSymbolTable _asmSymbolTable;
-    std::unordered_map<double, std::pair<std::string, size_t>> _constants;
+
+    std::unordered_map<double, std::pair<std::string, size_t>, RawDoubleHash, RawDoubleEq> _constants;
 
     const std::vector<Assembly::RegName> INT_PARAM_PASSING_REGS{
         Assembly::RegName::DI,
@@ -96,7 +98,7 @@ private:
     };
 
     /* memoize results of classify_structure */
-    std::unordered_map<std::string, std::vector<CLS>> _classifiedStructures{};
+    std::unordered_map<std::string, std::vector<CLS>> _classifiedTypes{};
 };
 
 #endif

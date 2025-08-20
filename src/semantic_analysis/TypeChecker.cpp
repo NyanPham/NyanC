@@ -39,7 +39,7 @@ bool isLvalue(const std::shared_ptr<AST::Expression> &exp)
     if (lvalueNodeTypes.count(exp->getType()) > 0)
         return true;
     if (auto dotExp = std::dynamic_pointer_cast<AST::Dot>(exp))
-        return isLvalue(dotExp->getStruct());
+        return isLvalue(dotExp->getStructOrUnion());
 
     return false;
 }
@@ -110,7 +110,9 @@ std::shared_ptr<AST::Expression> convertByAssignment(const std::shared_ptr<AST::
         return convertTo(exp, tgtType);
     }
     else
+    {
         throw std::runtime_error("Cannot convert type for assignment");
+    }
 }
 
 Types::DataType
@@ -169,16 +171,27 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
         compoundInit->setDataType(std::make_optional(type));
         return compoundInit;
     }
+
     else if (auto strctType = Types::getStructType(type))
     {
-        auto members = _typeTable.getMembers(strctType->tag);
+        auto memberTypes = _typeTable.getMemberTypes(strctType->tag);
         auto zeroInits = std::vector<std::shared_ptr<AST::Initializer>>();
-        for (const auto &member : members)
-            zeroInits.push_back(makeZeroInit(member.memberType));
+        for (const auto &memberType : memberTypes)
+            zeroInits.push_back(makeZeroInit(memberType));
         auto compoundInit = std::make_shared<AST::CompoundInit>(zeroInits);
         compoundInit->setDataType(std::make_optional(type));
         return compoundInit;
     }
+
+    else if (auto unionType = Types::getUnionType(type))
+    {
+        auto memberTypes = _typeTable.getMemberTypes(unionType->tag);
+        auto zeroInits = std::vector<std::shared_ptr<AST::Initializer>>{makeZeroInit(memberTypes[0])};
+        auto compoundInit = std::make_shared<AST::CompoundInit>(zeroInits);
+        compoundInit->setDataType(std::make_optional(type));
+        return compoundInit;
+    }
+
     else if (Types::isCharType(type) || Types::isSCharType(type))
     {
         return scalar(std::make_shared<Constants::Const>(Constants::ConstChar(0)));
@@ -213,42 +226,103 @@ TypeChecker::makeZeroInit(const Types::DataType &type)
     }
 }
 
-void TypeChecker::validateStructDefinition(const std::shared_ptr<AST::StructDeclaration> &strctDef)
+TypeTableNS::TypeDef TypeChecker::buildStructDef(const std::vector<std::shared_ptr<AST::MemberDeclaration>> &members)
 {
-    // make sure it's not already in the type table
-    auto tag = strctDef->getTag();
-    auto members = strctDef->getMembers();
+    int currentSize = 0;
+    int currentAlignment = 1;
+    std::map<std::string, TypeTableNS::MemberEntry> memberDefs{};
 
-    if (_typeTable.has(tag))
+    for (const auto &member : members)
     {
-        throw std::runtime_error("Structure " + tag + " was already declared!");
+        auto memberName = member->getMemberName();
+        auto memberType = member->getMemberType();
+        auto memberAlignment = Types::getAlignment(memberType, _typeTable);
+
+        auto offset = Rounding::roundAwayFromZero(memberAlignment, currentSize);
+        auto memberEntry = TypeTableNS::MemberEntry(memberType, offset);
+
+        memberDefs[memberName] = memberEntry;
+
+        currentSize = offset + Types::getSize(memberType, _typeTable);
+        currentAlignment = std::max(currentAlignment, memberAlignment);
     }
-    else
+
+    auto finalSize = Rounding::roundAwayFromZero(currentAlignment, currentSize);
+
+    return TypeTableNS::TypeDef(currentAlignment, finalSize, memberDefs);
+}
+
+TypeTableNS::TypeDef TypeChecker::buildUnionDef(const std::vector<std::shared_ptr<AST::MemberDeclaration>> &members)
+{
+    int currentSize = 0;
+    int currentAlignment = 1;
+    std::map<std::string, TypeTableNS::MemberEntry> memberDefs{};
+
+    for (const auto &member : members)
     {
-        // check for duplicate member names
-        std::unordered_set<std::string> memberNames{};
-        for (const auto &member : members)
+        auto memberName = member->getMemberName();
+        auto memberType = member->getMemberType();
+        auto memberSize = Types::getSize(memberType, _typeTable);
+        auto memberAlignment = Types::getAlignment(memberType, _typeTable);
+
+        // All union members have offset 0
+        auto memberEntry = TypeTableNS::MemberEntry(memberType, 0);
+        memberDefs[memberName] = memberEntry;
+
+        currentSize = std::max(currentSize, memberSize);
+        currentAlignment = std::max(currentAlignment, memberAlignment);
+    }
+
+    auto finalSize = Rounding::roundAwayFromZero(currentAlignment, currentSize);
+
+    return TypeTableNS::TypeDef(currentAlignment, finalSize, memberDefs);
+}
+
+void TypeChecker::validateTypeDefinition(const std::shared_ptr<AST::TypeDeclaration> &typeDef)
+{
+    auto strctOrUnion = typeDef->getStructOrUnion();
+    auto tag = typeDef->getTag();
+    auto members = typeDef->getMembers();
+
+    // first check for conflicting definition in type table
+    auto entry = _typeTable.findOpt(tag);
+    if (entry.has_value())
+    {
+        auto kind = entry->kind;
+        auto contents = entry->optTypeDef;
+
+        // did we declare this tag with the same sort of type (struct vs. union) both times?
+        if (kind != strctOrUnion)
+            throw std::runtime_error("Conflicting declaration of " + tag + ": defined as " + (kind == AST::Which::Struct ? "struct" : "union") + " and then as " + (strctOrUnion == AST::Which::Struct ? "struct" : "union"));
+
+        // Did we include a member list both times?
+        if (!members.empty() && contents.has_value())
+            throw std::runtime_error("Contents of tag {tag} defined twice");
+    }
+
+    // check for duplicate number names
+    std::unordered_set<std::string> memberNames{};
+    for (const auto &member : members)
+    {
+        auto memberName = member->getMemberName();
+        auto memberType = member->getMemberType();
+        if (memberNames.count(memberName))
+            throw std::runtime_error("Duplicate declaration of member " + memberName + " in structure " + tag);
+        else
+            memberNames.insert(memberName);
+        // validate member type
+        validateType(memberType);
+        if (Types::isFunType(*memberType))
         {
-            auto memberName = member->getMemberName();
-            auto memberType = member->getMemberType();
-            if (memberNames.count(memberName))
-                throw std::runtime_error("Duplicate declaration of member " + memberName + " in structure " + tag);
+            // this is redundant, we'd already reject this in parser
+            throw std::runtime_error("Can't declare structure member with function type");
+        }
+        else
+        {
+            if (Types::isComplete(*memberType, _typeTable))
+                ; // Do nothing
             else
-                memberNames.insert(memberName);
-            // validate member type
-            validateType(memberType);
-            if (Types::isFunType(*memberType))
-            {
-                // this is redundant, we'd already reject this in parser
-                throw std::runtime_error("Can't declare structure member with function type");
-            }
-            else
-            {
-                if (Types::isComplete(*memberType, _typeTable))
-                    ; // Do nothing
-                else
-                    throw std::runtime_error("Cannot declare structure member with incomplete type");
-            }
+                throw std::runtime_error("Cannot declare structure member with incomplete type");
         }
     }
 }
@@ -275,6 +349,26 @@ void TypeChecker::validateType(const std::shared_ptr<Types::DataType> &type)
 
         validateType(fnType->retType);
     }
+    else if (auto structType = Types::getStructType(*type))
+    {
+        auto optEntry = _typeTable.findOpt(structType->tag);
+
+        if (optEntry.has_value() && optEntry->kind == AST::Which::Union)
+            throw std::runtime_error("Tag previously specified union, now specifies struct");
+        else
+            // Otherwise, either previously added as struct or, if we're just processing its definition now, not at all
+            return;
+    }
+    else if (auto unionType = Types::getUnionType(*type))
+    {
+        auto optEntry = _typeTable.findOpt(unionType->tag);
+
+        if (optEntry.has_value() && optEntry->kind == AST::Which::Struct)
+            throw std::runtime_error("Tag previously specified struct, now specifies union");
+        else
+            // Otherwise, either previously added as union or, if we're just processing its definition now, not at all
+            return;
+    }
     else if (
         Types::isCharType(*type) ||
         Types::isSCharType(*type) ||
@@ -284,8 +378,7 @@ void TypeChecker::validateType(const std::shared_ptr<Types::DataType> &type)
         Types::isUIntType(*type) ||
         Types::isULongType(*type) ||
         Types::isDoubleType(*type) ||
-        Types::isVoidType(*type) ||
-        Types::isStructType(*type))
+        Types::isVoidType(*type))
     {
         return;
     }
@@ -307,54 +400,63 @@ TypeChecker::typeCheckScalar(const std::shared_ptr<AST::Expression> &exp)
 
 std::shared_ptr<AST::Dot> TypeChecker::typeCheckDotOperator(const std::shared_ptr<AST::Dot> &dot)
 {
-    auto typedStrct = typeCheckAndConvert(dot->getStruct());
+    auto typedStrctOrUnion = typeCheckAndConvert(dot->getStructOrUnion());
 
-    if (auto strctType = Types::getStructType(typedStrct->getDataType().value()))
-    {
-        // typecheck_and_convert already validated that this structure type is complete
-        auto strctDef = _typeTable.find(strctType->tag);
-        auto membEntryIt = strctDef.members.find(dot->getMember());
-
-        if (membEntryIt == strctDef.members.end())
-            throw std::runtime_error("Struct type" + strctType->tag + " has no member " + dot->getMember());
-
-        auto member = membEntryIt->second;
-        auto memberType = *member.memberType;
-        auto dotExp = std::make_shared<AST::Dot>(typedStrct, dot->getMember());
-        dotExp->setDataType(std::make_optional(memberType));
-        return dotExp;
-    }
+    // Look up definition of base struct/union in the type table
+    std::string tag = "";
+    if (auto structType = Types::getStructType(typedStrctOrUnion->getDataType().value()))
+        tag = structType->tag;
+    else if (auto unionType = Types::getUnionType(typedStrctOrUnion->getDataType().value()))
+        tag = unionType->tag;
     else
-    {
-        throw std::runtime_error("Dot operator can only be applied to expressions with structure type");
-    }
+        throw std::runtime_error("Dot operator can only be applied to expressions with structure or union type");
+
+    // typecheck_and_convert already validated that this structure type is complete
+    auto innerTypMembers = _typeTable.getMembers(tag);
+    Types::DataType memberTyp;
+
+    if (innerTypMembers.count(dot->getMember()))
+        memberTyp = *innerTypMembers[dot->getMember()].memberType;
+    else
+        throw std::runtime_error("Struct/union type" + tag + " has no member " + dot->getMember());
+
+    auto dotExp = std::make_shared<AST::Dot>(typedStrctOrUnion, dot->getMember());
+    dotExp->setDataType(std::make_optional(memberTyp));
+    return dotExp;
 }
 
 std::shared_ptr<AST::Arrow> TypeChecker::typeCheckArrowOperator(const std::shared_ptr<AST::Arrow> &arrow)
 {
-    auto typedStrctPtr = typeCheckAndConvert(arrow->getStruct());
+    auto typedStrctOrUnionPtr = typeCheckAndConvert(arrow->getStructOrUnion());
 
-    auto ptrType = Types::getPointerType(typedStrctPtr->getDataType().value());
-    if (ptrType && Types::isStructType(*ptrType->referencedType))
+    // Validate that this is a pointer to a complete type
+    if (!Types::isCompletePointer(typedStrctOrUnionPtr->getDataType().value(), _typeTable))
     {
-        auto strctType = Types::getStructType(*ptrType->referencedType);
-        // typecheck_and_convert already validated that this structure type is complete
-        auto strctDef = _typeTable.find(strctType->tag);
-        auto membEntryIt = strctDef.members.find(arrow->getMember());
-
-        if (membEntryIt == strctDef.members.end())
-            throw std::runtime_error("Struct type" + strctType->tag + " has incomplete or has no member " + arrow->getMember());
-
-        auto memberEntry = membEntryIt->second;
-        auto memberType = *memberEntry.memberType;
-        auto arrowExp = std::make_shared<AST::Arrow>(typedStrctPtr, arrow->getMember());
-        arrowExp->setDataType(std::make_optional(memberType));
-        return arrowExp;
+        throw std::runtime_error("Arrow operator can only be applied to pointers to structure or union types");
     }
+
+    // Make sure it's a pointer to a struct or union type specifically
+    auto ptrType = Types::getPointerType(typedStrctOrUnionPtr->getDataType().value());
+    std::string tag = "";
+
+    if (auto structType = Types::getStructType(*ptrType->referencedType))
+        tag = structType->tag;
+    else if (auto unionType = Types::getUnionType(*ptrType->referencedType))
+        tag = unionType->tag;
     else
-    {
-        throw std::runtime_error("Arrow operator can only be applied to pointers to structure");
-    }
+        throw std::runtime_error("Arrow operator can only be applied to pointers to complete  structure or union types");
+
+    // figure out member type
+    auto innerTypMembers = _typeTable.getMembers(tag);
+    Types::DataType memberTyp;
+    if (innerTypMembers.count(arrow->getMember()))
+        memberTyp = *innerTypMembers[arrow->getMember()].memberType;
+    else
+        throw std::runtime_error("Struct/union type" + tag + " has no member " + arrow->getMember());
+
+    auto arrowExp = std::make_shared<AST::Arrow>(typedStrctOrUnionPtr, arrow->getMember());
+    arrowExp->setDataType(std::make_optional(memberTyp));
+    return arrowExp;
 }
 
 std::shared_ptr<AST::SizeOfT>
@@ -460,36 +562,54 @@ TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_
         }
         else if (auto structType = Types::getStructType(targetType))
         {
-            auto members = _typeTable.getMembers(structType->tag);
-            if (compoundInit->getInits().size() > members.size())
+            auto memberTypes = _typeTable.getMemberTypes(structType->tag);
+            if (compoundInit->getInits().size() > memberTypes.size())
             {
                 throw std::runtime_error("Too many values in structure initializer");
             }
             else
             {
                 auto inits = compoundInit->getInits();
-                auto initializedMembers = std::vector<TypeTableNS::MemberEntry>(members.begin(), members.begin() + inits.size());
-                auto uninitializedMembers = std::vector<TypeTableNS::MemberEntry>(members.begin() + inits.size(), members.end());
+                auto initializedMembers = std::vector<Types::DataType>(memberTypes.begin(), memberTypes.begin() + inits.size());
+                auto uninitializedMembers = std::vector<Types::DataType>(memberTypes.begin() + inits.size(), memberTypes.end());
 
                 auto typeCheckedMembers = std::vector<std::shared_ptr<AST::Initializer>>();
 
                 for (size_t i = 0; i < initializedMembers.size(); i++)
                 {
-                    auto memb = initializedMembers[i];
+                    auto memberType = initializedMembers[i];
                     auto init = inits[i];
-                    typeCheckedMembers.push_back(typeCheckInit(*memb.memberType, init));
+                    typeCheckedMembers.push_back(typeCheckInit(memberType, init));
                 }
 
                 auto padding = std::vector<std::shared_ptr<AST::Initializer>>();
 
                 for (size_t i = 0; i < uninitializedMembers.size(); i++)
                 {
-                    auto memb = uninitializedMembers[i];
-                    padding.push_back(makeZeroInit(memb.memberType));
+                    auto memberType = uninitializedMembers[i];
+                    padding.push_back(makeZeroInit(memberType));
                 }
 
                 typeCheckedMembers.insert(typeCheckedMembers.end(), padding.begin(), padding.end());
                 auto compoundInit = std::make_shared<AST::CompoundInit>(typeCheckedMembers);
+                compoundInit->setDataType(std::make_optional(targetType));
+                return compoundInit;
+            }
+        }
+        else if (auto unionType = Types::getUnionType(targetType))
+        {
+            // Compound initializer for union must have exactly one element; it initializes the union's first member
+            if (compoundInit->getInits().size() != 1)
+            {
+                throw std::runtime_error("Initializer list for union must have exactly one element");
+            }
+            else
+            {
+                auto elem = compoundInit->getInits()[0];
+                auto memberType = _typeTable.getMemberTypes(unionType->tag)[0];
+                auto typeCheckedMember = typeCheckInit(memberType, elem);
+                // don't need to zero out trailing padding for non-static unions
+                auto compoundInit = std::make_shared<AST::CompoundInit>(std::vector<std::shared_ptr<AST::Initializer>>{typeCheckedMember});
                 compoundInit->setDataType(std::make_optional(targetType));
                 return compoundInit;
             }
@@ -898,20 +1018,19 @@ std::shared_ptr<AST::Expression>
 TypeChecker::typeCheckAndConvert(const std::shared_ptr<AST::Expression> &exp)
 {
     auto typedExp = typeCheckExp(exp);
-    if (Types::isStructType(typedExp->getDataType().value()) && !Types::isComplete(typedExp->getDataType().value(), _typeTable))
-    {
+    const auto &dt = typedExp->getDataType().value();
+
+    if ((Types::isStructType(dt) || Types::isUnionType(dt)) && !Types::isComplete(dt, _typeTable))
         throw std::runtime_error("Incomplete structure type not permitted here");
-    }
-    else if (auto arrType = Types::getArrayType(typedExp->getDataType().value()))
+
+    if (auto arrType = Types::getArrayType(dt))
     {
         auto addrExp = std::make_shared<AST::AddrOf>(typedExp);
         addrExp->setDataType(std::make_optional(Types::makePointerType(arrType->elemType)));
         return addrExp;
     }
-    else
-    {
-        return typedExp;
-    }
+
+    return typedExp;
 }
 
 std::vector<std::shared_ptr<Initializers::StaticInit>>
@@ -970,8 +1089,7 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
         auto strctType = Types::getStructType(*varType);
         auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init);
 
-        auto strctDef = _typeTable.find(strctType->tag);
-        auto members = _typeTable.getMembers(strctType->tag);
+        auto members = _typeTable.getFlattenMembers(strctType->tag);
 
         if (compoundInit->getInits().size() > members.size())
         {
@@ -997,16 +1115,46 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
                 currentOffset = memb.offset + getSize(memb.memberType);
             }
 
-            if (currentOffset < strctDef.size)
-                currentInits.push_back(std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{static_cast<size_t>(strctDef.size - currentOffset)}));
+            auto structSize = Types::getSize(*varType, _typeTable);
+
+            if (currentOffset < structSize)
+                currentInits.push_back(std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{static_cast<size_t>(structSize - currentOffset)}));
 
             return currentInits;
         }
     }
 
-    else if (Types::isStructType(*varType) && init->getType() == AST::NodeType::SingleInit)
+    else if (Types::isUnionType(*varType) && init->getType() == AST::NodeType::CompoundInit)
     {
-        throw std::runtime_error("Can't initialize static structure from scalar value");
+        auto unionType = Types::getUnionType(*varType);
+        auto compoundInit = std::dynamic_pointer_cast<AST::CompoundInit>(init);
+
+        // Union initializer list must have one element, initializing first member
+        if (compoundInit->getInits().size() != 1)
+        {
+            throw std::runtime_error("Compound initializer for union must have exactly one value");
+        }
+        else
+        {
+            auto elem = compoundInit->getInits()[0];
+
+            auto memberType = _typeTable.getMemberTypes(unionType->tag)[0];
+            auto unionSize = Types::getSize(*varType, _typeTable);
+            // recursively initialize this member
+            auto unionInit = staticInitHelper(std::make_shared<Types::DataType>(memberType), elem);
+            // if member size < total union size, add trailing padding
+            auto initializedSize = Types::getSize(memberType, _typeTable);
+
+            if (initializedSize < unionSize)
+                unionInit.push_back(std::make_shared<Initializers::StaticInit>(Initializers::ZeroInit{static_cast<size_t>(unionSize - initializedSize)}));
+
+            return unionInit;
+        }
+    }
+
+    else if ((Types::isStructType(*varType) || Types::isUnionType(*varType)) && init->getType() == AST::NodeType::SingleInit)
+    {
+        throw std::runtime_error("Can't initialize static structure or union from scalar value");
     }
 
     else if (Types::isArrayType(*varType) && init->getType() == AST::NodeType::SingleInit)
@@ -1302,7 +1450,7 @@ TypeChecker::typeCheckConditional(const std::shared_ptr<AST::Conditional> &condi
     else if (Types::isArithmetic(typedThen->getDataType().value()) && Types::isArithmetic(typedElse->getDataType().value()))
         resultType = getCommonType(typedThen->getDataType().value(), typedElse->getDataType().value());
     else if (typedThen->getDataType().value() == typedElse->getDataType().value())
-        // only other option is structure types, this is fine if they're identical
+        // only other option is structure/union types, this is fine if they're identical
         // (typecheck_and_convert already validated that they're complete)
         resultType = typedThen->getDataType().value();
     else
@@ -1491,7 +1639,7 @@ TypeChecker::typeCheckBlockItem(const std::shared_ptr<AST::BlockItem> &blkItem, 
     {
     case AST::NodeType::VariableDeclaration:
     case AST::NodeType::FunctionDeclaration:
-    case AST::NodeType::StructDeclaration:
+    case AST::NodeType::TypeDeclaration:
     {
         return typeCheckLocalDecl(std::dynamic_pointer_cast<AST::Declaration>(blkItem));
     }
@@ -1670,43 +1818,43 @@ TypeChecker::typeCheckStatement(const std::shared_ptr<AST::Statement> &stmt, con
     }
 }
 
-std::shared_ptr<AST::StructDeclaration>
-TypeChecker::typeCheckStructDecl(const std::shared_ptr<AST::StructDeclaration> &strctDecl)
+std::shared_ptr<AST::TypeDeclaration>
+TypeChecker::typeCheckTypeDecl(const std::shared_ptr<AST::TypeDeclaration> &typeDecl)
 {
-    auto tag = strctDecl->getTag();
-    auto members = strctDecl->getMembers();
+    // first validate the definition
+    validateTypeDefinition(typeDecl);
+    auto structOrUnion = typeDecl->getStructOrUnion();
+    auto tag = typeDecl->getTag();
+    auto members = typeDecl->getMembers();
 
-    if (members.empty())
+    /*
+        Next, the build type table entry. We can skip this if we've already
+        defined this type (including its contents). But if it's not already in
+        the type table, we'll add it now, even if this is just a declaration
+        (rather than a definition), so we can distinguish conflicting struct/union
+        declarations
+    */
+
+    auto t = structOrUnion == AST::Which::Struct
+                 ? Types::makeStructType(tag)
+                 : Types::makeUnionType(tag);
+
+    if (!Types::isComplete(t, _typeTable))
     {
-        // ignore forward declarations
-        return strctDecl;
+        std::optional<TypeTableNS::TypeDef> typeDef;
+
+        if (members.empty())
+            typeDef = std::nullopt;
+        else
+            typeDef = structOrUnion == AST::Which::Struct
+                          ? std::make_optional(buildStructDef(members))
+                          : std::make_optional(buildUnionDef(members));
+
+        _typeTable.addTypeDefinition(tag, TypeTableNS::TypeEntry(structOrUnion, typeDef));
     }
-    else
-    {
-        // validate the definition, then add it to the type table
-        validateStructDefinition(strctDecl);
 
-        std::map<std::string, TypeTableNS::MemberEntry> memberEntries{};
-        int structSize = 0;
-        int structAlignment = 0;
-
-        for (auto &member : members)
-        {
-            auto memberAlignment = Types::getAlignment(member->getMemberType(), _typeTable);
-            auto memberOffset = Rounding::roundAwayFromZero(memberAlignment, structSize);
-            auto m = TypeTableNS::MemberEntry(member->getMemberType(), memberOffset);
-            memberEntries[member->getMemberName()] = m;
-            structAlignment = std::max(structAlignment, memberAlignment);
-            structSize = memberOffset + Types::getSize(member->getMemberType(), _typeTable);
-        }
-
-        auto size = Rounding::roundAwayFromZero(structAlignment, structSize);
-        auto structDef = TypeTableNS::StructEntry(structAlignment, size, memberEntries);
-
-        _typeTable.addStructDefinition(tag, structDef);
-
-        return strctDecl;
-    }
+    // actual conversion to new AST node is trivial
+    return std::make_shared<AST::TypeDeclaration>(structOrUnion, tag, members);
 }
 
 std::shared_ptr<AST::VariableDeclaration>
@@ -1785,8 +1933,8 @@ TypeChecker::typeCheckLocalDecl(const std::shared_ptr<AST::Declaration> &decl)
         return typeCheckLocalVarDecl(varDecl);
     else if (auto funDecl = std::dynamic_pointer_cast<AST::FunctionDeclaration>(decl))
         return typeCheckFunDecl(funDecl);
-    else if (auto strctDecl = std::dynamic_pointer_cast<AST::StructDeclaration>(decl))
-        return typeCheckStructDecl(strctDecl);
+    else if (auto typeDecl = std::dynamic_pointer_cast<AST::TypeDeclaration>(decl))
+        return typeCheckTypeDecl(typeDecl);
     else
         throw std::runtime_error("Internal Error: Unknown type of declaration!");
 }
@@ -1952,8 +2100,8 @@ TypeChecker::typeCheckGlobalDecl(const std::shared_ptr<AST::Declaration> &decl)
         return typeCheckFunDecl(funDecl);
     else if (auto varDecl = std::dynamic_pointer_cast<AST::VariableDeclaration>(decl))
         return typeCheckFileScopeVarDecl(varDecl);
-    else if (auto strctDecl = std::dynamic_pointer_cast<AST::StructDeclaration>(decl))
-        return typeCheckStructDecl(strctDecl);
+    else if (auto typeDecl = std::dynamic_pointer_cast<AST::TypeDeclaration>(decl))
+        return typeCheckTypeDecl(typeDecl);
     else
         throw std::runtime_error("Internal Error: Unknown type of declaration!");
 }

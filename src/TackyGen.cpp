@@ -68,12 +68,20 @@ int TackyGen::getMemberOffset(const std::string &member, const Types::DataType &
 {
     if (auto strctType = Types::getStructType(type))
     {
-        auto members = _typeTable.find(strctType->tag).members;
-        auto it = members.find(member);
-        if (it == members.end())
-            throw std::runtime_error("Internal error: failed to find member in struct");
+        if (_typeTable.has(strctType->tag))
+        {
+            auto members = _typeTable.getMembers(strctType->tag);
+            auto m = members[member];
+            return m.offset;
+        }
         else
-            return it->second.offset;
+        {
+            throw std::runtime_error("Internal error: failed to find member in struct");
+        }
+    }
+    else if (Types::isUnionType(type))
+    {
+        return 0;
     }
     else
     {
@@ -878,7 +886,7 @@ std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpR
 TackyGen::emitDotOperator(const std::shared_ptr<AST::Dot> &dot)
 {
     auto t = dot->getDataType().value();
-    auto strct = dot->getStruct();
+    auto strct = dot->getStructOrUnion();
     auto member = dot->getMember();
 
     auto memberOffset = getMemberOffset(member, *strct->getDataType());
@@ -939,7 +947,7 @@ std::pair<std::vector<std::shared_ptr<TACKY::Instruction>>, std::shared_ptr<ExpR
 TackyGen::emitArrowOperator(const std::shared_ptr<AST::Arrow> &arrow)
 {
     auto t = arrow->getDataType().value();
-    auto strct = arrow->getStruct();
+    auto strct = arrow->getStructOrUnion();
     auto member = arrow->getMember();
 
     auto memberOffset = getMemberPointerOffset(member, *strct->getDataType());
@@ -1543,7 +1551,12 @@ TackyGen::emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const 
         else if (compoundInit->getDataType().has_value() && Types::isStructType(compoundInit->getDataType().value()))
         {
             auto structType = Types::getStructType(compoundInit->getDataType().value());
-            auto members = _typeTable.getMembers(structType->tag);
+            auto membersMap = _typeTable.getMembers(structType->tag);
+            std::vector<TypeTableNS::MemberEntry> members;
+            for (const auto &kv : membersMap)
+            {
+                members.push_back(kv.second);
+            }
             for (size_t i = 0; i < compoundInit->getInits().size(); ++i)
             {
                 auto init = compoundInit->getInits()[i];
@@ -1553,6 +1566,15 @@ TackyGen::emitCompoundInit(const std::shared_ptr<AST::Initializer> &init, const 
                 newInits.insert(newInits.end(), innerInits.begin(), innerInits.end());
             }
             return newInits;
+        }
+        else if (compoundInit->getDataType().has_value() && Types::isUnionType(compoundInit->getDataType().value()))
+        {
+            auto unionType = Types::getUnionType(compoundInit->getDataType().value());
+
+            if (compoundInit->getInits().size() != 1)
+                throw std::runtime_error("Internal error: compound init for union doesn't have exactly one element");
+            else
+                return emitCompoundInit(compoundInit->getInits()[0], name, offset);
         }
         else
         {
@@ -1618,10 +1640,8 @@ TackyGen::emitTackyForBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem
     {
     case AST::NodeType::FunctionDeclaration:
     case AST::NodeType::VariableDeclaration:
-    case AST::NodeType::StructDeclaration:
-    {
+    case AST::NodeType::TypeDeclaration:
         return emitLocalDeclaration(std::dynamic_pointer_cast<AST::Declaration>(blockItem));
-    }
     default:
         return emitTackyForStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem));
     }

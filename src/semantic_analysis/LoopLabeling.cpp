@@ -124,7 +124,7 @@ LoopLabeling::labelBlockItem(const std::shared_ptr<AST::BlockItem> &blockItem, s
     {
     case AST::NodeType::FunctionDeclaration:
     case AST::NodeType::VariableDeclaration:
-    case AST::NodeType::StructDeclaration:
+    case AST::NodeType::TypeDeclaration:
         return blockItem;
     default:
         return labelStatement(std::dynamic_pointer_cast<AST::Statement>(blockItem), currBreakId, currContinueId);

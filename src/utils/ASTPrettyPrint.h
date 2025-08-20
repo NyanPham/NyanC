@@ -137,8 +137,8 @@ public:
         case AST::NodeType::SizeOf:
             visitSizeOf(static_cast<const AST::SizeOf &>(node), indent);
             break;
-        case AST::NodeType::StructDeclaration:
-            visitStructDeclaration(static_cast<const AST::StructDeclaration &>(node), indent);
+        case AST::NodeType::TypeDeclaration:
+            visitTypeDeclaration(static_cast<const AST::TypeDeclaration &>(node), indent);
             break;
         case AST::NodeType::MemberDeclaration:
             visitMemberDeclaration(static_cast<const AST::MemberDeclaration &>(node), indent);
@@ -1113,18 +1113,29 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
-    void visitStructDeclaration(const AST::StructDeclaration &strct, bool indent = true)
+    void visitTypeDeclaration(const AST::TypeDeclaration &typeDecl, bool indent = true)
     {
         if (indent)
             std::cout << getIndent();
-        std::cout << "StructDeclaration(\n";
+        std::cout << "TypeDeclaration(\n";
         increaseIndent();
-        std::cout << getIndent() << "tag=\"" << strct.getTag() << "\",\n";
+        std::cout << getIndent() << "struct_or_union=";
+        switch (typeDecl.getStructOrUnion())
+        {
+        case AST::Which::Struct:
+            std::cout << "Struct";
+            break;
+        case AST::Which::Union:
+            std::cout << "Union";
+            break;
+        }
+        std::cout << ",\n";
+        std::cout << getIndent() << "tag=\"" << typeDecl.getTag() << "\",\n";
         std::cout << getIndent() << "members=[\n";
         increaseIndent();
-        for (const auto &member : strct.getMembers())
+        for (const auto &member : typeDecl.getMembers())
         {
-            visit(*member, true);
+            visitMemberDeclaration(*member, true);
         }
         decreaseIndent();
         std::cout << getIndent() << "]\n";
@@ -1148,8 +1159,8 @@ private:
             std::cout << getIndent();
         std::cout << "Dot(\n";
         increaseIndent();
-        std::cout << getIndent() << "struct=";
-        visit(*dot.getStruct(), false);
+        std::cout << getIndent() << "strct_or_union=";
+        visit(*dot.getStructOrUnion(), false);
         std::cout << getIndent() << "member=\"" << dot.getMember() << "\"";
         if (dot.getDataType().has_value())
             std::cout << ", dataType=" << Types::dataTypeToString(dot.getDataType().value());
@@ -1166,8 +1177,8 @@ private:
             std::cout << getIndent();
         std::cout << "Arrow(\n";
         increaseIndent();
-        std::cout << getIndent() << "struct=";
-        visit(*arrow.getStruct(), false);
+        std::cout << getIndent() << "strct_or_union=";
+        visit(*arrow.getStructOrUnion(), false);
         std::cout << getIndent() << "member=\"" << arrow.getMember() << "\"";
         if (arrow.getDataType().has_value())
             std::cout << ", dataType=" << Types::dataTypeToString(arrow.getDataType().value());
