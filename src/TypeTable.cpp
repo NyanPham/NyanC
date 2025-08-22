@@ -19,18 +19,18 @@ namespace TypeTableNS
 
     TypeDef::TypeDef() = default;
 
-    TypeDef::TypeDef(int alignment, int size, std::map<std::string, MemberEntry> members)
-        : alignment{alignment}, size{size}, members{members} {}
+    TypeDef::TypeDef(int alignment, int size, std::map<std::string, MemberEntry> members, std::vector<std::string> memberOrder)
+        : alignment{alignment}, size{size}, members{members}, memberOrder{memberOrder} {}
 
     std::string TypeDef::toString() const
     {
         std::string membersStr = "{";
         bool first = true;
-        for (const auto &[name, entry] : members)
+        for (const auto &name : memberOrder)
         {
             if (!first)
                 membersStr += ", ";
-            membersStr += "\"" + name + "\": " + entry.toString();
+            membersStr += "\"" + name + "\": " + members.at(name).toString();
             first = false;
         }
         membersStr += "}";
@@ -47,9 +47,12 @@ namespace TypeTableNS
     std::string TypeEntry::toString() const
     {
         std::string result = "TypeEntry(Kind: " + std::to_string(static_cast<int>(kind));
-        if (optTypeDef.has_value()) {
+        if (optTypeDef.has_value())
+        {
             result += ", " + optTypeDef->toString();
-        } else {
+        }
+        else
+        {
             result += ", <no TypeDef>";
         }
         result += ")";
@@ -69,16 +72,24 @@ namespace TypeTableNS
         const auto &optTypeDef = it->second.optTypeDef;
         if (!optTypeDef.has_value())
             throw std::runtime_error("Type does not have members: " + tag);
-      
+
         return optTypeDef->members;
     }
 
     std::vector<Types::DataType> TypeTable::getMemberTypes(const std::string &tag) const
     {
-        std::vector<Types::DataType> types {};
-        auto members = getMembers(tag);
-        for (const auto &member : members)
-            types.push_back(*member.second.memberType);
+        std::vector<Types::DataType> types{};
+        auto it = _table.find(tag);
+        if (it == _table.end())
+            throw std::runtime_error("Type tag not found: " + tag);
+        const auto &optTypeDef = it->second.optTypeDef;
+        if (!optTypeDef.has_value())
+            throw std::runtime_error("Type does not have members: " + tag);
+
+        for (const auto &name : optTypeDef->memberOrder)
+        {
+            types.push_back(*optTypeDef->members.at(name).memberType);
+        }
         return types;
     }
 

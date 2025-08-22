@@ -151,7 +151,7 @@ The NyanC compiler processes C code in several stages:
 - [x] Support goto statements and labels
 - [x] Implement loop statements (e.g., for, while, do-while)
 - [x] Support global variables and multiple functions within a program.
-- [ ] Support C types (e.g., double, pointers, arrays, strings, structs, unions).
+- [x] Support C types (e.g., double, pointers, arrays, strings, structs, unions).
   - [x] Signed Int.
   - [x] Signed Long.
   - [x] Unsigned Int.
@@ -162,6 +162,14 @@ The NyanC compiler processes C code in several stages:
   - [x] Character, String.
   - [x] Struct, Union
 - [ ] Optimization passes on the TAC IR and code generation.
+  - [x] Optimizing TAC IR
+    - [x] Constant Folding
+    - [x] Unreachable Code Elimination
+    - [x] Copy Propagation
+    - [x] Dead Code Elimination
+  - [ ] Optimizing Assembly
+    - [ ] Register Allocator
+    - [ ] Register Coalescing
 
 See the [open issues](https://github.com/NyanPham/NyanC/issues) for a full list of proposed features (and known issues).
 

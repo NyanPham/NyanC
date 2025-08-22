@@ -28,14 +28,15 @@ namespace TypeTableNS
         int alignment;
         int size;
         std::map<std::string, MemberEntry> members;
+        std::vector<std::string> memberOrder; // Add this line
 
         TypeDef();
-        TypeDef(int alignment, int size, std::map<std::string, MemberEntry> members);
+        TypeDef(int alignment, int size, std::map<std::string, MemberEntry> members, std::vector<std::string> memberOrder);
 
         std::string toString() const;
     };
 
-    struct TypeEntry 
+    struct TypeEntry
     {
         AST::Which kind;
         std::optional<TypeDef> optTypeDef;

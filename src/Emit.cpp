@@ -62,9 +62,9 @@ std::string Emit::emitInit(const Initializers::StaticInit &init)
         return std::format(".zero {}", zeroInit->byteCount);
     else if (auto stringInit = Initializers::getStringInit(init))
         if (stringInit->nullTerminated)
-            return std::format(".asciz {}", escape(stringInit->str));
+            return std::format(".asciz \"{}\"", escape(stringInit->str));
         else
-            return std::format(".ascii {}", escape(stringInit->str));
+            return std::format(".ascii \"{}\"", escape(stringInit->str));
     else if (auto pointerInit = Initializers::getPointerInit(init))
         return std::format(".quad {}", showLocalLabel(pointerInit->label));
     else

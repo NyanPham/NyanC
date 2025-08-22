@@ -13,6 +13,7 @@
 #include "semantic_analysis/CollectSwitchCases.h"
 #include "semantic_analysis/TypeChecker.h"
 #include "TackyGen.h"
+#include "optimizations/Optimize.h"
 #include "backend/CodeGen.h"
 #include "backend/ReplacePseudos.h"
 #include "backend/InstructionFixup.h"
@@ -26,14 +27,15 @@
 
 std::string Compiler::preprocess(const std::string &src)
 {
-    settings.validateExtension(src);
-    std::string output = settings.replaceExtension(src, ".i");
-    settings.runCommand("gcc", {"-E", "-P", src, "-o", output});
+    _settings.validateExtension(src);
+    std::string output = _settings.replaceExtension(src, ".i");
+    _settings.runCommand("gcc", {"-E", "-P", src, "-o", output});
     return output;
 }
 
-int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, bool debugging)
+int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
 {
+    bool debugging = _settings.getIsDebug();
     try
     {
         std::vector<std::string> preprocessedFiles;
@@ -180,6 +182,14 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                     tackyPrettyPrint.print(*tacky);
                 }
 
+                auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
+
+                if (debugging)
+                {
+                    std::cout << "Optimized TACKY:" << '\n';
+                    tackyPrettyPrint.print(*optimizedTacky);
+                }
+
                 break;
             }
 
@@ -205,6 +215,8 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
 
                 auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
+
+                auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
 
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
@@ -259,6 +271,8 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
+                auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
+
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
@@ -270,7 +284,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
 
                 Emit emitter = Emit(codeGen.getAsmSymbolTable());
 
-                std::string asmFile = settings.replaceExtension(file, ".s");
+                std::string asmFile = _settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
 
                 break;
@@ -299,6 +313,8 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
+                auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
+
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
@@ -310,7 +326,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
 
                 Emit emitter = Emit(codeGen.getAsmSymbolTable());
 
-                std::string asmFile = settings.replaceExtension(file, ".s");
+                std::string asmFile = _settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
 
                 assembleAndLink(srcFiles, false, !debugging);
@@ -340,6 +356,8 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
                 auto tackyGen = TackyGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto tacky = tackyGen.gen(casesCollectedAst);
 
+                auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
+
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
                 auto asmProg = codeGen.gen(tacky);
 
@@ -351,7 +369,7 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles, boo
 
                 Emit emitter = Emit(codeGen.getAsmSymbolTable());
 
-                std::string asmFile = settings.replaceExtension(file, ".s");
+                std::string asmFile = _settings.replaceExtension(file, ".s");
                 emitter.emit(fixedupAsm, asmFile);
 
                 assembleAndLink(srcFiles, true, !debugging);
@@ -380,34 +398,34 @@ void Compiler::assembleAndLink(const std::vector<std::string> &srcFiles, bool li
 
     for (const auto &src : srcFiles)
     {
-        std::string asmFile = settings.replaceExtension(src, ".s");
-        std::string objFile = settings.replaceExtension(src, ".o");
+        std::string asmFile = _settings.replaceExtension(src, ".s");
+        std::string objFile = _settings.replaceExtension(src, ".o");
         objFiles.push_back(objFile);
 
         // Assemble each source file into an object file
-        settings.runCommand("gcc", {asmFile, "-c", "-o", objFile});
+        _settings.runCommand("gcc", {asmFile, "-c", "-o", objFile});
 
         if (cleanUp)
         {
-            settings.runCommand("rm", {asmFile});
+            _settings.runCommand("rm", {asmFile});
         }
     }
 
     if (link)
     {
         // Link all object files into a single executable
-        std::string outputFile = settings.removeExtension(srcFiles[0]); // Use the first file's name for the executable
+        std::string outputFile = _settings.removeExtension(srcFiles[0]); // Use the first file's name for the executable
         std::vector<std::string> gccArgs = objFiles;
         gccArgs.push_back("-o");
         gccArgs.push_back(outputFile);
 
-        settings.runCommand("gcc", gccArgs);
+        _settings.runCommand("gcc", gccArgs);
 
         if (cleanUp)
         {
             for (const auto &objFile : objFiles)
             {
-                settings.runCommand("rm", {objFile});
+                _settings.runCommand("rm", {objFile});
             }
         }
     }

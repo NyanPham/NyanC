@@ -15,12 +15,20 @@ public:
         visitProgram(program);
     }
 
-private:
-    int indentLevel;
+    void visitConstant(const TACKY::Constant &constant, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
 
-    void increaseIndent() { indentLevel++; }
-    void decreaseIndent() { indentLevel--; }
-    std::string getIndent() const { return std::string(indentLevel * 4, ' '); }
+        std::cout << "Constant(" << Constants::toString(*(constant.getConst())) << "),\n";
+    }
+
+    void visitVar(const TACKY::Var &var, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+        std::cout << "Var(" << var.getName() << ")\n";
+    }
 
     void visit(const TACKY::Node &node, bool indent = true)
     {
@@ -115,6 +123,13 @@ private:
             break;
         }
     }
+
+private:
+    int indentLevel;
+
+    void increaseIndent() { indentLevel++; }
+    void decreaseIndent() { indentLevel--; }
+    std::string getIndent() const { return std::string(indentLevel * 4, ' '); }
 
     void visitProgram(const TACKY::Program &program)
     {
@@ -484,21 +499,6 @@ private:
 
         decreaseIndent();
         std::cout << getIndent() << "),\n";
-    }
-
-    void visitConstant(const TACKY::Constant &constant, bool indent = true)
-    {
-        if (indent)
-            std::cout << getIndent();
-
-        std::cout << "Constant(" << Constants::toString(*(constant.getConst())) << "),\n";
-    }
-
-    void visitVar(const TACKY::Var &var, bool indent = true)
-    {
-        if (indent)
-            std::cout << getIndent();
-        std::cout << "Var(" << var.getName() << ")\n";
     }
 
     void visitSignExtend(const TACKY::SignExtend &signExtend, bool indent = true)

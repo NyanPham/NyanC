@@ -231,6 +231,7 @@ TypeTableNS::TypeDef TypeChecker::buildStructDef(const std::vector<std::shared_p
     int currentSize = 0;
     int currentAlignment = 1;
     std::map<std::string, TypeTableNS::MemberEntry> memberDefs{};
+    std::vector<std::string> memberOrder;
 
     for (const auto &member : members)
     {
@@ -242,6 +243,7 @@ TypeTableNS::TypeDef TypeChecker::buildStructDef(const std::vector<std::shared_p
         auto memberEntry = TypeTableNS::MemberEntry(memberType, offset);
 
         memberDefs[memberName] = memberEntry;
+        memberOrder.push_back(memberName);
 
         currentSize = offset + Types::getSize(memberType, _typeTable);
         currentAlignment = std::max(currentAlignment, memberAlignment);
@@ -249,7 +251,7 @@ TypeTableNS::TypeDef TypeChecker::buildStructDef(const std::vector<std::shared_p
 
     auto finalSize = Rounding::roundAwayFromZero(currentAlignment, currentSize);
 
-    return TypeTableNS::TypeDef(currentAlignment, finalSize, memberDefs);
+    return TypeTableNS::TypeDef(currentAlignment, finalSize, memberDefs, memberOrder);
 }
 
 TypeTableNS::TypeDef TypeChecker::buildUnionDef(const std::vector<std::shared_ptr<AST::MemberDeclaration>> &members)
@@ -257,6 +259,7 @@ TypeTableNS::TypeDef TypeChecker::buildUnionDef(const std::vector<std::shared_pt
     int currentSize = 0;
     int currentAlignment = 1;
     std::map<std::string, TypeTableNS::MemberEntry> memberDefs{};
+    std::vector<std::string> memberOrder;
 
     for (const auto &member : members)
     {
@@ -268,6 +271,7 @@ TypeTableNS::TypeDef TypeChecker::buildUnionDef(const std::vector<std::shared_pt
         // All union members have offset 0
         auto memberEntry = TypeTableNS::MemberEntry(memberType, 0);
         memberDefs[memberName] = memberEntry;
+        memberOrder.push_back(memberName);
 
         currentSize = std::max(currentSize, memberSize);
         currentAlignment = std::max(currentAlignment, memberAlignment);
@@ -275,7 +279,7 @@ TypeTableNS::TypeDef TypeChecker::buildUnionDef(const std::vector<std::shared_pt
 
     auto finalSize = Rounding::roundAwayFromZero(currentAlignment, currentSize);
 
-    return TypeTableNS::TypeDef(currentAlignment, finalSize, memberDefs);
+    return TypeTableNS::TypeDef(currentAlignment, finalSize, memberDefs, memberOrder);
 }
 
 void TypeChecker::validateTypeDefinition(const std::shared_ptr<AST::TypeDeclaration> &typeDef)
@@ -286,7 +290,11 @@ void TypeChecker::validateTypeDefinition(const std::shared_ptr<AST::TypeDeclarat
 
     // first check for conflicting definition in type table
     auto entry = _typeTable.findOpt(tag);
-    if (entry.has_value())
+    if (!entry.has_value())
+    {
+        return; // No previous declaration of this tag
+    }
+    else
     {
         auto kind = entry->kind;
         auto contents = entry->optTypeDef;
@@ -298,31 +306,31 @@ void TypeChecker::validateTypeDefinition(const std::shared_ptr<AST::TypeDeclarat
         // Did we include a member list both times?
         if (!members.empty() && contents.has_value())
             throw std::runtime_error("Contents of tag {tag} defined twice");
-    }
 
-    // check for duplicate number names
-    std::unordered_set<std::string> memberNames{};
-    for (const auto &member : members)
-    {
-        auto memberName = member->getMemberName();
-        auto memberType = member->getMemberType();
-        if (memberNames.count(memberName))
-            throw std::runtime_error("Duplicate declaration of member " + memberName + " in structure " + tag);
-        else
-            memberNames.insert(memberName);
-        // validate member type
-        validateType(memberType);
-        if (Types::isFunType(*memberType))
+        // check for duplicate number names
+        std::unordered_set<std::string> memberNames{};
+        for (const auto &member : members)
         {
-            // this is redundant, we'd already reject this in parser
-            throw std::runtime_error("Can't declare structure member with function type");
-        }
-        else
-        {
-            if (Types::isComplete(*memberType, _typeTable))
-                ; // Do nothing
+            auto memberName = member->getMemberName();
+            auto memberType = member->getMemberType();
+            if (memberNames.count(memberName))
+                throw std::runtime_error("Duplicate declaration of member " + memberName + " in structure " + tag);
             else
-                throw std::runtime_error("Cannot declare structure member with incomplete type");
+                memberNames.insert(memberName);
+            // validate member type
+            validateType(memberType);
+            if (Types::isFunType(*memberType))
+            {
+                // this is redundant, we'd already reject this in parser
+                throw std::runtime_error("Can't declare structure member with function type");
+            }
+            else
+            {
+                if (Types::isComplete(*memberType, _typeTable))
+                    ; // Do nothing
+                else
+                    throw std::runtime_error("Cannot declare structure member with incomplete type");
+            }
         }
     }
 }
@@ -560,9 +568,9 @@ TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_
                 return typeCheckedCompoundInit;
             }
         }
-        else if (auto structType = Types::getStructType(targetType))
+        else if (auto strctType = Types::getStructType(targetType))
         {
-            auto memberTypes = _typeTable.getMemberTypes(structType->tag);
+            auto memberTypes = _typeTable.getMemberTypes(strctType->tag);
             if (compoundInit->getInits().size() > memberTypes.size())
             {
                 throw std::runtime_error("Too many values in structure initializer");
@@ -1111,8 +1119,7 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
                 auto moreStaticInits = staticInitHelper(memb.memberType, init);
                 currentInits.insert(currentInits.end(), padding.begin(), padding.end());
                 currentInits.insert(currentInits.end(), moreStaticInits.begin(), moreStaticInits.end());
-
-                currentOffset = memb.offset + getSize(memb.memberType);
+                currentOffset = memb.offset + Types::getSize(memb.memberType, _typeTable);
             }
 
             auto structSize = Types::getSize(*varType, _typeTable);
@@ -1140,6 +1147,7 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
 
             auto memberType = _typeTable.getMemberTypes(unionType->tag)[0];
             auto unionSize = Types::getSize(*varType, _typeTable);
+
             // recursively initialize this member
             auto unionInit = staticInitHelper(std::make_shared<Types::DataType>(memberType), elem);
             // if member size < total union size, add trailing padding
@@ -1191,27 +1199,17 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
                 if (auto constChar = Constants::getConstChar(*convertedC))
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::CharInit{constChar->val});
                 else if (auto constInt = Constants::getConstInt(*convertedC))
-                {
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::IntInit{constInt->val});
-                }
                 else if (auto constLong = Constants::getConstLong(*convertedC))
-                {
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::LongInit{constLong->val});
-                }
                 else if (auto constUChar = Constants::getConstUChar(*convertedC))
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::UCharInit{constUChar->val});
                 else if (auto constUInt = Constants::getConstUInt(*convertedC))
-                {
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::UIntInit{constUInt->val});
-                }
                 else if (auto constULong = Constants::getConstULong(*convertedC))
-                {
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::ULongInit{constULong->val});
-                }
                 else if (auto constDouble = Constants::getConstDouble(*convertedC))
-                {
                     initVal = std::make_shared<Initializers::StaticInit>(Initializers::DoubleInit{constDouble->val});
-                }
                 else
                 {
                     throw std::runtime_error("invalid static initializer");
@@ -1221,11 +1219,6 @@ TypeChecker::staticInitHelper(const std::shared_ptr<Types::DataType> &varType, c
             }
             else
             {
-                /*
-                    we already dealt with pointers (can only initialize w/ null constant or string literal
-                    and already rejected any declarations with type void and any arrays or structs
-                    initialized with scalar expressions
-                */
                 throw std::runtime_error("Internal error: should have already rejected initializer with type");
             }
         }

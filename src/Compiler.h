@@ -20,14 +20,14 @@ enum class Stage
 class Compiler
 {
 public:
-    Compiler() {}
+    Compiler(const Settings &settings) : _settings{settings} {}
 
     std::string preprocess(const std::string &src);
-    int compile(Stage stage, const std::vector<std::string> &srcFiles, bool debugging = false);
+    int compile(Stage stage, const std::vector<std::string> &srcFiles);
     void assembleAndLink(const std::vector<std::string> &srcFiles, bool link = true, bool cleanUp = true);
 
 private:
-    Settings settings;
+    Settings _settings;
 };
 
 #endif
