@@ -18,3 +18,17 @@ std::set<std::string> analyzeAddressTaken(const std::vector<std::shared_ptr<TACK
     }
     return result;
 }
+
+std::set<std::string> analyzeProgram(const std::vector<std::shared_ptr<TACKY::TopLevel>> &topLevels)
+{
+    std::set<std::string> result;
+    for (const auto &tl : topLevels)
+    {
+        if (auto fn = std::dynamic_pointer_cast<TACKY::Function>(tl))
+        {
+            auto vars = analyzeAddressTaken(fn->getInstructions());
+            result.insert(vars.begin(), vars.end());
+        }
+    }
+    return result;
+}

@@ -2,6 +2,7 @@
 #define CODE_GEN_PRETTY_PRINT_H
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <memory>
 #include "./../Assembly.h"
@@ -15,13 +16,6 @@ public:
     {
         visitProgram(program);
     }
-
-private:
-    int indentLevel;
-
-    void increaseIndent() { indentLevel++; }
-    void decreaseIndent() { indentLevel--; }
-    std::string getIndent() const { return std::string(indentLevel * 4, ' '); }
 
     void visit(const Assembly::Node &node, bool indent = true)
     {
@@ -93,6 +87,9 @@ private:
         case Assembly::NodeType::Push:
             visitPush(static_cast<const Assembly::Push &>(node), indent);
             break;
+        case Assembly::NodeType::Pop:
+            visitPop(static_cast<const Assembly::Pop &>(node), indent);
+            break;
         case Assembly::NodeType::Call:
             visitCall(static_cast<const Assembly::Call &>(node), indent);
             break;
@@ -122,6 +119,90 @@ private:
             break;
         }
     }
+
+    std::string showRegName(Assembly::RegName regName)
+    {
+        switch (regName)
+        {
+        case Assembly::RegName::AX:
+            return "AX";
+        case Assembly::RegName::BX:
+            return "BX";
+        case Assembly::RegName::CX:
+            return "CX";
+        case Assembly::RegName::DX:
+            return "DX";
+        case Assembly::RegName::DI:
+            return "DI";
+        case Assembly::RegName::SI:
+            return "SI";
+        case Assembly::RegName::R8:
+            return "R8";
+        case Assembly::RegName::R9:
+            return "R9";
+        case Assembly::RegName::R10:
+            return "R10";
+        case Assembly::RegName::R11:
+            return "R11";
+        case Assembly::RegName::R12:
+            return "R12";
+        case Assembly::RegName::R13:
+            return "R13";
+        case Assembly::RegName::R14:
+            return "R14";
+        case Assembly::RegName::R15:
+            return "R15";
+        case Assembly::RegName::SP:
+            return "RSP";
+        case Assembly::RegName::BP:
+            return "BP";
+        case Assembly::RegName::XMM0:
+            return "XMM0";
+        case Assembly::RegName::XMM1:
+            return "XMM1";
+        case Assembly::RegName::XMM2:
+            return "XMM2";
+        case Assembly::RegName::XMM3:
+            return "XMM3";
+        case Assembly::RegName::XMM4:
+            return "XMM4";
+        case Assembly::RegName::XMM5:
+            return "XMM5";
+        case Assembly::RegName::XMM6:
+            return "XMM6";
+        case Assembly::RegName::XMM7:
+            return "XMM7";
+        case Assembly::RegName::XMM8:
+            return "XMM8";
+        case Assembly::RegName::XMM9:
+            return "XMM9";
+        case Assembly::RegName::XMM10:
+            return "XMM10";
+        case Assembly::RegName::XMM11:
+            return "XMM11";
+        case Assembly::RegName::XMM12:
+            return "XMM12";
+        case Assembly::RegName::XMM13:
+            return "XMM13";
+        case Assembly::RegName::XMM14:
+            return "XMM14";
+        case Assembly::RegName::XMM15:
+            return "XMM15";
+        default:
+        {
+            std::ostringstream oss;
+            oss << "Unknown(RegName=" << static_cast<int>(regName) << ")";
+            return oss.str();
+        }
+        }
+    }
+
+private:
+    int indentLevel;
+
+    void increaseIndent() { indentLevel++; }
+    void decreaseIndent() { indentLevel--; }
+    std::string getIndent() const { return std::string(indentLevel * 4, ' '); }
 
     void visitProgram(const Assembly::Program &program)
     {
@@ -435,6 +516,19 @@ private:
         std::cout << getIndent() << "),\n";
     }
 
+    void visitPop(const Assembly::Pop &pop, bool indent = true)
+    {
+        if (indent)
+            std::cout << getIndent();
+
+        std::cout << "Pop(\n";
+        increaseIndent();
+        std::cout << getIndent() << "reg=";
+        visit(*pop.getReg(), false);
+        decreaseIndent();
+        std::cout << getIndent() << "),\n";
+    }
+
     void visitCall(const Assembly::Call &call, bool indent = true)
     {
         if (indent)
@@ -539,57 +633,6 @@ private:
             return "P";
         case Assembly::CondCode::NP:
             return "NP";
-        default:
-            return "Unknown";
-        }
-    }
-
-    std::string showRegName(Assembly::RegName regName)
-    {
-        switch (regName)
-        {
-        case Assembly::RegName::AX:
-            return "AX";
-        case Assembly::RegName::CX:
-            return "CX";
-        case Assembly::RegName::DX:
-            return "DX";
-        case Assembly::RegName::DI:
-            return "DI";
-        case Assembly::RegName::SI:
-            return "SI";
-        case Assembly::RegName::R8:
-            return "R8";
-        case Assembly::RegName::R9:
-            return "R9";
-        case Assembly::RegName::R10:
-            return "R10";
-        case Assembly::RegName::R11:
-            return "R11";
-        case Assembly::RegName::SP:
-            return "RSP";
-        case Assembly::RegName::BP:
-            return "BP";
-        case Assembly::RegName::XMM0:
-            return "XMM0";
-        case Assembly::RegName::XMM1:
-            return "XMM1";
-        case Assembly::RegName::XMM2:
-            return "XMM2";
-        case Assembly::RegName::XMM3:
-            return "XMM3";
-        case Assembly::RegName::XMM4:
-            return "XMM4";
-        case Assembly::RegName::XMM5:
-            return "XMM5";
-        case Assembly::RegName::XMM6:
-            return "XMM6";
-        case Assembly::RegName::XMM7:
-            return "XMM7";
-        case Assembly::RegName::XMM14:
-            return "XMM14";
-        case Assembly::RegName::XMM15:
-            return "XMM15";
         default:
             return "Unknown";
         }

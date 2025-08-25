@@ -25,6 +25,8 @@ class CodeGen
 public:
     CodeGen(Symbols::SymbolTable &symbolTable, TypeTableNS::TypeTable &typeTable) : _symbolTable(symbolTable), _typeTable{typeTable} {}
 
+    // Helper to extract the tag from a struct or union type
+    static std::string getTag(const Types::DataType &t);
     Assembly::AsmType getEightbyteType(size_t eightbyteIdx, size_t totalVarSize);
     std::shared_ptr<Assembly::Operand> addOffset(int n, std::shared_ptr<Assembly::Operand> operand);
     std::vector<std::shared_ptr<Assembly::Instruction>> copyBytes(std::shared_ptr<Assembly::Operand> srcVal, std::shared_ptr<Assembly::Operand> dstVal, size_t byteCount);
@@ -99,6 +101,15 @@ private:
 
     /* memoize results of classify_structure */
     std::unordered_map<std::string, std::vector<CLS>> _classifiedTypes{};
+
+    std::pair<std::vector<Assembly::RegName>, bool> classifyReturnType(const Types::DataType &retType);
+    std::vector<Assembly::RegName> classifyParamTypes(const std::vector<Types::DataType> &paramTypes, bool returnOnStack);
+    std::tuple<
+        std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>,
+        std::vector<std::shared_ptr<Assembly::Operand>>,
+        std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>>
+    classifyParamsHelper(const std::vector<std::pair<Types::DataType, std::shared_ptr<Assembly::Operand>>> &typedAsmVals, bool returnOnStack);
+    RetClass classifyReturnHelper(const Types::DataType &retType, std::shared_ptr<Assembly::Operand> asmRetval);
 };
 
 #endif

@@ -76,7 +76,7 @@ namespace CopyPropa
     static std::pair<ReachingCopies, std::vector<std::pair<ReachingCopies, std::shared_ptr<TACKY::Instruction>>>>
     transfer(
         const std::set<std::string> &aliasedVars,
-        const cfg::BasicBlock<ReachingCopies> &block,
+        const cfg::BasicBlock<ReachingCopies, TACKY::Instruction> &block,
         const ReachingCopies &initialReachingCopies,
         const Symbols::SymbolTable &symbolTable)
     {
@@ -155,7 +155,7 @@ namespace CopyPropa
     }
 
     // Meet function: intersection of incoming copies
-    static ReachingCopies meet(const ReachingCopies &ident, const cfg::Graph<ReachingCopies> &cfg, const cfg::BasicBlock<ReachingCopies> &block)
+    static ReachingCopies meet(const ReachingCopies &ident, const cfg::Graph<ReachingCopies, TACKY::Instruction> &cfg, const cfg::BasicBlock<ReachingCopies, TACKY::Instruction> &block)
     {
         ReachingCopies incoming = ident;
         for (const auto &pred : block.preds)
@@ -176,7 +176,7 @@ namespace CopyPropa
     }
 
     // Collect all possible copies in the CFG
-    static ReachingCopies collectAllCopies(const cfg::Graph<std::monostate> &cfg, const Symbols::SymbolTable &symbolTable)
+    static ReachingCopies collectAllCopies(const cfg::Graph<std::monostate, TACKY::Instruction> &cfg, const Symbols::SymbolTable &symbolTable)
     {
         ReachingCopies result;
         auto instrs = cfg::cfgToInstructions(cfg);
@@ -195,9 +195,9 @@ namespace CopyPropa
     }
 
     // Find reaching copies for all blocks
-    static cfg::Graph<ReachingCopies> findReachingCopies(
+    static cfg::Graph<ReachingCopies, TACKY::Instruction> findReachingCopies(
         const std::set<std::string> &aliasedVars,
-        const cfg::Graph<std::monostate> &cfg,
+        const cfg::Graph<std::monostate, TACKY::Instruction> &cfg,
         const Symbols::SymbolTable &symbolTable,
         bool debug)
     {
@@ -238,7 +238,7 @@ namespace CopyPropa
     }
 
     // Print the annotated CFG for debugging
-    void printGraph(const cfg::Graph<ReachingCopies> &cfg, const std::string &extraTag)
+    void printGraph(const cfg::Graph<ReachingCopies, TACKY::Instruction> &cfg, const std::string &extraTag)
     {
         std::cout << "==== CopyProp CFG with Reaching Copies ====" << std::endl;
         std::cout << "Debug label: " << cfg.debugLabel << extraTag << std::endl;
@@ -555,9 +555,9 @@ namespace CopyPropa
     }
 
     // Main entry: optimize copy propagation
-    cfg::Graph<std::monostate> optimize(
+    cfg::Graph<std::monostate, TACKY::Instruction> optimize(
         const std::set<std::string> &aliasedVars,
-        const cfg::Graph<std::monostate> &cfg,
+        const cfg::Graph<std::monostate, TACKY::Instruction> &cfg,
         const Symbols::SymbolTable &symbolTable,
         bool debug)
     {
@@ -568,7 +568,7 @@ namespace CopyPropa
         }
 
         // Rewrite instructions in each block
-        cfg::Graph<ReachingCopies> transformed_cfg = annotated_cfg;
+        cfg::Graph<ReachingCopies, TACKY::Instruction> transformed_cfg = annotated_cfg;
         for (auto &[idx, block] : transformed_cfg.basicBlocks)
         {
             std::vector<std::pair<ReachingCopies, std::shared_ptr<TACKY::Instruction>>> new_instrs;

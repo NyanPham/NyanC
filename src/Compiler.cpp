@@ -14,7 +14,9 @@
 #include "semantic_analysis/TypeChecker.h"
 #include "TackyGen.h"
 #include "optimizations/Optimize.h"
+#include "optimizations/AddressTaken.h"
 #include "backend/CodeGen.h"
+#include "backend/RegAlloc.h"
 #include "backend/ReplacePseudos.h"
 #include "backend/InstructionFixup.h"
 #include "Emit.h"
@@ -31,6 +33,21 @@ std::string Compiler::preprocess(const std::string &src)
     std::string output = _settings.replaceExtension(src, ".i");
     _settings.runCommand("gcc", {"-E", "-P", src, "-o", output});
     return output;
+}
+
+// Helper to extract all instructions from a TACKY::Program
+std::vector<std::shared_ptr<TACKY::Instruction>> getAllInstructions(const std::shared_ptr<TACKY::Program> &program)
+{
+    std::vector<std::shared_ptr<TACKY::Instruction>> result;
+    for (const auto &topLevel : program->getTopLevels())
+    {
+        if (auto func = std::dynamic_pointer_cast<TACKY::Function>(topLevel))
+        {
+            const auto &instrs = func->getInstructions();
+            result.insert(result.end(), instrs.begin(), instrs.end());
+        }
+    }
+    return result;
 }
 
 int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
@@ -219,10 +236,13 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
                 auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
 
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
-                auto asmProg = codeGen.gen(tacky);
+                auto asmProg = codeGen.gen(optimizedTacky);
+
+                auto aliasedPseudos = analyzeProgram(optimizedTacky->getTopLevels());
+                auto regAllocedAsmProg = allocateRegisters(aliasedPseudos, asmProg, codeGen.getAsmSymbolTable(), _settings);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
-                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+                auto replacedAsm = replacePseudos.replacePseudos(regAllocedAsmProg);
 
                 auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
@@ -235,6 +255,11 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
                     std::cout << '\n';
 
                     asmSymbolTablePrint.print(codeGen.getAsmSymbolTable());
+
+                    symbolTablePrint.print(typeChecker.getSymbolTable());
+                    std::cout << "======= REG ALLOCATED ASSEMBLY =======" << '\n';
+                    codeGenPrettyPrint.print(*regAllocedAsmProg);
+                    std::cout << '\n';
 
                     std::cout << "======= OPERANDS REPLACED ASSEMBLY =======" << '\n';
                     codeGenPrettyPrint.print(*replacedAsm);
@@ -274,10 +299,13 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
                 auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
 
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
-                auto asmProg = codeGen.gen(tacky);
+                auto asmProg = codeGen.gen(optimizedTacky);
+
+                auto aliasedPseudos = analyzeProgram(optimizedTacky->getTopLevels());
+                auto regAllocedAsmProg = allocateRegisters(aliasedPseudos, asmProg, codeGen.getAsmSymbolTable(), _settings);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
-                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+                auto replacedAsm = replacePseudos.replacePseudos(regAllocedAsmProg);
 
                 auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
@@ -316,10 +344,13 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
                 auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
 
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
-                auto asmProg = codeGen.gen(tacky);
+                auto asmProg = codeGen.gen(optimizedTacky);
+
+                auto aliasedPseudos = analyzeProgram(optimizedTacky->getTopLevels());
+                auto regAllocedAsmProg = allocateRegisters(aliasedPseudos, asmProg, codeGen.getAsmSymbolTable(), _settings);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
-                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+                auto replacedAsm = replacePseudos.replacePseudos(regAllocedAsmProg);
 
                 auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);
@@ -359,10 +390,13 @@ int Compiler::compile(Stage stage, const std::vector<std::string> &srcFiles)
                 auto optimizedTacky = optimize(_settings, file, *tacky, typeChecker.getSymbolTable());
 
                 auto codeGen = CodeGen(typeChecker.getSymbolTable(), typeChecker.getTypeTable());
-                auto asmProg = codeGen.gen(tacky);
+                auto asmProg = codeGen.gen(optimizedTacky);
+
+                auto aliasedPseudos = analyzeProgram(optimizedTacky->getTopLevels());
+                auto regAllocedAsmProg = allocateRegisters(aliasedPseudos, asmProg, codeGen.getAsmSymbolTable(), _settings);
 
                 auto replacePseudos = ReplacePseudos(codeGen.getAsmSymbolTable());
-                auto replacedAsm = replacePseudos.replacePseudos(asmProg);
+                auto replacedAsm = replacePseudos.replacePseudos(regAllocedAsmProg);
 
                 auto instructionFixup = InstructionFixup(codeGen.getAsmSymbolTable());
                 auto fixedupAsm = instructionFixup.fixupProgram(replacedAsm);

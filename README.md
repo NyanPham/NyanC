@@ -167,9 +167,9 @@ The NyanC compiler processes C code in several stages:
     - [x] Unreachable Code Elimination
     - [x] Copy Propagation
     - [x] Dead Code Elimination
-  - [ ] Optimizing Assembly
-    - [ ] Register Allocator
-    - [ ] Register Coalescing
+  - [x] Optimizing Assembly
+    - [x] Register Allocator
+    - [x] Register Coalescing
 
 See the [open issues](https://github.com/NyanPham/NyanC/issues) for a full list of proposed features (and known issues).
 

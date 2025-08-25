@@ -90,10 +90,12 @@ std::string Emit::showLongReg(const std::shared_ptr<Assembly::Reg> &reg)
     {
     case Assembly::RegName::AX:
         return "%eax";
-    case Assembly::RegName::DX:
-        return "%edx";
+    case Assembly::RegName::BX:
+        return "%ebx";
     case Assembly::RegName::CX:
         return "%ecx";
+    case Assembly::RegName::DX:
+        return "%edx";
     case Assembly::RegName::DI:
         return "%edi";
     case Assembly::RegName::SI:
@@ -106,6 +108,14 @@ std::string Emit::showLongReg(const std::shared_ptr<Assembly::Reg> &reg)
         return "%r10d";
     case Assembly::RegName::R11:
         return "%r11d";
+    case Assembly::RegName::R12:
+        return "%r12d";
+    case Assembly::RegName::R13:
+        return "%r13d";
+    case Assembly::RegName::R14:
+        return "%r14d";
+    case Assembly::RegName::R15:
+        return "%r15d";
     case Assembly::RegName::SP:
         throw std::runtime_error("Internal error: no 32-bit RSP");
     case Assembly::RegName::BP:
@@ -184,10 +194,12 @@ std::string Emit::showByteReg(const std::shared_ptr<Assembly::Reg> &reg)
     {
     case Assembly::RegName::AX:
         return "%al";
-    case Assembly::RegName::DX:
-        return "%dl";
+    case Assembly::RegName::BX:
+        return "%bl";
     case Assembly::RegName::CX:
         return "%cl";
+    case Assembly::RegName::DX:
+        return "%dl";
     case Assembly::RegName::DI:
         return "%dil";
     case Assembly::RegName::SI:
@@ -200,6 +212,14 @@ std::string Emit::showByteReg(const std::shared_ptr<Assembly::Reg> &reg)
         return "%r10b";
     case Assembly::RegName::R11:
         return "%r11b";
+    case Assembly::RegName::R12:
+        return "%r12b";
+    case Assembly::RegName::R13:
+        return "%r13b";
+    case Assembly::RegName::R14:
+        return "%r14b";
+    case Assembly::RegName::R15:
+        return "%r15b";
     case Assembly::RegName::SP:
         throw std::runtime_error("Internal error: no one-byte RSP");
     case Assembly::RegName::BP:
@@ -225,10 +245,12 @@ std::string Emit::showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg)
     {
     case Assembly::RegName::AX:
         return "%rax";
-    case Assembly::RegName::DX:
-        return "%rdx";
+    case Assembly::RegName::BX:
+        return "%rbx";
     case Assembly::RegName::CX:
         return "%rcx";
+    case Assembly::RegName::DX:
+        return "%rdx";
     case Assembly::RegName::DI:
         return "%rdi";
     case Assembly::RegName::SI:
@@ -241,6 +263,14 @@ std::string Emit::showQuadwordReg(const std::shared_ptr<Assembly::Reg> &reg)
         return "%r10";
     case Assembly::RegName::R11:
         return "%r11";
+    case Assembly::RegName::R12:
+        return "%r12";
+    case Assembly::RegName::R13:
+        return "%r13";
+    case Assembly::RegName::R14:
+        return "%r14";
+    case Assembly::RegName::R15:
+        return "%r15";
     case Assembly::RegName::SP:
         return "%rsp";
     case Assembly::RegName::BP:
@@ -265,25 +295,37 @@ std::string Emit::showDoubleReg(const std::shared_ptr<Assembly::Reg> &reg)
     switch (reg->getName())
     {
     case Assembly::RegName::XMM0:
-        return "\%xmm0";
+        return "%xmm0";
     case Assembly::RegName::XMM1:
-        return "\%xmm1";
+        return "%xmm1";
     case Assembly::RegName::XMM2:
-        return "\%xmm2";
+        return "%xmm2";
     case Assembly::RegName::XMM3:
-        return "\%xmm3";
+        return "%xmm3";
     case Assembly::RegName::XMM4:
-        return "\%xmm4";
+        return "%xmm4";
     case Assembly::RegName::XMM5:
-        return "\%xmm5";
+        return "%xmm5";
     case Assembly::RegName::XMM6:
-        return "\%xmm6";
+        return "%xmm6";
     case Assembly::RegName::XMM7:
-        return "\%xmm7";
+        return "%xmm7";
+    case Assembly::RegName::XMM8:
+        return "%xmm8";
+    case Assembly::RegName::XMM9:
+        return "%xmm9";
+    case Assembly::RegName::XMM10:
+        return "%xmm10";
+    case Assembly::RegName::XMM11:
+        return "%xmm11";
+    case Assembly::RegName::XMM12:
+        return "%xmm12";
+    case Assembly::RegName::XMM13:
+        return "%xmm13";
     case Assembly::RegName::XMM14:
-        return "\%xmm14";
+        return "%xmm14";
     case Assembly::RegName::XMM15:
-        return "\%xmm15";
+        return "%xmm15";
     default:
         throw std::runtime_error("Internal Error: can't store double type in general-purpose register");
     }
@@ -493,6 +535,13 @@ std::string Emit::emitInst(std::shared_ptr<Assembly::Instruction> inst)
             return std::format("\tpushq\t{}\n", showOperand(std::make_shared<Assembly::AsmType>(Assembly::Double()), push->getOperand()));
         }
     }
+
+    case Assembly::NodeType::Pop:
+    {
+        auto pop = std::dynamic_pointer_cast<Assembly::Pop>(inst);
+        return std::format("\tpopq\t{}\n", showQuadwordReg(pop->getReg()));
+    }
+
     case Assembly::NodeType::Call:
     {
         auto call = std::dynamic_pointer_cast<Assembly::Call>(inst);
@@ -559,7 +608,7 @@ std::string Emit::emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel)
         std::string initsStr;
         for (const auto &init : staticVar->getInits())
         {
-            initsStr += emitInit(*init) + "\n\t";
+            initsStr += emitInit(*init);
         }
 
         if (std::all_of(staticVar->getInits().begin(), staticVar->getInits().end(), [](const auto &init)

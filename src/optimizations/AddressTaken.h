@@ -8,3 +8,4 @@
 
 // Returns the set of variable names whose address is taken in the given TACKY instruction list.
 std::set<std::string> analyzeAddressTaken(const std::vector<std::shared_ptr<TACKY::Instruction>> &instructions);
+std::set<std::string> analyzeProgram(const std::vector<std::shared_ptr<TACKY::TopLevel>> &topLevels);

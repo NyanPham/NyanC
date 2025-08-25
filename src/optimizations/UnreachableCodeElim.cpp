@@ -8,19 +8,19 @@
 namespace
 {
     // DFS to find reachable nodes
-    void dfs(const cfg::Graph<std::monostate> &g, const cfg::NodeID &node, std::set<cfg::NodeID> &visited)
+    void dfs(const cfg::Graph<std::monostate, TACKY::Instruction> &g, const cfg::NodeID &node, std::set<cfg::NodeID> &visited)
     {
         if (visited.count(node))
             return;
         visited.insert(node);
-        for (const auto &succ : cfg::getSuccs<std::monostate>(node, g))
+        for (const auto &succ : cfg::getSuccs<std::monostate, TACKY::Instruction>(node, g))
         {
             dfs(g, succ, visited);
         }
     }
 
     // Remove unreachable blocks
-    cfg::Graph<std::monostate> eliminateUnreachableBlocks(cfg::Graph<std::monostate> cfg)
+    cfg::Graph<std::monostate, TACKY::Instruction> eliminateUnreachableBlocks(cfg::Graph<std::monostate, TACKY::Instruction> cfg)
     {
         std::set<cfg::NodeID> reachable;
         dfs(cfg, cfg::NodeID::Entry(), reachable);
@@ -57,7 +57,7 @@ namespace
     }
 
     // Remove useless jumps at the end of a block if all successors are the next block
-    cfg::Graph<std::monostate> eliminateUselessJumps(cfg::Graph<std::monostate> cfg)
+    cfg::Graph<std::monostate, TACKY::Instruction> eliminateUselessJumps(cfg::Graph<std::monostate, TACKY::Instruction> cfg)
     {
         std::vector<int> block_indices;
         for (const auto &[idx, _] : cfg.basicBlocks)
@@ -85,7 +85,7 @@ namespace
     }
 
     // Remove useless labels at the start of a block if all preds are the default pred
-    cfg::Graph<std::monostate> eliminateUselessLabels(cfg::Graph<std::monostate> cfg)
+    cfg::Graph<std::monostate, TACKY::Instruction> eliminateUselessLabels(cfg::Graph<std::monostate, TACKY::Instruction> cfg)
     {
         std::vector<int> block_indices;
         for (const auto &[idx, _] : cfg.basicBlocks)
@@ -114,7 +114,7 @@ namespace
     }
 
     // Remove empty blocks (with exactly one pred and one succ)
-    cfg::Graph<std::monostate> removeEmptyBlocks(cfg::Graph<std::monostate> cfg)
+    cfg::Graph<std::monostate, TACKY::Instruction> removeEmptyBlocks(cfg::Graph<std::monostate, TACKY::Instruction> cfg)
     {
         std::vector<int> to_remove;
         for (const auto &[idx, blk] : cfg.basicBlocks)
@@ -166,7 +166,7 @@ namespace
     }
 
     // Debug print for the CFG
-    void printUnreachableCFG(const cfg::Graph<std::monostate> &cfg)
+    void printUnreachableCFG(const cfg::Graph<std::monostate, TACKY::Instruction> &cfg)
     {
         std::cout << "==== UnreachableCodeElim CFG ====" << std::endl;
         std::cout << "Debug label: " << cfg.debugLabel << "_unreachable" << std::endl;
@@ -208,14 +208,14 @@ namespace
 
 }
 
-cfg::Graph<std::monostate> eliminateUnreachableCode(const cfg::Graph<std::monostate> &input_cfg, bool debug)
+cfg::Graph<std::monostate, TACKY::Instruction> eliminateUnreachableCode(const cfg::Graph<std::monostate, TACKY::Instruction> &input_cfg, bool debug)
 {
     if (debug)
     {
         printUnreachableCFG(input_cfg);
     }
 
-    cfg::Graph<std::monostate> cfg = input_cfg;
+    cfg::Graph<std::monostate, TACKY::Instruction> cfg = input_cfg;
     cfg = eliminateUnreachableBlocks(cfg);
     cfg = eliminateUselessJumps(cfg);
     cfg = eliminateUselessLabels(cfg);

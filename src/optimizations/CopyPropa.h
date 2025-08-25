@@ -8,6 +8,7 @@
 #include <variant>
 #include "../CFG.h"
 #include "../Symbols.h"
+#include "../TACKY.h"
 
 namespace CopyPropa
 {
@@ -27,12 +28,12 @@ namespace CopyPropa
     using ReachingCopies = std::set<Copy>;
 
     // Print the annotated CFG for debugging
-    void printGraph(const cfg::Graph<ReachingCopies> &cfg, const std::string &extraTag = "");
+    void printGraph(const cfg::Graph<ReachingCopies, TACKY::Instruction> &cfg, const std::string &extraTag = "");
 
     // Main entry: optimize copy propagation
-    cfg::Graph<std::monostate> optimize(
+    cfg::Graph<std::monostate, TACKY::Instruction> optimize(
         const std::set<std::string> &aliasedVars,
-        const cfg::Graph<std::monostate> &cfg,
+        const cfg::Graph<std::monostate, TACKY::Instruction> &cfg,
         const Symbols::SymbolTable &symbolTable,
         bool debug);
 

@@ -6,6 +6,7 @@
 #include "DeadStoreElim.h"
 #include "../CFG.h"
 #include "../Tacky.h"
+#include "../utils/TackyPrettyPrint.h"
 #include <algorithm>
 
 namespace
@@ -67,31 +68,31 @@ namespace
         }
 
         // Build CFG
-        auto cfg = cfg::instructionsToCFG(debugLabel, constantFolded);
+        auto cfg = cfg::instructionsToCFG<TACKY::Instruction>(debugLabel, constantFolded);
 
         // Unreachable code elimination
-        cfg::Graph<std::monostate> cfg1 = cfg;
+        cfg::Graph<std::monostate, TACKY::Instruction> cfg1 = cfg;
         if (opts.unreachableCodeElimination)
         {
             cfg1 = eliminateUnreachableCode(cfg, debug); // pass debug
         }
 
         // Copy propagation
-        cfg::Graph<std::monostate> cfg2 = cfg1;
+        cfg::Graph<std::monostate, TACKY::Instruction> cfg2 = cfg1;
         if (opts.copyPropagation)
         {
             cfg2 = CopyPropa::optimize(aliasedVars, cfg1, symbolTable, debug); // pass debug
         }
 
         // Dead store elimination
-        cfg::Graph<std::monostate> cfg3 = cfg2;
+        cfg::Graph<std::monostate, TACKY::Instruction> cfg3 = cfg2;
         if (opts.deadStoreElimination)
         {
             cfg3 = eliminateDeadStores(aliasedVars, cfg2, symbolTable, debug); // pass debug
         }
 
         // Convert back to instruction list
-        InstructionList optimizedInstructions = cfg::cfgToInstructions(cfg3);
+        InstructionList optimizedInstructions = cfg::cfgToInstructions<TACKY::Instruction>(cfg3);
 
         // If no change, return; else, repeat
         if (optimizedInstructions.size() == instructions.size() &&
@@ -105,7 +106,7 @@ namespace
         }
         else
         {
-            return optimizeFun(debugLabel, opts, optimizedInstructions, symbolTable, debug); // pass debug
+            return optimizeFun(debugLabel, opts, optimizedInstructions, symbolTable, debug);
         }
     }
 

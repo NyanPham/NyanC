@@ -40,6 +40,7 @@ int main(int argc, char *argv[])
     std::vector<std::string> srcFiles;
     bool debugging = false;
     std::string stageStr;
+    int regallocLevel = 0;
 
     // 2. Define all of your optimization flags
     std::unordered_map<std::string, bool> optimizations = {
@@ -58,6 +59,20 @@ int main(int argc, char *argv[])
         if (arg == "--debug")
         {
             debugging = true;
+        }
+        // Regalloc level flag
+        else if (arg.rfind("--regalloc-", 0) == 0)
+        {
+            std::string levelStr = arg.substr(11); // after "--regalloc-"
+            try
+            {
+                regallocLevel = std::stoi(levelStr);
+            }
+            catch (...)
+            {
+                std::cerr << "Error: invalid regalloc level: " << levelStr << "\n";
+                return 1;
+            }
         }
         // Any double-dash flag
         else if (arg.rfind("--", 0) == 0)
@@ -115,6 +130,7 @@ int main(int argc, char *argv[])
     Settings settings;
     settings.setIsDebug(debugging);
     settings.setOptimizations(strippedOptimizations);
+    settings.setRegAllocLevel(regallocLevel);
 
     // 7. Invoke the compiler
     Stage stage = parseStage(stageStr);

@@ -5,7 +5,7 @@
 Settings::Settings()
     : currentPlatform(Platform::Linux),
       isDebug(false),
-      optimizations_{} {}
+      optimizations{} {}
 
 void Settings::getCurrentPlatform()
 {
@@ -56,13 +56,13 @@ void Settings::setIsDebug(bool debug)
 
 void Settings::setOptimizations(const std::unordered_map<std::string, bool> &opts)
 {
-    optimizations_ = opts;
+    optimizations = opts;
 }
 
 bool Settings::isOptimizationEnabled(const std::string &flag) const
 {
-    auto it = optimizations_.find(flag);
-    return it != optimizations_.end() && it->second;
+    auto it = optimizations.find(flag);
+    return it != optimizations.end() && it->second;
 }
 
 Settings::Optimizations Settings::getOptimizations() const
@@ -73,4 +73,47 @@ Settings::Optimizations Settings::getOptimizations() const
     o.copyPropagation = isOptimizationEnabled("--copy_propagation");
     o.deadStoreElimination = isOptimizationEnabled("--dead_store_elimination");
     return o;
+}
+
+void Settings::setRegAllocLevel(int level)
+{
+    regAllocLevel = level;
+    RegAllocDebugOptions opts;
+    opts.debugMsg = level >= 1;
+    opts.interferenceNcol = level >= 2;
+    opts.interferenceGraphviz = level >= 3;
+    opts.liveness = level >= 4;
+    regAllocDebugOptions = opts;
+}
+
+int Settings::getRegAllocLevel() const
+{
+    return regAllocLevel;
+}
+
+Settings::RegAllocDebugOptions Settings::getRegAllocDebugOptions() const
+{
+    return regAllocDebugOptions;
+}
+
+void Settings::setRegAllocDebugOptions(const std::unordered_map<std::string, bool> &opts)
+{
+    // Set struct fields from opts map
+    regAllocDebugOptions.debugMsg = opts.count("debugMsg") ? opts.at("debugMsg") : false;
+    regAllocDebugOptions.interferenceNcol = opts.count("interferenceNcol") ? opts.at("interferenceNcol") : false;
+    regAllocDebugOptions.interferenceGraphviz = opts.count("interferenceGraphviz") ? opts.at("interferenceGraphviz") : false;
+    regAllocDebugOptions.liveness = opts.count("liveness") ? opts.at("liveness") : false;
+}
+
+bool Settings::isRegAllocDebugOptionEnabled(const std::string &flag) const
+{
+    if (flag == "debugMsg")
+        return regAllocDebugOptions.debugMsg;
+    if (flag == "interferenceNcol")
+        return regAllocDebugOptions.interferenceNcol;
+    if (flag == "interferenceGraphviz")
+        return regAllocDebugOptions.interferenceGraphviz;
+    if (flag == "liveness")
+        return regAllocDebugOptions.liveness;
+    return false;
 }

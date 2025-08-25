@@ -298,6 +298,8 @@ ReplacePseudos::replacePseudosInInstruction(const std::shared_ptr<Assembly::Inst
             state,
         };
     }
+    case Assembly::NodeType::Pop:
+        throw std::runtime_error("Internal error");
     default:
         throw std::runtime_error("Invalid instruction to replace operand!");
     }

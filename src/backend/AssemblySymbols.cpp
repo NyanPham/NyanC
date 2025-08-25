@@ -4,13 +4,25 @@
 using namespace AssemblySymbols;
 
 Fun::Fun() = default;
-Fun::Fun(bool defined, int bytesRequired, bool returnOnStack) : defined{defined}, bytesRequired{bytesRequired}, returnOnStack{returnOnStack} {}
+Fun::Fun(bool defined, int bytesRequired, bool returnOnStack,
+         const std::vector<Assembly::RegName> &paramRegs,
+         const std::vector<Assembly::RegName> &returnRegs)
+    : defined{defined},
+      bytesRequired{bytesRequired},
+      returnOnStack{returnOnStack},
+      paramRegs{paramRegs},
+      returnRegs{returnRegs},
+      calleeSavedRegsUsed{} {}
 
 std::string Fun::toString() const
 {
     return "Fun { defined: " + std::string(defined ? "true" : "false") +
            ", bytesRequired: " + std::to_string(bytesRequired) +
-           ", returnOnStack: " + std::string(returnOnStack ? "true" : "false") + " }";
+           ", returnOnStack: " + std::string(returnOnStack ? "true" : "false") +
+           ", paramRegs: " + std::to_string(paramRegs.size()) +
+           ", returnRegs: " + std::to_string(returnRegs.size()) +
+           ", calleeSavedRegsUsed: " + std::to_string(calleeSavedRegsUsed.size()) +
+           " }";
 }
 
 Obj::Obj() = default;
@@ -26,9 +38,11 @@ std::string Obj::toString() const
 
 // AsmSymbolTable methods
 
-void AsmSymbolTable::addFun(const std::string &funName, bool defined, bool returnOnStack)
+void AsmSymbolTable::addFun(const std::string &funName, bool defined, bool returnOnStack,
+                            const std::vector<Assembly::RegName> &paramRegs,
+                            const std::vector<Assembly::RegName> &returnRegs)
 {
-    symbols[funName] = Fun(defined, 0, returnOnStack);
+    symbols[funName] = Fun(defined, 0, returnOnStack, paramRegs, returnRegs);
 }
 
 void AsmSymbolTable::addVar(const std::string &varName, const std::shared_ptr<Assembly::AsmType> &t, bool isStatic)
@@ -53,6 +67,22 @@ int AsmSymbolTable::getBytesRequired(const std::string &funName)
 {
     if (auto *fun = std::get_if<Fun>(&symbols[funName]))
         return fun->bytesRequired;
+    else
+        throw std::runtime_error("Internal error: not a function");
+}
+
+void AsmSymbolTable::addCalleeSavedRegsUsed(const std::string &funName, const std::set<Assembly::RegName> &regs)
+{
+    if (auto *fun = std::get_if<Fun>(&symbols[funName]))
+        fun->calleeSavedRegsUsed.insert(regs.begin(), regs.end());
+    else
+        throw std::runtime_error("Internal error: not a function");
+}
+
+std::set<Assembly::RegName> AsmSymbolTable::getCalleeSavedRegsUsed(const std::string &funName)
+{
+    if (auto *fun = std::get_if<Fun>(&symbols[funName]))
+        return fun->calleeSavedRegsUsed;
     else
         throw std::runtime_error("Internal error: not a function");
 }
@@ -107,7 +137,7 @@ bool AsmSymbolTable::isDefined(const std::string &funName)
         throw std::runtime_error("Internal error: not a function");
 }
 
-bool AsmSymbolTable::isStatic(const std::string &varName)
+bool AsmSymbolTable::isStatic(const std::string &varName) const
 {
     if (!exists(varName))
         throw std::runtime_error("Internal error: symbol not found");
@@ -148,6 +178,24 @@ bool AsmSymbolTable::returnsOnStack(const std::string &funName)
         return fun->returnOnStack;
     else
         throw std::runtime_error("Internal error: this is an object, not a function");
+}
+
+std::vector<Assembly::RegName> AsmSymbolTable::paramRegsUsed(const std::string &funName)
+{
+    auto entry = get(funName);
+    if (auto *fun = std::get_if<Fun>(&entry))
+        return fun->paramRegs;
+    else
+        throw std::runtime_error("Internal error: not a function");
+}
+
+std::vector<Assembly::RegName> AsmSymbolTable::returnRegsUsed(const std::string &funName)
+{
+    auto entry = get(funName);
+    if (auto *fun = std::get_if<Fun>(&entry))
+        return fun->returnRegs;
+    else
+        throw std::runtime_error("Internal error: not a function");
 }
 
 bool AsmSymbolTable::exists(const std::string &name) const

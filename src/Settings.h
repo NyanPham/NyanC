@@ -29,6 +29,13 @@ public:
     void setOptimizations(const std::unordered_map<std::string, bool> &opts);
     bool isOptimizationEnabled(const std::string &flag) const;
 
+    // RegAlloc options flag interface
+    void setRegAllocDebugOptions(const std::unordered_map<std::string, bool> &opts);
+    bool isRegAllocDebugOptionEnabled(const std::string &flag) const;
+
+    void setRegAllocLevel(int level);
+    int getRegAllocLevel() const;
+
     // Struct for easy access to all optimization flags
     struct Optimizations
     {
@@ -39,10 +46,22 @@ public:
     };
     Optimizations getOptimizations() const;
 
+    // Struct for easy access to the options to debug register alloc
+    struct RegAllocDebugOptions
+    {
+        bool debugMsg = false;
+        bool interferenceNcol = false;
+        bool interferenceGraphviz = false;
+        bool liveness = false;
+    };
+    RegAllocDebugOptions getRegAllocDebugOptions() const;
+
 private:
     Platform currentPlatform;
     bool isDebug;
-    std::unordered_map<std::string, bool> optimizations_;
+    int regAllocLevel = 0;
+    std::unordered_map<std::string, bool> optimizations;
+    RegAllocDebugOptions regAllocDebugOptions;
 };
 
 #endif

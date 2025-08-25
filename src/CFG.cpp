@@ -1,26 +1,84 @@
+#include "CFG.h"
+#include "TACKY.h"
+#include "Assembly.h"
+#include "../optimizations/CopyPropa.h"
 #include <algorithm>
 #include <cassert>
 #include <set>
 
-#include "CFG.h"
-#include "../utils/TackyPrettyPrint.h"
-
-#include "optimizations/CopyPropa.h"
-#include "optimizations/UnreachableCodeElim.h"
-#include "optimizations/DeadStoreElim.h"
-
 namespace cfg
 {
+    // Helper functions for TACKY
+    inline bool isLabel(const std::shared_ptr<TACKY::Instruction> &instr)
+    {
+        return instr->getType() == TACKY::NodeType::Label;
+    }
+    inline bool isJump(const std::shared_ptr<TACKY::Instruction> &instr)
+    {
+        return instr->getType() == TACKY::NodeType::Jump;
+    }
+    inline bool isConditionalJump(const std::shared_ptr<TACKY::Instruction> &instr)
+    {
+        return instr->getType() == TACKY::NodeType::JumpIfZero || instr->getType() == TACKY::NodeType::JumpIfNotZero;
+    }
+    inline bool isReturn(const std::shared_ptr<TACKY::Instruction> &instr)
+    {
+        return instr->getType() == TACKY::NodeType::Return;
+    }
+    inline std::string getLabelName(const std::shared_ptr<TACKY::Instruction> &instr)
+    {
+        return static_cast<const TACKY::Label *>(instr.get())->getName();
+    }
+    inline std::string getJumpTarget(const std::shared_ptr<TACKY::Instruction> &instr)
+    {
+        if (instr->getType() == TACKY::NodeType::Jump)
+            return static_cast<const TACKY::Jump *>(instr.get())->getTarget();
+        if (instr->getType() == TACKY::NodeType::JumpIfZero)
+            return static_cast<const TACKY::JumpIfZero *>(instr.get())->getTarget();
+        if (instr->getType() == TACKY::NodeType::JumpIfNotZero)
+            return static_cast<const TACKY::JumpIfNotZero *>(instr.get())->getTarget();
+        return "";
+    }
+
+    // Helper functions for Assembly
+    inline bool isLabel(const std::shared_ptr<Assembly::Instruction> &instr)
+    {
+        return instr->getType() == Assembly::NodeType::Label;
+    }
+    inline bool isJump(const std::shared_ptr<Assembly::Instruction> &instr)
+    {
+        return instr->getType() == Assembly::NodeType::Jmp;
+    }
+    inline bool isConditionalJump(const std::shared_ptr<Assembly::Instruction> &instr)
+    {
+        return instr->getType() == Assembly::NodeType::JmpCC;
+    }
+    inline bool isReturn(const std::shared_ptr<Assembly::Instruction> &instr)
+    {
+        return instr->getType() == Assembly::NodeType::Ret;
+    }
+    inline std::string getLabelName(const std::shared_ptr<Assembly::Instruction> &instr)
+    {
+        return static_cast<const Assembly::Label *>(instr.get())->getName();
+    }
+    inline std::string getJumpTarget(const std::shared_ptr<Assembly::Instruction> &instr)
+    {
+        if (instr->getType() == Assembly::NodeType::Jmp)
+            return static_cast<const Assembly::Jmp *>(instr.get())->getTarget();
+        if (instr->getType() == Assembly::NodeType::JmpCC)
+            return static_cast<const Assembly::JmpCC *>(instr.get())->getTarget();
+        return "";
+    }
 
     // Partition instructions into basic blocks
-    std::vector<std::vector<std::shared_ptr<TACKY::Instruction>>>
-    partitionIntoBasicBlocks(const std::vector<std::shared_ptr<TACKY::Instruction>> &instructions)
+    template <typename I>
+    std::vector<std::vector<std::shared_ptr<I>>> partitionIntoBasicBlocks(const std::vector<std::shared_ptr<I>> &instructions)
     {
-        std::vector<std::vector<std::shared_ptr<TACKY::Instruction>>> blocks;
-        std::vector<std::shared_ptr<TACKY::Instruction>> current;
+        std::vector<std::vector<std::shared_ptr<I>>> blocks;
+        std::vector<std::shared_ptr<I>> current;
         for (const auto &instr : instructions)
         {
-            if (instr->getType() == TACKY::NodeType::Label)
+            if (isLabel(instr))
             {
                 if (!current.empty())
                 {
@@ -29,11 +87,7 @@ namespace cfg
                 }
                 current.push_back(instr);
             }
-            else if (
-                instr->getType() == TACKY::NodeType::Jump ||
-                instr->getType() == TACKY::NodeType::JumpIfZero ||
-                instr->getType() == TACKY::NodeType::JumpIfNotZero ||
-                instr->getType() == TACKY::NodeType::Return)
+            else if (isJump(instr) || isConditionalJump(instr) || isReturn(instr))
             {
                 current.push_back(instr);
                 blocks.push_back(current);
@@ -52,15 +106,16 @@ namespace cfg
     }
 
     // Build a CFG from a list of instructions
-    Graph<std::monostate> instructionsToCFG(const std::string &debugLabel, const std::vector<std::shared_ptr<TACKY::Instruction>> &instructions)
+    template <typename I>
+    Graph<std::monostate, I> instructionsToCFG(const std::string &debugLabel, const std::vector<std::shared_ptr<I>> &instructions)
     {
-        Graph<std::monostate> g;
-        auto blocks = partitionIntoBasicBlocks(instructions);
+        Graph<std::monostate, I> g;
+        auto blocks = partitionIntoBasicBlocks<I>(instructions);
 
         // Build basic blocks
         for (size_t i = 0; i < blocks.size(); ++i)
         {
-            BasicBlock<std::monostate> blk;
+            BasicBlock<std::monostate, I> blk;
             blk.id = NodeID::Block(static_cast<int>(i));
             for (const auto &instr : blocks[i])
             {
@@ -75,15 +130,14 @@ namespace cfg
         std::map<std::string, NodeID> labelMap;
         for (const auto &[idx, blk] : g.basicBlocks)
         {
-            if (!blk.instructions.empty() && blk.instructions.front().second->getType() == TACKY::NodeType::Label)
+            if (!blk.instructions.empty() && isLabel(blk.instructions.front().second))
             {
-                auto labelInstr = std::static_pointer_cast<TACKY::Label>(blk.instructions.front().second);
-                labelMap[labelInstr->getName()] = blk.id;
+                labelMap[getLabelName(blk.instructions.front().second)] = blk.id;
             }
         }
 
         // Add edges
-        auto add_edge = [&](const NodeID &pred, const NodeID &succ)
+        auto addEdge = [&](const NodeID &pred, const NodeID &succ)
         {
             if (pred.kind == NodeID::Kind::Block)
             {
@@ -111,7 +165,7 @@ namespace cfg
 
         // Add entry edge
         if (!g.basicBlocks.empty())
-            add_edge(NodeID::Entry(), NodeID::Block(0));
+            addEdge(NodeID::Entry(), NodeID::Block(0));
 
         // Add outgoing edges for each block
         for (const auto &[idx, blk] : g.basicBlocks)
@@ -121,63 +175,46 @@ namespace cfg
             auto lastInstr = blk.instructions.back().second;
             NodeID nextBlock = (idx + 1 < static_cast<int>(g.basicBlocks.size())) ? NodeID::Block(idx + 1) : NodeID::Exit();
 
-            switch (lastInstr->getType())
+            if (isReturn(lastInstr))
+                addEdge(blk.id, NodeID::Exit());
+            else if (isJump(lastInstr))
             {
-            case TACKY::NodeType::Return:
-                add_edge(blk.id, NodeID::Exit());
-                break;
-            case TACKY::NodeType::Jump:
-            {
-                auto jump = std::static_pointer_cast<TACKY::Jump>(lastInstr);
-                auto it = labelMap.find(jump->getTarget());
+                auto it = labelMap.find(getJumpTarget(lastInstr));
                 if (it != labelMap.end())
-                    add_edge(blk.id, it->second);
-                break;
+                    addEdge(blk.id, it->second);
             }
-            case TACKY::NodeType::JumpIfZero:
+            else if (isConditionalJump(lastInstr))
             {
-                auto jz = std::static_pointer_cast<TACKY::JumpIfZero>(lastInstr);
-                auto it = labelMap.find(jz->getTarget());
+                auto it = labelMap.find(getJumpTarget(lastInstr));
                 if (it != labelMap.end())
-                    add_edge(blk.id, it->second);
-                add_edge(blk.id, nextBlock);
-                break;
+                    addEdge(blk.id, it->second);
+                addEdge(blk.id, nextBlock);
             }
-            case TACKY::NodeType::JumpIfNotZero:
-            {
-                auto jnz = std::static_pointer_cast<TACKY::JumpIfNotZero>(lastInstr);
-                auto it = labelMap.find(jnz->getTarget());
-                if (it != labelMap.end())
-                    add_edge(blk.id, it->second);
-                add_edge(blk.id, nextBlock);
-                break;
-            }
-            default:
-                add_edge(blk.id, nextBlock);
-                break;
-            }
+            else
+                addEdge(blk.id, nextBlock);
         }
 
         return g;
     }
 
     // Convert CFG back to instructions
-    std::vector<std::shared_ptr<TACKY::Instruction>> cfgToInstructions(const Graph<std::monostate> &g)
+    template <typename I>
+    std::vector<std::shared_ptr<I>> cfgToInstructions(const Graph<std::monostate, I> &g)
     {
-        std::vector<std::shared_ptr<TACKY::Instruction>> result;
+        std::vector<std::shared_ptr<I>> result;
         for (const auto &[idx, blk] : g.basicBlocks)
         {
-            for (const auto &instr_pair : blk.instructions)
+            for (const auto &instrPair : blk.instructions)
             {
-                result.push_back(instr_pair.second);
+                result.push_back(instrPair.second);
             }
         }
         return result;
     }
 
     // Get successors for a node
-    template <typename V>
-    std::vector<NodeID> getSuccs(const NodeID &id, const Graph<V> &g)
+    template <typename V, typename I>
+    std::vector<NodeID> getSuccs(const NodeID &id, const Graph<V, I> &g)
     {
         if (id.kind == NodeID::Kind::Entry)
             return g.entrySuccs;
@@ -187,39 +224,39 @@ namespace cfg
     }
 
     // Get block annotation value
-    template <typename V>
-    V getBlockValue(int blocknum, const Graph<V> &g)
+    template <typename V, typename I>
+    V getBlockValue(int blocknum, const Graph<V, I> &g)
     {
         return g.basicBlocks.at(blocknum).value;
     }
 
     // Update a basic block in the CFG
-    template <typename V>
-    Graph<V> updateBasicBlock(int blockIdx, const BasicBlock<V> &newBlock, const Graph<V> &g)
+    template <typename V, typename I>
+    Graph<V, I> updateBasicBlock(int blockIdx, const BasicBlock<V, I> &newBlock, const Graph<V, I> &g)
     {
-        Graph<V> g2 = g;
+        Graph<V, I> g2 = g;
         g2.basicBlocks[blockIdx] = newBlock;
         return g2;
     }
 
     // Initialize annotation for all blocks
-    template <typename VA, typename VB>
-    Graph<VB> initializeAnnotation(const Graph<VA> &cfg, const VB &dummyVal)
+    template <typename VA, typename VB, typename I>
+    Graph<VB, I> initializeAnnotation(const Graph<VA, I> &cfg, const VB &dummyVal)
     {
-        Graph<VB> out;
+        Graph<VB, I> out;
         out.debugLabel = cfg.debugLabel;
         out.entrySuccs = cfg.entrySuccs;
         out.exitPreds = cfg.exitPreds;
         for (const auto &[idx, blk] : cfg.basicBlocks)
         {
-            BasicBlock<VB> b2;
+            BasicBlock<VB, I> b2;
             b2.id = blk.id;
             b2.preds = blk.preds;
             b2.succs = blk.succs;
             b2.value = dummyVal;
-            for (const auto &instr_pair : blk.instructions)
+            for (const auto &instrPair : blk.instructions)
             {
-                b2.instructions.emplace_back(std::make_pair(dummyVal, instr_pair.second));
+                b2.instructions.emplace_back(std::make_pair(dummyVal, instrPair.second));
             }
             out.basicBlocks[idx] = b2;
         }
@@ -227,15 +264,15 @@ namespace cfg
     }
 
     // Strip all annotations (set to std::monostate)
-    template <typename VA>
-    Graph<std::monostate> stripAnnotations(const Graph<VA> &cfg)
+    template <typename VA, typename I>
+    Graph<std::monostate, I> stripAnnotations(const Graph<VA, I> &cfg)
     {
-        return initializeAnnotation<VA, std::monostate>(cfg, std::monostate{});
+        return initializeAnnotation<VA, std::monostate, I>(cfg, std::monostate{});
     }
 
     // For debugging: print the CFG (simple version)
-    template <typename V>
-    void printCFG(const Graph<V> &cfg, std::function<void(const V &)> printVal)
+    template <typename V, typename I>
+    void printCFG(const Graph<V, I> &cfg, std::function<void(const V &)> printVal)
     {
         std::cout << "CFG: " << cfg.debugLabel << "\n";
         for (const auto &[idx, blk] : cfg.basicBlocks)
@@ -243,39 +280,23 @@ namespace cfg
             std::cout << "Block " << idx << ":\n";
             std::cout << "  preds: ";
             for (const auto &p : blk.preds)
-            {
-                if (p.kind == NodeID::Kind::Block)
-                    std::cout << p.index << " ";
-                else if (p.kind == NodeID::Kind::Entry)
-                    std::cout << "Entry ";
-                else
-                    std::cout << "Exit ";
-            }
+                std::cout << p << " ";
             std::cout << "\n  succs: ";
             for (const auto &s : blk.succs)
-            {
-                if (s.kind == NodeID::Kind::Block)
-                    std::cout << s.index << " ";
-                else if (s.kind == NodeID::Kind::Entry)
-                    std::cout << "Entry ";
-                else
-                    std::cout << "Exit ";
-            }
+                std::cout << s << " ";
             std::cout << "\n  annotation: ";
             printVal(blk.value);
             std::cout << "\n  instructions:\n";
-            for (const auto &instr_pair : blk.instructions)
+            for (const auto &instrPair : blk.instructions)
             {
-                std::cout << "    ";
-                // You may want to pretty print the instruction here
-                std::cout << "[instr]\n";
+                std::cout << "    [instr]\n";
             }
         }
     }
 
-    // For debugging: print the CFG (pretty version)
-    template <typename V>
-    void printCFGPretty(const Graph<V> &cfg, std::function<void(const V &)> printVal)
+    // For debugging: print the CFG with pretty-printed instructions and annotations
+    template <typename V, typename I>
+    void printCFGPretty(const Graph<V, I> &cfg, std::function<void(const V &)> printVal)
     {
         std::cout << "==== CFG: " << cfg.debugLabel << " ====" << std::endl;
         for (const auto &[idx, blk] : cfg.basicBlocks)
@@ -285,12 +306,9 @@ namespace cfg
             printVal(blk.value);
             std::cout << "\n";
             std::cout << "  Instructions:\n";
-            for (const auto &instr_pair : blk.instructions)
+            for (const auto &instrPair : blk.instructions)
             {
-                std::cout << "    ";
-                TackyPrettyPrint printer;
-                printer.visit(*instr_pair.second, false);
-                std::cout << "\n";
+                std::cout << "    [instr]\n";
             }
             std::cout << "  Predecessors: ";
             for (const auto &pred : blk.preds)
@@ -303,19 +321,18 @@ namespace cfg
         }
     }
 
-    void printCFGPretty(const Graph<std::monostate> &cfg)
+    // For debugging: print the CFG with pretty-printed instructions (no annotation)
+    template <typename I>
+    void printCFGPretty(const Graph<std::monostate, I> &cfg)
     {
         std::cout << "==== CFG: " << cfg.debugLabel << " ====" << std::endl;
         for (const auto &[idx, blk] : cfg.basicBlocks)
         {
             std::cout << "Block " << idx << ":\n";
             std::cout << "  Instructions:\n";
-            for (const auto &instr_pair : blk.instructions)
+            for (const auto &instrPair : blk.instructions)
             {
-                std::cout << "    ";
-                TackyPrettyPrint printer;
-                printer.visit(*instr_pair.second, false);
-                std::cout << "\n";
+                std::cout << "    [instr]\n";
             }
             std::cout << "  Predecessors: ";
             for (const auto &pred : blk.preds)
@@ -327,16 +344,44 @@ namespace cfg
             std::cout << "\n\n";
         }
     }
-
-    // Explicit template instantiations for std::monostate
-    template std::vector<NodeID> getSuccs<std::monostate>(const NodeID &, const Graph<std::monostate> &);
-    template void printCFG<std::monostate>(const Graph<std::monostate> &, std::function<void(const std::monostate &)>);
-    template void printCFGPretty<std::monostate>(const Graph<std::monostate> &, std::function<void(const std::monostate &)>);
-
-    // Explicit template instantiations for optimization types
-    template Graph<std::set<CopyPropa::Copy>> initializeAnnotation<std::monostate, std::set<CopyPropa::Copy>>(const Graph<std::monostate> &, const std::set<CopyPropa::Copy> &);
-    template Graph<std::set<std::string>> initializeAnnotation<std::monostate, std::set<std::string>>(const Graph<std::monostate> &, const std::set<std::string> &);
-
-    template Graph<std::monostate> stripAnnotations<std::set<CopyPropa::Copy>>(const Graph<std::set<CopyPropa::Copy>> &);
-    template Graph<std::monostate> stripAnnotations<std::set<std::string>>(const Graph<std::set<std::string>> &);
 }
+
+// Explicit template instantiations
+template class cfg::Graph<std::set<Assembly::Operand>, Assembly::Instruction>;
+template class cfg::Graph<std::set<std::string>, TACKY::Instruction>;
+template class cfg::Graph<std::set<CopyPropa::Copy>, TACKY::Instruction>;
+template class cfg::Graph<std::monostate, TACKY::Instruction>;
+template class cfg::Graph<std::monostate, Assembly::Instruction>;
+
+// Explicit instantiation for pointer-based liveness analysis
+template cfg::Graph<std::set<std::shared_ptr<Assembly::Operand>>, Assembly::Instruction> cfg::initializeAnnotation<std::monostate, std::set<std::shared_ptr<Assembly::Operand>>, Assembly::Instruction>(
+    const cfg::Graph<std::monostate, Assembly::Instruction> &,
+    const std::set<std::shared_ptr<Assembly::Operand>> &);
+
+template cfg::Graph<std::set<std::string>, TACKY::Instruction> cfg::initializeAnnotation<std::monostate, std::set<std::string>, TACKY::Instruction>(
+    const cfg::Graph<std::monostate, TACKY::Instruction> &,
+    const std::set<std::string> &);
+template cfg::Graph<std::set<Assembly::Operand>, Assembly::Instruction> cfg::initializeAnnotation<std::monostate, std::set<Assembly::Operand>, Assembly::Instruction>(
+    const cfg::Graph<std::monostate, Assembly::Instruction> &,
+    const std::set<Assembly::Operand> &);
+template cfg::Graph<std::set<CopyPropa::Copy>, TACKY::Instruction> cfg::initializeAnnotation<std::monostate, std::set<CopyPropa::Copy>, TACKY::Instruction>(
+    const cfg::Graph<std::monostate, TACKY::Instruction> &,
+    const std::set<CopyPropa::Copy> &);
+
+template cfg::Graph<std::monostate, TACKY::Instruction> cfg::stripAnnotations<std::set<std::string>, TACKY::Instruction>(
+    const cfg::Graph<std::set<std::string>, TACKY::Instruction> &);
+template cfg::Graph<std::monostate, TACKY::Instruction> cfg::stripAnnotations<std::set<CopyPropa::Copy>, TACKY::Instruction>(
+    const cfg::Graph<std::set<CopyPropa::Copy>, TACKY::Instruction> &);
+
+template std::vector<cfg::NodeID> cfg::getSuccs<std::monostate, TACKY::Instruction>(
+    const cfg::NodeID &,
+    const cfg::Graph<std::monostate, TACKY::Instruction> &);
+
+template cfg::Graph<std::monostate, TACKY::Instruction> cfg::instructionsToCFG<TACKY::Instruction>(
+    const std::string &,
+    const std::vector<std::shared_ptr<TACKY::Instruction>> &);
+template std::vector<std::shared_ptr<TACKY::Instruction>> cfg::cfgToInstructions<TACKY::Instruction>(
+    const cfg::Graph<std::monostate, TACKY::Instruction> &);
+template cfg::Graph<std::monostate, Assembly::Instruction> cfg::instructionsToCFG<Assembly::Instruction>(
+    const std::string &,
+    const std::vector<std::shared_ptr<Assembly::Instruction>> &);

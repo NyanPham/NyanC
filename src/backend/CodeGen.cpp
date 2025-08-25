@@ -6,6 +6,7 @@
 #include <utility>
 #include <tuple>
 #include <functional>
+#include <cassert>
 
 #include "CodeGen.h"
 #include "TACKY.h"
@@ -15,6 +16,22 @@
 #include "UniqueIds.h"
 #include "TypeTable.h"
 
+// Helper to extract the tag from a struct or union type
+std::string CodeGen::getTag(const Types::DataType &t)
+{
+    if (auto structType = Types::getStructType(t))
+    {
+        return structType->tag;
+    }
+    else if (auto unionType = Types::getUnionType(t))
+    {
+        return unionType->tag;
+    }
+    else
+    {
+        throw std::runtime_error("Internal error: trying to get tag for non-structure or union type");
+    }
+}
 std::shared_ptr<Assembly::Imm> zero()
 {
     return std::make_shared<Assembly::Imm>(0);
@@ -181,7 +198,7 @@ CodeGen::classifyNewType(const std::string &tag)
         else if (auto structType = Types::getStructType(type))
         {
             // fold over members, updating offsets
-            auto members = _typeTable.getMembers(unionType->tag);
+            auto members = _typeTable.getMembers(structType->tag);
             for (const auto &member : members)
             {
                 auto memberInfo = member.second;
@@ -470,6 +487,195 @@ CodeGen::convertDblComparison(TACKY::BinaryOp op, const std::shared_ptr<Assembly
 
     insts.insert(insts.end(), parityInsts.begin(), parityInsts.end());
     return insts;
+}
+
+// Helper for classifyReturnType
+std::pair<std::vector<Assembly::RegName>, bool>
+CodeGen::classifyReturnType(const Types::DataType &retType)
+{
+    if (Types::isVoidType(retType))
+        return {{}, false};
+
+    // Build a dummy asm operand for sizing
+    std::shared_ptr<Assembly::Operand> asmVal;
+    if (Types::isScalar(retType))
+        asmVal = std::make_shared<Assembly::Pseudo>("dummy");
+    else
+        asmVal = std::make_shared<Assembly::PseudoMem>("dummy", 0);
+
+    auto [ints, dbls, returnOnStack] = classifyReturnHelper(retType, asmVal);
+
+    if (returnOnStack)
+        return {{Assembly::RegName::AX}, true};
+    else
+    {
+        std::vector<Assembly::RegName> intRegs, dblRegs;
+        for (size_t i = 0; i < ints.size(); ++i)
+            intRegs.push_back(i == 0 ? Assembly::RegName::AX : Assembly::RegName::DX);
+        for (size_t i = 0; i < dbls.size(); ++i)
+            dblRegs.push_back(i == 0 ? Assembly::RegName::XMM0 : Assembly::RegName::XMM1);
+        intRegs.insert(intRegs.end(), dblRegs.begin(), dblRegs.end());
+        return {intRegs, false};
+    }
+}
+
+// Helper for classifyParamTypes
+std::vector<Assembly::RegName>
+CodeGen::classifyParamTypes(const std::vector<Types::DataType> &paramTypes, bool returnOnStack)
+{
+    // Build dummy operands for each param type
+    std::vector<std::pair<Types::DataType, std::shared_ptr<Assembly::Operand>>> typedAsmVals;
+    for (const auto &t : paramTypes)
+    {
+        if (Types::isScalar(t))
+            typedAsmVals.emplace_back(t, std::make_shared<Assembly::Pseudo>("dummy"));
+        else
+            typedAsmVals.emplace_back(t, std::make_shared<Assembly::PseudoMem>("dummy", 0));
+    }
+
+    auto [ints, dbls, stack] = classifyParamsHelper(typedAsmVals, returnOnStack);
+
+    std::vector<Assembly::RegName> intRegs, dblRegs;
+    for (size_t i = 0; i < ints.size(); ++i)
+        intRegs.push_back(INT_PARAM_PASSING_REGS[i]);
+    for (size_t i = 0; i < dbls.size(); ++i)
+        dblRegs.push_back(DBL_PARAM_PASSING_REGS[i]);
+    intRegs.insert(intRegs.end(), dblRegs.begin(), dblRegs.end());
+    return intRegs;
+}
+
+// Helper for classifyReturnType/classifyParamTypes
+std::tuple<
+    std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>,
+    std::vector<std::shared_ptr<Assembly::Operand>>,
+    std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>>>
+CodeGen::classifyParamsHelper(const std::vector<std::pair<Types::DataType, std::shared_ptr<Assembly::Operand>>> &typedAsmVals, bool returnOnStack)
+{
+    size_t intRegsAvailable = returnOnStack ? INT_PARAM_PASSING_REGS.size() - 1 : INT_PARAM_PASSING_REGS.size();
+
+    std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>> intRegArgs{};
+    std::vector<std::shared_ptr<Assembly::Operand>> dblRegArgs{};
+    std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>> stackArgs{};
+
+    for (const auto &[tacky_t, operand] : typedAsmVals)
+    {
+        auto t = convertType(tacky_t);
+        auto typedOperand = std::make_pair(t, operand);
+
+        if (Types::isStructType(tacky_t) || Types::isUnionType(tacky_t))
+        {
+            std::string varName;
+            if (auto pseudoMem = std::dynamic_pointer_cast<Assembly::PseudoMem>(operand))
+                varName = pseudoMem->getBase();
+            else
+                throw std::runtime_error("Bad structure operand");
+
+            auto varSize = Types::getSize(tacky_t, _typeTable);
+            auto classes = classifyType(CodeGen::getTag(tacky_t));
+
+            std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>> tentativeInts = intRegArgs;
+            std::vector<std::shared_ptr<Assembly::Operand>> tentativeDbls = dblRegArgs;
+            bool useStack = false;
+
+            if (classes[0] == CLS::Mem)
+            {
+                useStack = true;
+            }
+            else
+            {
+                for (size_t i = 0; i < classes.size(); ++i)
+                {
+                    auto cls = classes[i];
+                    auto eb_op = std::make_shared<Assembly::PseudoMem>(varName, i * 8);
+                    if (cls == CLS::SSE)
+                        tentativeDbls.push_back(eb_op);
+                    else if (cls == CLS::INTEGER)
+                        tentativeInts.push_back(std::make_pair(std::make_shared<Assembly::AsmType>(getEightbyteType(i, varSize)), eb_op));
+                    else
+                        throw std::runtime_error("Internal error: found eightbyte in Mem class");
+                }
+                if (tentativeInts.size() <= intRegsAvailable && tentativeDbls.size() <= DBL_PARAM_PASSING_REGS.size())
+                {
+                    intRegArgs = tentativeInts;
+                    dblRegArgs = tentativeDbls;
+                    useStack = false;
+                }
+                else
+                {
+                    useStack = true;
+                }
+            }
+            if (useStack)
+            {
+                for (size_t i = 0; i < classes.size(); ++i)
+                {
+                    auto eb_type = std::make_shared<Assembly::AsmType>(getEightbyteType(i, varSize));
+                    auto eb_op = std::make_shared<Assembly::PseudoMem>(varName, i * 8);
+                    stackArgs.push_back(std::make_pair(eb_type, eb_op));
+                }
+            }
+        }
+        else if (Types::isDoubleType(tacky_t))
+        {
+            if (dblRegArgs.size() < DBL_PARAM_PASSING_REGS.size())
+                dblRegArgs.push_back(operand);
+            else
+                stackArgs.push_back(typedOperand);
+        }
+        else
+        {
+            if (intRegArgs.size() < intRegsAvailable)
+                intRegArgs.push_back(typedOperand);
+            else
+                stackArgs.push_back(typedOperand);
+        }
+    }
+    return {intRegArgs, dblRegArgs, stackArgs};
+}
+
+// Helper for classifyReturnType
+CodeGen::RetClass
+CodeGen::classifyReturnHelper(const Types::DataType &retType, std::shared_ptr<Assembly::Operand> asmRetval)
+{
+    if (Types::isStructType(retType) || Types::isUnionType(retType))
+    {
+        auto classes = classifyType(CodeGen::getTag(retType));
+        std::string varName;
+        if (auto pseudoMem = std::dynamic_pointer_cast<Assembly::PseudoMem>(asmRetval))
+            varName = pseudoMem->getBase();
+        else
+            throw std::runtime_error("Invalid assembly operand for structure return");
+
+        if (classes[0] == CLS::Mem)
+        {
+            return {{}, {}, true};
+        }
+        else
+        {
+            std::vector<std::pair<std::shared_ptr<Assembly::AsmType>, std::shared_ptr<Assembly::Operand>>> ints;
+            std::vector<std::shared_ptr<Assembly::Operand>> dbls;
+            for (size_t i = 0; i < classes.size(); ++i)
+            {
+                auto operand = std::make_shared<Assembly::PseudoMem>(varName, i * 8);
+                if (classes[i] == CLS::SSE)
+                    dbls.push_back(operand);
+                else if (classes[i] == CLS::INTEGER)
+                    ints.push_back({std::make_shared<Assembly::AsmType>(getEightbyteType(i, Types::getSize(retType, _typeTable))), operand});
+                else
+                    throw std::runtime_error("Internal error: unexpected Mem class in eightbyte");
+            }
+            return {ints, dbls, false};
+        }
+    }
+    else if (Types::isDoubleType(retType))
+    {
+        return {{}, {asmRetval}, false};
+    }
+    else
+    {
+        auto typedOperand = std::make_pair(convertType(retType), asmRetval);
+        return {{typedOperand}, {}, false};
+    }
 }
 
 std::tuple<
@@ -1740,12 +1946,39 @@ void CodeGen::convertSymbol(const std::string &name, const Symbols::Symbol &symb
     if (auto funAttr = Symbols::getFunAttr(symbol.attrs))
     {
         auto fnType = Types::getFunType(symbol.type);
-        // If this function has incomplete return type (implying we don't define or call it in this translation unit)
-        // use a dummy value for fun_returns_on_stack
-        auto funReturnsOnStack = Types::isComplete(*fnType->retType, _typeTable) || Types::isVoidType(*fnType->retType)
-                                     ? returnsOnStack(name)
-                                     : false;
-        _asmSymbolTable.addFun(name, funAttr->defined, funReturnsOnStack);
+
+        // Check if return type and all parameter types are complete, or return type is void
+        bool retTypeComplete = Types::isComplete(*fnType->retType, _typeTable) || Types::isVoidType(*fnType->retType);
+        bool allParamsComplete = std::all_of(fnType->paramTypes.begin(), fnType->paramTypes.end(),
+                                             [this](const Types::DataType &t)
+                                             { return Types::isComplete(t, _typeTable); });
+
+        if (retTypeComplete && allParamsComplete)
+        {
+            // Compute return registers and return-on-stack
+            auto [retRegs, returnOnStack] = classifyReturnType(*fnType->retType);
+
+            // Compute parameter registers
+            auto paramRegs = classifyParamTypes(
+                [&fnType]
+                {
+                    std::vector<Types::DataType> v;
+                    v.reserve(fnType->paramTypes.size());
+                    std::transform(fnType->paramTypes.begin(), fnType->paramTypes.end(), std::back_inserter(v),
+                                   [](const std::shared_ptr<Types::DataType> &ptr)
+                                   { return *ptr; });
+                    return v;
+                }(),
+                returnOnStack);
+
+            _asmSymbolTable.addFun(name, funAttr->defined, returnsOnStack(name), paramRegs, retRegs);
+        }
+        else
+        {
+            // Incomplete function type or params: use dummy values
+            assert(!funAttr->defined);
+            _asmSymbolTable.addFun(name, funAttr->defined, false, {}, {});
+        }
     }
     else if (auto constAttr = Symbols::getConstAttr(symbol.attrs))
     {
@@ -1753,7 +1986,7 @@ void CodeGen::convertSymbol(const std::string &name, const Symbols::Symbol &symb
     }
     else if (auto staticAttr = Symbols::getStaticAttr(symbol.attrs))
     {
-        if (Types::isComplete(symbol.type, _typeTable))
+        if (!Types::isComplete(symbol.type, _typeTable))
         {
             // use dummy type for static variables of incomplete type:
             _asmSymbolTable.addVar(name, std::make_shared<Assembly::AsmType>(Assembly::Byte()), true);

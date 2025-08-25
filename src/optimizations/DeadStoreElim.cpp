@@ -1,6 +1,7 @@
 #include "DeadStoreElim.h"
 #include "../optimizations/OptimizeUtils.h"
 #include "../utils/TackyPrettyPrint.h"
+#include "../BackwardDataflow.h"
 #include <set>
 #include <map>
 #include <vector>
@@ -13,40 +14,34 @@ namespace
 {
 
     using StringSet = std::set<std::string>;
+    using Instr = TACKY::Instruction;
+    using ValPtr = std::shared_ptr<TACKY::Val>;
+    using Block = cfg::BasicBlock<StringSet, Instr>;
+    using Graph = cfg::Graph<StringSet, Instr>;
 
     // Helper: add variable to set if it's a Var
-    void addVar(const std::shared_ptr<TACKY::Val> &v, StringSet &set)
+    void addVar(const ValPtr &v, StringSet &set)
     {
         if (v->getType() == TACKY::NodeType::Var)
-        {
             set.insert(std::static_pointer_cast<TACKY::Var>(v)->getName());
-        }
     }
 
     // Helper: remove variable from set if it's a Var
-    void removeVar(const std::shared_ptr<TACKY::Val> &v, StringSet &set)
+    void removeVar(const ValPtr &v, StringSet &set)
     {
         if (v->getType() == TACKY::NodeType::Var)
-        {
             set.erase(std::static_pointer_cast<TACKY::Var>(v)->getName());
-        }
     }
 
     // Transfer function for a block (reverse order, with per-instruction annotation)
-    std::pair<StringSet, std::vector<std::pair<StringSet, std::shared_ptr<TACKY::Instruction>>>>
-    transfer(
-        const StringSet &staticAndAliasedVars,
-        const cfg::BasicBlock<StringSet> &block,
-        const StringSet &endLiveVars)
+    Block transfer(const StringSet &staticAndAliasedVars, const Block &block, const StringSet &endLiveVars)
     {
         StringSet live = endLiveVars;
-        std::vector<std::pair<StringSet, std::shared_ptr<TACKY::Instruction>>> annotated_instructions;
+        std::vector<std::pair<StringSet, std::shared_ptr<Instr>>> annotatedInstrs;
 
         for (auto it = block.instructions.rbegin(); it != block.instructions.rend(); ++it)
         {
-            // Annotate with live-before
-            annotated_instructions.emplace_back(live, it->second);
-
+            annotatedInstrs.emplace_back(live, it->second);
             const auto &instr = it->second;
             switch (instr->getType())
             {
@@ -196,15 +191,15 @@ namespace
                 break; // Jump, Label, Return None, etc.
             }
         }
-        std::reverse(annotated_instructions.begin(), annotated_instructions.end());
-        return {live, annotated_instructions};
+        std::reverse(annotatedInstrs.begin(), annotatedInstrs.end());
+        Block out = block;
+        out.instructions = std::move(annotatedInstrs);
+        out.value = live;
+        return out;
     }
 
     // Meet function: union of live variables from all successors
-    StringSet meet(
-        const StringSet &staticVars,
-        const cfg::Graph<StringSet> &cfg,
-        const cfg::BasicBlock<StringSet> &block)
+    StringSet meet(const StringSet &staticVars, const Graph &cfg, const Block &block)
     {
         StringSet live;
         for (const auto &succ : block.succs)
@@ -215,15 +210,15 @@ namespace
             }
             else if (succ.kind == cfg::NodeID::Kind::Block)
             {
-                const auto &succ_blk = cfg.basicBlocks.at(succ.index);
-                live.insert(succ_blk.value.begin(), succ_blk.value.end());
+                const auto &succBlk = cfg.basicBlocks.at(succ.index);
+                live.insert(succBlk.value.begin(), succBlk.value.end());
             }
         }
         return live;
     }
 
     // Print the annotated CFG for debugging
-    void printLiveVarCFG(const cfg::Graph<StringSet> &cfg, const std::string &extraTag = "")
+    void printLiveVarCFG(const Graph &cfg, const std::string &extraTag = "")
     {
         std::cout << "==== DeadStoreElim CFG with Live Variables ====" << std::endl;
         std::cout << "Debug label: " << cfg.debugLabel << "_dse" << extraTag << std::endl;
@@ -241,12 +236,11 @@ namespace
             }
             std::cout << " }\n";
             std::cout << "  Instructions:\n";
-            for (const auto &instr_pair : block.instructions)
+            for (const auto &InstrPair : block.instructions)
             {
-                // Print live variables before this instruction
                 std::cout << "    [Live before]: { ";
                 bool first = true;
-                for (const auto &var : instr_pair.first)
+                for (const auto &var : InstrPair.first)
                 {
                     if (!first)
                         std::cout << ", ";
@@ -254,73 +248,27 @@ namespace
                     first = false;
                 }
                 std::cout << " }\n";
-
-                // Print the instruction itself
                 std::cout << "    ";
                 TackyPrettyPrint printer;
-                printer.visit(*instr_pair.second, false);
+                printer.visit(*InstrPair.second, false);
                 std::cout << "\n";
             }
             std::cout << std::endl;
         }
     }
 
-    // Find live variables for all blocks (backward dataflow)
-    cfg::Graph<StringSet> findLiveVariables(
-        const StringSet &staticVars,
-        const StringSet &aliasedVars,
-        const cfg::Graph<std::monostate> &cfg,
-        bool debug)
-    {
-        auto annotated_cfg = cfg::initializeAnnotation(cfg, StringSet{});
-        StringSet staticAndAliasedVars = staticVars;
-        staticAndAliasedVars.insert(aliasedVars.begin(), aliasedVars.end());
-
-        // Worklist algorithm (reverse postorder)
-        std::vector<int> worklist;
-        for (const auto &[idx, _] : annotated_cfg.basicBlocks)
-            worklist.push_back(idx);
-
-        while (!worklist.empty())
-        {
-            if (debug)
-            {
-                printLiveVarCFG(annotated_cfg, "FindingLiveVariables_in_progress");
-            }
-
-            int block_idx = worklist.back();
-            worklist.pop_back();
-            auto &blk = annotated_cfg.basicBlocks.at(block_idx);
-            StringSet old_live = blk.value;
-            StringSet live_at_exit = meet(staticVars, annotated_cfg, blk);
-            auto [new_live, annotated_instructions] = transfer(staticAndAliasedVars, blk, live_at_exit);
-            if (new_live != old_live || blk.instructions != annotated_instructions)
-            {
-                blk.value = new_live;
-                blk.instructions = std::move(annotated_instructions);
-                // Add predecessors to worklist
-                for (const auto &pred : blk.preds)
-                {
-                    if (pred.kind == cfg::NodeID::Kind::Block)
-                        worklist.push_back(pred.index);
-                }
-            }
-        }
-        return annotated_cfg;
-    }
-
     // Is this a dead store?
-    bool isDeadStore(const std::pair<StringSet, std::shared_ptr<TACKY::Instruction>> &instr_pair)
+    bool isDeadStore(const std::pair<StringSet, std::shared_ptr<Instr>> &InstrPair)
     {
-        const auto &live_vars = instr_pair.first;
-        const auto &instr = instr_pair.second;
+        const auto &liveVars = InstrPair.first;
+        const auto &instr = InstrPair.second;
         if (instr->getType() == TACKY::NodeType::FunCall || instr->getType() == TACKY::NodeType::Store)
             return false;
         auto dst = OptimizeUtils::getDst(instr);
         if (dst && (*dst)->getType() == TACKY::NodeType::Var)
         {
             auto v = std::static_pointer_cast<TACKY::Var>(*dst)->getName();
-            return live_vars.count(v) == 0;
+            return liveVars.count(v) == 0;
         }
         return false;
     }
@@ -337,36 +285,55 @@ namespace
         return result;
     }
 
-}
+} // end anonymous namespace
 
-cfg::Graph<std::monostate> eliminateDeadStores(
+cfg::Graph<std::monostate, TACKY::Instruction> eliminateDeadStores(
     const std::set<std::string> &aliasedVars,
-    const cfg::Graph<std::monostate> &cfg,
+    const cfg::Graph<std::monostate, TACKY::Instruction> &cfg,
     const Symbols::SymbolTable &symbolTable,
     bool debug)
 {
     StringSet staticVars = getStaticVars(symbolTable);
-    auto annotated_cfg = findLiveVariables(staticVars, aliasedVars, cfg, debug);
+    StringSet staticAndAliasedVars = staticVars;
+    staticAndAliasedVars.insert(aliasedVars.begin(), aliasedVars.end());
 
-    // Debug print: print annotated CFG before rewriting
-    if (debug)
+    // Backward dataflow analysis using BackwardDataflow::analyze
+    auto debugPrinter = [&](const Graph &g)
     {
-        printLiveVarCFG(annotated_cfg);
-    }
+        if (debug)
+            printLiveVarCFG(g, "in_progress");
+    };
+    auto meetFn = [&](const Graph &g, const Block &blk)
+    {
+        return meet(staticVars, g, blk);
+    };
+    auto transferFn = [&](const Block &blk, const StringSet &endLiveVars)
+    {
+        return transfer(staticAndAliasedVars, blk, endLiveVars);
+    };
+
+    auto annotatedCfg = BackwardDataflow::analyze<std::string, Instr>(
+        debugPrinter, meetFn, transferFn, cfg);
+
+    if (debug)
+        printLiveVarCFG(annotatedCfg, "annotated");
 
     // Remove dead stores
-    auto transformed_cfg = annotated_cfg;
-    for (auto &[idx, block] : transformed_cfg.basicBlocks)
+    auto transformedCfg = annotatedCfg;
+    for (auto &[idx, block] : transformedCfg.basicBlocks)
     {
-        std::vector<std::pair<StringSet, std::shared_ptr<TACKY::Instruction>>> new_instrs;
-        for (const auto &instr_pair : block.instructions)
+        std::vector<std::pair<StringSet, std::shared_ptr<Instr>>> newInstrs;
+        for (const auto &InstrPair : block.instructions)
         {
-            if (!isDeadStore(instr_pair))
-                new_instrs.push_back(instr_pair);
+            if (!isDeadStore(InstrPair))
+                newInstrs.push_back(InstrPair);
         }
-        block.instructions = std::move(new_instrs);
+        block.instructions = std::move(newInstrs);
     }
 
+    if (debug)
+        printLiveVarCFG(transformedCfg, "transformed");
+
     // Remove annotations
-    return cfg::stripAnnotations(transformed_cfg);
+    return cfg::stripAnnotations(transformedCfg);
 }

@@ -37,6 +37,7 @@ instruction = Mov(asm_type, operand src, operand dst)
     | SetCC(cond_code, operand)
     | Label(identifier)
     | Push(operand)
+    | Pop(reg)
     | Call(identifier)
     | Ret
 unary_operator = Neg | Not | ShrOneOp
@@ -72,6 +73,7 @@ namespace Assembly
     class SetCC;
     class Label;
     class Push;
+    class Pop;
     class Call;
     class Ret;
     class StaticVariable;
@@ -104,6 +106,7 @@ namespace Assembly
         SetCC,
         Label,
         Push,
+        Pop,
         Call,
         Imm,
         Reg,
@@ -114,8 +117,6 @@ namespace Assembly
         Indexed,
     };
 
-    // We use structs and variant to represent AsmType.
-    // We could use enums, but types might have fields later on, like pointer, array, struct types, similar to FunType in Types.h
     struct Byte
     {
         Byte() {}
@@ -196,14 +197,19 @@ namespace Assembly
     enum class RegName
     {
         AX,
-        DX,
+        BX,
         CX,
+        DX,
         DI,
         SI,
         R8,
         R9,
         R10,
         R11,
+        R12,
+        R13,
+        R14,
+        R15,
         SP,
         BP,
         XMM0,
@@ -214,6 +220,12 @@ namespace Assembly
         XMM5,
         XMM6,
         XMM7,
+        XMM8,
+        XMM9,
+        XMM10,
+        XMM11,
+        XMM12,
+        XMM13,
         XMM14,
         XMM15,
     };
@@ -633,6 +645,16 @@ namespace Assembly
         std::shared_ptr<Operand> _operand;
     };
 
+    class Pop : public Instruction
+    {
+    public:
+        Pop(std::shared_ptr<Reg> reg) : Instruction(NodeType::Pop), _reg{reg} {}
+        std::shared_ptr<Reg> getReg() const { return _reg; }
+
+    private:
+        std::shared_ptr<Reg> _reg;
+    };
+
     class Call : public Instruction
     {
     public:
@@ -711,6 +733,88 @@ namespace Assembly
     private:
         std::vector<std::shared_ptr<TopLevel>> _topLevels;
     };
+
+    // We use structs and variant to represent AsmType.
+    // Comparison operators for STL containers
+    // REVIEW: These operators are correct for use in std::set and std::map.
+    // - Operand equality and ordering is based on type and the underlying value (e.g., RegName for Reg, string for Pseudo).
+    // - Reg equality and ordering is based on RegName.
+    // - This ensures that sets/maps of Operand or Reg will behave as expected.
+    inline bool operator==(const Operand &lhs, const Operand &rhs)
+    {
+        if (lhs.getType() != rhs.getType())
+            return false;
+        switch (lhs.getType())
+        {
+        case NodeType::Pseudo:
+            return static_cast<const Pseudo &>(lhs).getName() == static_cast<const Pseudo &>(rhs).getName();
+        case NodeType::Reg:
+            return static_cast<const Reg &>(lhs).getName() == static_cast<const Reg &>(rhs).getName();
+        case NodeType::Imm:
+            return static_cast<const Imm &>(lhs).getValue() == static_cast<const Imm &>(rhs).getValue();
+        case NodeType::Memory:
+            return static_cast<const Memory &>(lhs).getOffset() == static_cast<const Memory &>(rhs).getOffset() &&
+                   *static_cast<const Memory &>(lhs).getReg() == *static_cast<const Memory &>(rhs).getReg();
+        case NodeType::Data:
+            return static_cast<const Data &>(lhs).getName() == static_cast<const Data &>(rhs).getName() &&
+                   static_cast<const Data &>(lhs).getOffset() == static_cast<const Data &>(rhs).getOffset();
+        case NodeType::PseudoMem:
+            return static_cast<const PseudoMem &>(lhs).getBase() == static_cast<const PseudoMem &>(rhs).getBase() &&
+                   static_cast<const PseudoMem &>(lhs).getOffset() == static_cast<const PseudoMem &>(rhs).getOffset();
+        case NodeType::Indexed:
+            return *static_cast<const Indexed &>(lhs).getBase() == *static_cast<const Indexed &>(rhs).getBase() &&
+                   *static_cast<const Indexed &>(lhs).getIndex() == *static_cast<const Indexed &>(rhs).getIndex() &&
+                   static_cast<const Indexed &>(lhs).getScale() == static_cast<const Indexed &>(rhs).getScale();
+        default:
+            return false;
+        }
+    }
+
+    inline bool operator<(const Operand &lhs, const Operand &rhs)
+    {
+        if (lhs.getType() != rhs.getType())
+            return lhs.getType() < rhs.getType();
+        switch (lhs.getType())
+        {
+        case NodeType::Pseudo:
+            return static_cast<const Pseudo &>(lhs).getName() < static_cast<const Pseudo &>(rhs).getName();
+        case NodeType::Reg:
+            return static_cast<const Reg &>(lhs).getName() < static_cast<const Reg &>(rhs).getName();
+        case NodeType::Imm:
+            return static_cast<const Imm &>(lhs).getValue() < static_cast<const Imm &>(rhs).getValue();
+        case NodeType::Memory:
+            if (*static_cast<const Memory &>(lhs).getReg() != *static_cast<const Memory &>(rhs).getReg())
+                return *static_cast<const Memory &>(lhs).getReg() < *static_cast<const Memory &>(rhs).getReg();
+            return static_cast<const Memory &>(lhs).getOffset() < static_cast<const Memory &>(rhs).getOffset();
+        case NodeType::Data:
+            if (static_cast<const Data &>(lhs).getName() != static_cast<const Data &>(rhs).getName())
+                return static_cast<const Data &>(lhs).getName() < static_cast<const Data &>(rhs).getName();
+            return static_cast<const Data &>(lhs).getOffset() < static_cast<const Data &>(rhs).getOffset();
+        case NodeType::PseudoMem:
+            if (static_cast<const PseudoMem &>(lhs).getBase() != static_cast<const PseudoMem &>(rhs).getBase())
+                return static_cast<const PseudoMem &>(lhs).getBase() < static_cast<const PseudoMem &>(rhs).getBase();
+            return static_cast<const PseudoMem &>(lhs).getOffset() < static_cast<const PseudoMem &>(rhs).getOffset();
+        case NodeType::Indexed:
+            if (*static_cast<const Indexed &>(lhs).getBase() != *static_cast<const Indexed &>(rhs).getBase())
+                return *static_cast<const Indexed &>(lhs).getBase() < *static_cast<const Indexed &>(rhs).getBase();
+            if (*static_cast<const Indexed &>(lhs).getIndex() != *static_cast<const Indexed &>(rhs).getIndex())
+                return *static_cast<const Indexed &>(lhs).getIndex() < *static_cast<const Indexed &>(rhs).getIndex();
+            return static_cast<const Indexed &>(lhs).getScale() < static_cast<const Indexed &>(rhs).getScale();
+        default:
+            return false;
+        }
+    }
+
+    inline bool operator==(const Reg &lhs, const Reg &rhs)
+    {
+        return lhs.getName() == rhs.getName();
+    }
+
+    inline bool operator<(const Reg &lhs, const Reg &rhs)
+    {
+        return lhs.getName() < rhs.getName();
+    }
+    // We could use enums, but types might have fields later on, like pointer, array, struct types, similar to FunType in Types.h
 }
 
 #endif
