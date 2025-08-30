@@ -10,7 +10,7 @@ std::string UniqueIds::makeTemporary()
     std::string name = "tmp." + std::to_string(_counter);
     _counter++;
 
-    return std::move(name);
+    return name;
 }
 
 std::string UniqueIds::makeLabel(const std::string &prefix)
@@ -19,7 +19,7 @@ std::string UniqueIds::makeLabel(const std::string &prefix)
     std::string name = prefix + "." + std::to_string(_counter);
     _counter++;
 
-    return std::move(name);
+    return name;
 }
 
 std::string UniqueIds::makeNamedTemporary(const std::string &name)

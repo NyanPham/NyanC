@@ -516,7 +516,7 @@ TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_
             {
                 throw std::runtime_error("Can't initialize non-character type with string literal");
             }
-            else if (string->getStr().size() > arrType->size)
+            else if (string->getStr().size() > (size_t)arrType->size)
             {
                 throw std::runtime_error("Too many characters in string literal");
             }
@@ -540,7 +540,7 @@ TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_
     {
         if (auto arrType = Types::getArrayType(targetType))
         {
-            if (compoundInit->getInits().size() > arrType->size)
+            if (compoundInit->getInits().size() > (size_t)arrType->size)
             {
                 throw std::runtime_error("Too many values in initializer");
             }
@@ -553,7 +553,7 @@ TypeChecker::typeCheckInit(const Types::DataType &targetType, const std::shared_
                 }
                 auto padding = std::vector<std::shared_ptr<AST::Initializer>>();
 
-                for (int i = 0; i < (arrType->size - compoundInit->getInits().size()); i++)
+                for (size_t i = 0; i < (arrType->size - compoundInit->getInits().size()); i++)
                 {
                     padding.push_back(makeZeroInit(*arrType->elemType));
                 }

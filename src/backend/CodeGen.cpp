@@ -861,7 +861,7 @@ CodeGen::passParams(const std::vector<std::shared_ptr<TACKY::Val>> &params, bool
     }
 
     // pass params in INTEGER regsiters
-    for (int i = 0; i < intRegParams.size(); i++)
+    for (size_t i = 0; i < intRegParams.size(); i++)
     {
         auto [paramType, param] = intRegParams[i];
         auto r = remainingIntRegs[i];
@@ -877,7 +877,7 @@ CodeGen::passParams(const std::vector<std::shared_ptr<TACKY::Val>> &params, bool
     }
 
     // pass params in DOUBLE regsiters
-    for (int i = 0; i < dblRegParams.size(); i++)
+    for (size_t i = 0; i < dblRegParams.size(); i++)
     {
         auto param = dblRegParams[i];
         auto r = DBL_PARAM_PASSING_REGS[i];
@@ -886,7 +886,7 @@ CodeGen::passParams(const std::vector<std::shared_ptr<TACKY::Val>> &params, bool
 
     // pass params on the stack
     // first param passed on stack has index 0 and is passed at Stack(16)
-    for (int i = 0; i < stackParams.size(); i++)
+    for (size_t i = 0; i < stackParams.size(); i++)
     {
         auto [paramType, param] = stackParams[i];
         auto stack = std::make_shared<Assembly::Memory>(std::make_shared<Assembly::Reg>(Assembly::RegName::BP), 16 + 8 * i);

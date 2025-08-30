@@ -10,6 +10,7 @@
 #include "Types.h"
 #include "Const.h"
 #include "Initializers.h"
+#include "Symbols.h"
 
 /*
 program = Program(top_level*)

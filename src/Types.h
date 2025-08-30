@@ -309,6 +309,11 @@ namespace Types
             lhs, rhs);
     }
 
+    inline bool operator!=(const Types::DataType &lhs, const Types::DataType &rhs)
+    {
+        return !(lhs == rhs);
+    }
+
     inline bool isArithmetic(const Types::DataType &type)
     {
         if (

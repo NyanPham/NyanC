@@ -1,7 +1,7 @@
 #include "CFG.h"
 #include "TACKY.h"
 #include "Assembly.h"
-#include "../optimizations/CopyPropa.h"
+#include "optimizations/CopyPropa.h"
 #include <algorithm>
 #include <cassert>
 #include <set>
