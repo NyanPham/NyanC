@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <set>
+#include <functional>
 
 #include "AST.h"
 

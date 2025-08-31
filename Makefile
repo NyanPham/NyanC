@@ -8,6 +8,7 @@ TARGET = NyanC.exe
 # Source files
 SRCS = src/CFG.cpp \
        src/backend/AssemblySymbols.cpp \
+       src/backend/Backend.cpp \
        src/backend/CodeGen.cpp \
        src/backend/InstructionFixup.cpp \
        src/backend/RegAlloc.cpp \
@@ -28,6 +29,7 @@ SRCS = src/CFG.cpp \
        src/semantic_analysis/CollectSwitchCases.cpp \
        src/semantic_analysis/IdentifierResolution.cpp \
        src/semantic_analysis/LoopLabeling.cpp \
+       src/semantic_analysis/SemanticAnalyzer.cpp \
        src/semantic_analysis/TypeChecker.cpp \
        src/semantic_analysis/ValidateLabels.cpp \
        src/Settings.cpp \
@@ -36,7 +38,8 @@ SRCS = src/CFG.cpp \
        src/Token.cpp \
        src/Types.cpp \
        src/TypeTable.cpp \
-       src/UniqueIds.cpp
+       src/UniqueIds.cpp \
+       src/utils/DebugPrinter.cpp
 
 # Generate object file names from source file names
 OBJS = $(SRCS:.cpp=.o)

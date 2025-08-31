@@ -639,10 +639,12 @@ void Emit::emit(std::shared_ptr<Assembly::Program> prog, const std::string &outp
     }
 
     content += emitStackNote();
+
     std::ofstream uout(output);
 
     if (!uout.is_open())
     {
+        std::cerr << "ERROR: Emit - Failed to open output file: " << output << std::endl;
         throw std::runtime_error("Failed to open output file");
     }
 

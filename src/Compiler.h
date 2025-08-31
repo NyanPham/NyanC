@@ -27,6 +27,7 @@ public:
     void assembleAndLink(const std::vector<std::string> &srcFiles, bool link = true, bool cleanUp = true);
 
 private:
+    std::string processInputFile(const std::string &src);
     Settings _settings;
 };
 

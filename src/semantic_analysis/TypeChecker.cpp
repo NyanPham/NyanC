@@ -2109,3 +2109,6 @@ TypeChecker::typeCheck(const std::shared_ptr<AST::Program> &prog)
 
     return std::make_shared<AST::Program>(checkedDecls);
 }
+
+TypeChecker::TypeChecker(Symbols::SymbolTable &symbolTable, TypeTableNS::TypeTable &typeTable)
+    : _symbolTable(symbolTable), _typeTable(typeTable) {}

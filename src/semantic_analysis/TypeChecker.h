@@ -9,7 +9,7 @@
 class TypeChecker
 {
 public:
-    TypeChecker() = default;
+    TypeChecker(Symbols::SymbolTable &symbolTable, TypeTableNS::TypeTable &typeTable);
 
     Types::DataType getCommonType(const Types::DataType &t1, const Types::DataType &t2);
     TypeTableNS::TypeDef buildStructDef(const std::vector<std::shared_ptr<AST::MemberDeclaration>> &members);
@@ -68,8 +68,8 @@ public:
     TypeTableNS::TypeTable &getTypeTable() { return _typeTable; }
 
 private:
-    Symbols::SymbolTable _symbolTable{};
-    TypeTableNS::TypeTable _typeTable{};
+    Symbols::SymbolTable &_symbolTable;
+    TypeTableNS::TypeTable &_typeTable;
 };
 
 #endif
