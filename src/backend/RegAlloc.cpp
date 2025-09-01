@@ -977,7 +977,9 @@ public:
         using namespace Assembly;
         auto findRep = [&](const std::shared_ptr<Assembly::Operand> &op) -> std::shared_ptr<Assembly::Operand>
         {
-            return coalescedRegs.find(op);
+            if (!op)
+                return op;
+            return coalescedRegs.find(canonicalize(op));
         };
 
         std::vector<std::shared_ptr<Assembly::Instruction>> result;
@@ -1637,7 +1639,7 @@ std::vector<std::shared_ptr<Assembly::Instruction>> RegAllocImpl::allocate(
     addSpillCosts(coalescedGraph, coalescedInstrs);
     colorGraph(coalescedGraph);
     auto pseudoToRegMap = makeRegisterMap(coalescedGraph, fnName, asmSymbol); // Build register map and record callee-saved usage
-    auto result = replacePseudoRegs(coalescedInstrs, pseudoToRegMap); // Replace pseudo registers with hardregs
+    auto result = replacePseudoRegs(coalescedInstrs, pseudoToRegMap);         // Replace pseudo registers with hardregs
     return result;
 }
 
