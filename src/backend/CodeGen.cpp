@@ -1341,7 +1341,7 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
             auto condCode = convertCondCode(binaryInst->getOp(), isSigned);
 
             return {
-                std::make_shared<Assembly::Cmp>(srcType, asmSrc1, asmSrc2),
+                std::make_shared<Assembly::Cmp>(srcType, asmSrc2, asmSrc1),
                 std::make_shared<Assembly::Mov>(dstType, zero(), asmDst),
                 std::make_shared<Assembly::SetCC>(condCode, asmDst),
             };
@@ -1743,7 +1743,7 @@ CodeGen::convertInstruction(const std::shared_ptr<TACKY::Instruction> &inst)
             auto x = std::make_shared<Assembly::Reg>(Assembly::RegName::XMM7);
 
             return {
-                std::make_shared<Assembly::Cmp>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), std::make_shared<Assembly::Data>(upperBound, 0), asmSrc),
+                std::make_shared<Assembly::Cmp>(std::make_shared<Assembly::AsmType>(Assembly::Double()), std::make_shared<Assembly::Data>(upperBound, 0), asmSrc),
                 std::make_shared<Assembly::JmpCC>(Assembly::CondCode::AE, outOfBound),
                 std::make_shared<Assembly::Cvttsd2si>(std::make_shared<Assembly::AsmType>(Assembly::Quadword()), asmSrc, asmDst),
                 std::make_shared<Assembly::Jmp>(endLbl),

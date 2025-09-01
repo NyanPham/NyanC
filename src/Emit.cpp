@@ -608,6 +608,10 @@ std::string Emit::emitTopLevel(std::shared_ptr<Assembly::TopLevel> topLevel)
         std::string initsStr;
         for (const auto &init : staticVar->getInits())
         {
+            if (!initsStr.empty())
+            {
+                initsStr += "\n\t";
+            }
             initsStr += emitInit(*init);
         }
 
